@@ -44,7 +44,7 @@ export interface BackendFile {
 }
 
 const isTestFile = (p: string) => /\.test\.(t|j)sx?$/.test(p)
-const inProject = (p: string) => p.includes("/hn-jobs/") && !p.includes("/node_modules/")
+const inProject = (p: string) => !p.includes("/node_modules/")
 
 function signatureOf(fn: FunctionDeclaration | MethodDeclaration, name: string): string {
   const ps = fn
@@ -165,7 +165,7 @@ export function extractBackend(
   const files: BackendFile[] = []
   for (const sf of sfs) {
     const file = relative(absRoot, sf.getFilePath())
-    if (!file.startsWith("backend/") || isTestFile(sf.getFilePath())) continue
+    if (isTestFile(sf.getFilePath()) || /\.stories\.(t|j)sx?$/.test(file)) continue
 
     const items: (BackendFn | BackendClass)[] = []
     for (const fd of sf.getFunctions()) {

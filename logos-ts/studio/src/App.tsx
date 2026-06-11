@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { SidebarTree } from "./SidebarTree"
 import { ContentPanel } from "./ContentPanel"
-import { BackendPanel } from "./BackendPanel"
 import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
 import { svgIcon } from "./icons"
@@ -9,7 +8,6 @@ import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { ArchDiffPanel } from "./ArchDiffPanel"
 import { diffIndex } from "./diff"
 import type {
-  BackendSel,
   Comment,
   Selection,
   StudioIndex,
@@ -25,12 +23,10 @@ const seed = seedData as unknown as StudioIndex
 export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
-  const [active, setActive] = useState<"component" | "backend">("component")
   const [selection, setSelection] = useState<Selection>({
-    comp: seed.components[0]?.name ?? "",
+    file: seed.files[0]?.file ?? "",
     view: "code",
   })
-  const [backendSel, setBackendSel] = useState<BackendSel | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [popup, setPopup] = useState<{ target: string; label: string; x: number; y: number } | null>(
     null
@@ -46,16 +42,13 @@ export function App() {
     null
   )
 
-  // The index the whole studio renders: base, or the active forked copy.
   const view = activeWorkspaceId && workspaceIndex ? workspaceIndex : index
 
-  // Node-level diff of the active workspace vs base (drives highlight colors).
   const diff = useMemo(
     () => (activeWorkspaceId && workspaceIndex ? diffIndex(index, workspaceIndex) : {}),
     [activeWorkspaceId, workspaceIndex, index]
   )
 
-  // Only the active workspace's comments are shown on nodes — per-workspace isolation.
   const commentsByTarget = useMemo(() => {
     const m: Record<string, Comment[]> = {}
     for (const c of comments) if (c.workspaceId === activeWorkspaceId) (m[c.target] ??= []).push(c)
@@ -124,7 +117,6 @@ export function App() {
     setWorkspaceIndex(null)
   }, [])
 
-  // Create a workspace — branch from `fromWorkspaceId`, or snapshot base — and switch to it.
   const createWorkspace = useCallback(
     async (fromWorkspaceId?: string | null): Promise<string | null> => {
       try {
@@ -166,7 +158,6 @@ export function App() {
     [refreshComments]
   )
 
-  // Cmd/Ctrl+Backspace deletes the selection (comment or workspace), else the active workspace.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
@@ -183,8 +174,6 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey)
   }, [selected, activeWorkspaceId, deleteWorkspace, deleteComment])
 
-  // ---- agents run automatically/declaratively: a change on a workspace ⇒ an
-  // agent is working it. No manual trigger. ----
   const [archDiffOpen, setArchDiffOpen] = useState(false)
 
   const [agentEvents, setAgentEvents] = useState<AgentMsg[]>([])
@@ -202,7 +191,7 @@ export function App() {
       setAgentEvents([])
       setAgentRunning(true)
       setAgentWorkspace(wsId)
-      setAgentOpen(true) // auto-open the terminal when an agent starts
+      setAgentOpen(true)
       const es = new EventSource(`/api/agent/run?workspace=${wsId}&mode=${runMode}`)
       esRef.current = es
       es.onmessage = (m) => {
@@ -214,7 +203,6 @@ export function App() {
           runningWsRef.current = null
           Promise.all([refreshWorkspaces(), refreshTests()]).then(() => openWorkspace(wsId))
           if (pendingRef.current.has(wsId)) {
-            // changes arrived mid-run — reconcile again
             pendingRef.current.delete(wsId)
             setTimeout(() => runAgent(wsId, runMode), 300)
           }
@@ -228,7 +216,6 @@ export function App() {
     },
     [refreshWorkspaces, openWorkspace]
   )
-  // Declarative reconcile: ensure an agent is working `wsId` in the comment's mode.
   const ensureAgent = useCallback(
     (wsId: string, runMode: "code" | "arch") => {
       if (runningWsRef.current === wsId) pendingRef.current.add(wsId)
@@ -236,10 +223,8 @@ export function App() {
     },
     [runAgent]
   )
-  // Closing just hides the terminal; the last run's log + a running agent persist.
   const closeAgent = useCallback(() => setAgentOpen(false), [])
 
-  // Adopt orphan comments (Storybook comments land without a workspace).
   const adoptingRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     const iv = setInterval(async () => {
@@ -265,7 +250,6 @@ export function App() {
     return () => clearInterval(iv)
   }, [createWorkspace, refreshComments, ensureAgent])
 
-  // Fork = branch the current workspace (or base) into a parallel copy.
   const onFork = useCallback(async () => {
     setBusy("forking workspace…")
     try {
@@ -275,14 +259,8 @@ export function App() {
     }
   }, [createWorkspace, activeWorkspaceId])
 
-  const selectComponent = useCallback((sel: Selection) => {
-    setActive("component")
+  const onSelect = useCallback((sel: Selection) => {
     setSelection(sel)
-  }, [])
-
-  const selectBackend = useCallback((sel: BackendSel) => {
-    setActive("backend")
-    setBackendSel(sel)
   }, [])
 
   const openComment = useCallback(
@@ -291,8 +269,6 @@ export function App() {
   )
   const addComment = useCallback(
     async (target: string, label: string, text: string, mode: "code" | "arch", fork: boolean) => {
-      // Default: land on the current workspace (from Base, spin one up). With fork on,
-      // branch a new workspace from the current one so this change is isolated.
       let wsId = activeWorkspaceId
       if (fork || !wsId) wsId = await createWorkspace(wsId ?? undefined)
       await fetch("/api/comments", {
@@ -301,36 +277,36 @@ export function App() {
         body: JSON.stringify({ target, label, text, mode, workspaceId: wsId }),
       })
       await refreshComments()
-      if (wsId) ensureAgent(wsId, mode) // the change is declared → an agent starts addressing it in its mode
+      if (wsId) ensureAgent(wsId, mode)
     },
     [activeWorkspaceId, createWorkspace, refreshComments, ensureAgent]
   )
 
-  const components = view.components
-  const current = components.find((c) => c.name === selection.comp) ?? components[0]
+  const currentFile = view.files.find((f) => f.file === selection.file) ?? view.files[0]
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
 
   function setView(viewName: View) {
-    if (!current) return
-    if (viewName === "story") {
-      setSelection({ comp: current.name, view: viewName, storyId: selection.storyId ?? current.stories[0]?.id })
-    } else if (viewName === "captured") {
+    if (!currentFile) return
+    const comp = currentFile.component
+    if (viewName === "story" && comp) {
+      setSelection({ file: currentFile.file, view: viewName, storyId: selection.storyId ?? comp.stories[0]?.id })
+    } else if (viewName === "captured" && comp) {
       setSelection({
-        comp: current.name,
+        file: currentFile.file,
         view: viewName,
-        exportName: selection.exportName ?? current.captured[0]?.exportName,
+        exportName: selection.exportName ?? comp.captured[0]?.exportName,
       })
     } else {
-      setSelection({ comp: current.name, view: viewName })
+      setSelection({ file: currentFile.file, view: viewName })
     }
   }
 
   const onCapture = useCallback(
     async (storyId: string) => {
-      const comp = components.find((c) => c.stories.some((s) => s.id === storyId))
-      const story = comp?.stories.find((s) => s.id === storyId)
-      if (!comp || !story) return
-      setBusy(`capturing ${comp.name}/${story.exportName}…`)
+      const fe = view.files.find((f) => f.component?.stories.some((s) => s.id === storyId))
+      const story = fe?.component?.stories.find((s) => s.id === storyId)
+      if (!fe || !story) return
+      setBusy(`capturing ${fe.component!.name}/${story.exportName}…`)
       try {
         const res = await fetch("/api/capture", {
           method: "POST",
@@ -339,14 +315,16 @@ export function App() {
         })
         if (res.ok) {
           await refresh()
-          setSelection({ comp: comp.name, view: "captured", exportName: story.exportName })
+          setSelection({ file: fe.file, view: "captured", exportName: story.exportName })
         }
       } finally {
         setBusy(null)
       }
     },
-    [components, refresh]
+    [view.files, refresh]
   )
+
+  const nComps = view.files.filter((f) => f.component).length
 
   return (
     <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`}>
@@ -377,13 +355,9 @@ export function App() {
 
       <aside className="sidebar">
         <SidebarTree
-          components={components}
-          backend={view.backend}
-          active={active}
+          files={view.files}
           selection={selection}
-          backendSel={backendSel}
-          onSelectComponent={selectComponent}
-          onSelectBackend={selectBackend}
+          onSelect={onSelect}
           comments={commentsByTarget}
           onComment={openComment}
           diff={diff}
@@ -398,17 +372,9 @@ export function App() {
             workspace={workspaceIndex}
             onClose={() => setArchDiffOpen(false)}
           />
-        ) : active === "backend" && backendSel ? (
-          <BackendPanel
-            backend={view.backend}
-            selection={backendSel}
-            comments={commentsByTarget}
-            onComment={openComment}
-            diff={diff}
-          />
-        ) : current ? (
+        ) : currentFile ? (
           <ContentPanel
-            component={current}
+            file={currentFile}
             selection={selection}
             storybookUrl={index.storybookUrl}
             onView={setView}
@@ -418,7 +384,7 @@ export function App() {
             diff={diff}
           />
         ) : (
-          <div className="empty">No components indexed.</div>
+          <div className="empty">No files indexed.</div>
         )}
         {agentOpen && (
           <AgentPanel events={agentEvents} running={agentRunning} onClose={closeAgent} />
@@ -463,7 +429,7 @@ export function App() {
           )}
           {"   "}
           {busy ??
-            `${components.length} components · ${view.backend.length} backend files · ${comments.length} comments · ${workspaces.length} workspaces`}
+            `${view.files.length} files · ${nComps} components · ${comments.length} comments · ${workspaces.length} workspaces`}
         </span>
       </footer>
 

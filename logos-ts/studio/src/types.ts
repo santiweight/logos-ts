@@ -1,3 +1,9 @@
+export interface TestRef {
+  name: string
+  file: string
+  description?: string
+  code: string
+}
 export interface StoryNode {
   id: string
   exportName: string
@@ -7,28 +13,14 @@ export interface CapturedNode {
   testFile: string
   snapshot: string | null
 }
-export interface ComponentEntry {
+export interface BackendMethod {
   name: string
-  file: string
-  storiesFile: string
   signature: string
-  componentCode: string
-  propsName?: string
-  propsCode?: string
-  propsFields: { name: string; type: string }[]
-  deps: string[]
-  stories: StoryNode[]
-  captured: CapturedNode[]
+  code: string
+  tests: TestRef[]
 }
 
-// ---- backend ----
-export interface TestRef {
-  name: string
-  file: string
-  description?: string
-  code: string
-}
-export interface BackendFn {
+export interface FileFn {
   kind: "function"
   name: string
   signature: string
@@ -36,13 +28,7 @@ export interface BackendFn {
   deps: string[]
   tests: TestRef[]
 }
-export interface BackendMethod {
-  name: string
-  signature: string
-  code: string
-  tests: TestRef[]
-}
-export interface BackendClass {
+export interface FileClass {
   kind: "class"
   name: string
   fields: { name: string; type: string }[]
@@ -51,32 +37,39 @@ export interface BackendClass {
   tests: TestRef[]
   code: string
 }
-export type BackendItem = BackendFn | BackendClass
-export interface BackendFile {
+export type FileItem = FileFn | FileClass
+
+export interface FileEntry {
   file: string
   code: string
-  items: BackendItem[]
+  items: FileItem[]
+  // component enrichment (present when a Storybook story targets a symbol in this file)
+  component?: {
+    name: string
+    signature: string
+    componentCode: string
+    propsName?: string
+    propsCode?: string
+    propsFields: { name: string; type: string }[]
+    stories: StoryNode[]
+    captured: CapturedNode[]
+  }
 }
 
 export interface StudioIndex {
   root: string
   storybookUrl: string
-  components: ComponentEntry[]
-  backend: BackendFile[]
+  files: FileEntry[]
 }
 
 export type View = "code" | "arch" | "story" | "captured"
 
 export interface Selection {
-  comp: string
+  file: string
+  symbol?: string
   view: View
   storyId?: string
   exportName?: string
-}
-
-// Backend nodes are addressed by name only — no file, no method paths.
-export interface BackendSel {
-  symbol: string
 }
 
 export interface Comment {
@@ -119,8 +112,6 @@ export interface TestState {
   runningSince: number | null
 }
 
-// A workspace = a branch: a cheap copy of the whole index that accumulates
-// changes (comments). Iterate by adding comments to it; Fork to branch.
 export interface WorkspaceMeta {
   id: string
   name: string

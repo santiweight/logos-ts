@@ -2,75 +2,59 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { ICONS } from "./icons"
 import { Tree, type NodeApi, type NodeRendererProps } from "react-arborist"
 import type {
-  BackendFile,
-  BackendItem,
-  BackendSel,
   Comment,
-  ComponentEntry,
   DiffStatus,
+  FileEntry,
+  FileItem,
   Selection,
   TestState,
   View,
 } from "./types"
 
-// ---- one flat node type for the whole sidebar (components + backend) ----
-type Kind = "section" | "dir" | "file" | "fn" | "cls" | "comp" | "story" | "captured"
+type Kind = "dir" | "file" | "fn" | "cls" | "comp" | "story" | "captured" | "section"
 
 interface SNode {
   id: string
   name: string
   kind: Kind
   children?: SNode[]
-  // diff + comment routing
-  target?: string // stable tag shared with comments/diff, e.g. "fn:parseJob"
-  label?: string // comment-popup label
+  target?: string
+  label?: string
   status?: DiffStatus
   comments?: number
-  // badges
   tests?: number
   testStatus?: "pass" | "fail"
   fns?: number
   stories?: number
-  // selection routing
-  sel?:
-    | { type: "component"; value: Selection }
-    | { type: "backend"; value: BackendSel }
+  sel?: Selection
 }
 
 interface Props {
-  components: ComponentEntry[]
-  backend: BackendFile[]
-  active: "component" | "backend"
+  files: FileEntry[]
   selection: Selection
-  backendSel: BackendSel | null
-  onSelectComponent: (sel: Selection) => void
-  onSelectBackend: (sel: BackendSel) => void
+  onSelect: (sel: Selection) => void
   comments: Record<string, Comment[] | undefined>
   onComment: (target: string, label: string, x: number, y: number) => void
   diff: Record<string, DiffStatus>
   testState: TestState | null
 }
 
-// Context lets the (static) arborist node renderer reach the live callbacks
-// + the currently-selected id without re-creating the renderer each render.
 interface Ctx {
   selectedId: string | null
   testsRunning: boolean
   onComment: Props["onComment"]
-  onSelectComponent: Props["onSelectComponent"]
-  onSelectBackend: Props["onSelectBackend"]
+  onSelect: Props["onSelect"]
 }
 const SidebarCtx = createContext<Ctx>({
   selectedId: null,
   testsRunning: false,
   onComment: () => {},
-  onSelectComponent: () => {},
-  onSelectBackend: () => {},
+  onSelect: () => {},
 })
 
-const testsOf = (it: BackendItem): number =>
+const testsOf = (it: FileItem): number =>
   it.kind === "class"
-    ? it.tests.length + it.methods.reduce((n, m) => n + m.tests.length, 0)
+    ? it.tests.length + (it.methods ?? []).reduce((n, m) => n + m.tests.length, 0)
     : it.tests.length
 
 function rollUpTestStatus(children: SNode[] | undefined): "pass" | "fail" | undefined {
@@ -83,74 +67,18 @@ function rollUpTestStatus(children: SNode[] | undefined): "pass" | "fail" | unde
   return hasTested ? "pass" : undefined
 }
 
-// ---- build the nested data + the set of ids open by default ----
 function buildData(
-  components: ComponentEntry[],
-  backend: BackendFile[],
+  files: FileEntry[],
   diff: Record<string, DiffStatus>,
   comments: Props["comments"],
   failingTests: Set<string> | null
 ): { data: SNode[]; openIds: Record<string, boolean> } {
-  const openIds: Record<string, boolean> = { "sec:components": true, "sec:backend": true }
+  const openIds: Record<string, boolean> = {}
   const cCount = (target: string) => comments[target]?.length ?? 0
 
-  // COMPONENTS
   const failingFiles = failingTests
     ? new Set([...failingTests].map((k) => k.slice(0, k.indexOf(":"))))
     : null
-
-  const compNodes: SNode[] = components.map((c) => {
-    const status = diff[`component:${c.name}`] ?? (c.propsName ? diff[`props:${c.propsName}`] : undefined)
-    const stories: SNode[] = c.stories.map((s) => ({
-      id: `story:${s.id}`,
-      name: s.exportName,
-      kind: "story",
-      sel: { type: "component", value: { comp: c.name, view: "story" as View, storyId: s.id } },
-    }))
-    const captured: SNode[] = c.captured.map((cap) => {
-      const capStatus: "pass" | "fail" | undefined = failingFiles
-        ? failingFiles.has(cap.testFile) ? "fail" : "pass"
-        : undefined
-      return {
-        id: `cap:${c.name}:${cap.exportName}`,
-        name: cap.exportName,
-        kind: "captured",
-        testStatus: capStatus,
-        sel: {
-          type: "component",
-          value: { comp: c.name, view: "captured" as View, exportName: cap.exportName },
-        },
-      }
-    })
-    const kids = [...stories, ...captured]
-    return {
-      id: `comp:${c.name}`,
-      name: c.name,
-      kind: "comp",
-      status,
-      stories: c.stories.length,
-      testStatus: rollUpTestStatus(captured),
-      sel: { type: "component", value: { comp: c.name, view: "code" as View } },
-      children: kids.length ? kids : undefined,
-    }
-  })
-
-  // BACKEND — group files into a directory tree, then map to SNodes
-  interface Dir {
-    dirs: Map<string, Dir>
-    files: BackendFile[]
-  }
-  const root: Dir = { dirs: new Map(), files: [] }
-  for (const f of backend) {
-    const parts = f.file.replace(/^backend\//, "").split("/")
-    let cur = root
-    for (let i = 0; i < parts.length - 1; i++) {
-      const d = parts[i]
-      if (!cur.dirs.has(d)) cur.dirs.set(d, { dirs: new Map(), files: [] })
-      cur = cur.dirs.get(d)!
-    }
-    cur.files.push(f)
-  }
 
   const isTestFailing = (t: { name: string; file: string }): boolean => {
     if (!failingTests) return false
@@ -164,24 +92,24 @@ function buildData(
     return false
   }
 
-  const symTestStatus = (it: BackendItem): "pass" | "fail" | undefined => {
+  const symTestStatus = (it: FileItem): "pass" | "fail" | undefined => {
     if (!failingTests) return undefined
     const allTests =
       it.kind === "class"
-        ? [...it.tests, ...it.methods.flatMap((m) => m.tests)]
+        ? [...it.tests, ...(it.methods ?? []).flatMap((m) => m.tests)]
         : it.tests
     if (allTests.length === 0) return undefined
     return allTests.some(isTestFailing) ? "fail" : "pass"
   }
 
-  const symNode = (it: BackendItem): SNode => {
+  const symNode = (it: FileItem, file: string): SNode => {
     const isClass = it.kind === "class"
     const target = `${isClass ? "cls" : "fn"}:${it.name}`
     let status = diff[target]
-    if (!status && isClass && it.methods.some((m) => diff[`method:${it.name}.${m.name}`]))
+    if (!status && isClass && (it.methods ?? []).some((m) => diff[`method:${it.name}.${m.name}`]))
       status = "changed"
     return {
-      id: `sym:${it.name}`,
+      id: `sym:${file}:${it.name}`,
       name: it.name,
       kind: isClass ? "cls" : "fn",
       target,
@@ -190,15 +118,52 @@ function buildData(
       tests: testsOf(it),
       testStatus: symTestStatus(it),
       comments: cCount(target),
-      sel: { type: "backend", value: { symbol: it.name } },
+      sel: { file, symbol: it.name, view: "code" },
     }
   }
 
-  const fileNode = (f: BackendFile): SNode => {
+  const fileNode = (f: FileEntry): SNode => {
     const name = f.file.split("/").pop() ?? f.file
     const target = `file:${f.file}`
+    const children: SNode[] = []
+
+    if (f.component) {
+      const comp = f.component
+      const compTarget = `component:${comp.name}`
+      const status = diff[compTarget] ?? (comp.propsName ? diff[`props:${comp.propsName}`] : undefined)
+      const storyNodes: SNode[] = comp.stories.map((s) => ({
+        id: `story:${s.id}`,
+        name: s.exportName,
+        kind: "story" as Kind,
+        sel: { file: f.file, view: "story" as View, storyId: s.id },
+      }))
+      const capturedNodes: SNode[] = comp.captured.map((cap) => {
+        const capStatus: "pass" | "fail" | undefined = failingFiles
+          ? failingFiles.has(cap.testFile) ? "fail" : "pass"
+          : undefined
+        return {
+          id: `cap:${comp.name}:${cap.exportName}`,
+          name: cap.exportName,
+          kind: "captured" as Kind,
+          testStatus: capStatus,
+          sel: { file: f.file, view: "captured" as View, exportName: cap.exportName },
+        }
+      })
+      children.push({
+        id: `comp:${comp.name}`,
+        name: comp.name,
+        kind: "comp",
+        status,
+        stories: comp.stories.length,
+        testStatus: rollUpTestStatus(capturedNodes),
+        sel: { file: f.file, view: "code" },
+        children: [...storyNodes, ...capturedNodes].length ? [...storyNodes, ...capturedNodes] : undefined,
+      })
+    }
+
     const items = f.items.slice().sort((a, b) => a.name.localeCompare(b.name))
-    const children = items.map(symNode)
+    for (const it of items) children.push(symNode(it, f.file))
+
     return {
       id: `file:${f.file}`,
       name,
@@ -206,18 +171,36 @@ function buildData(
       target,
       label: name,
       comments: cCount(target),
-      fns: f.items.length,
+      fns: f.items.length + (f.component ? 1 : 0),
       tests: f.items.reduce((n, it) => n + testsOf(it), 0),
       testStatus: rollUpTestStatus(children),
-      children,
+      children: children.length ? children : undefined,
+      sel: { file: f.file, view: "code" },
     }
+  }
+
+  // Group files into a directory tree
+  interface Dir {
+    dirs: Map<string, Dir>
+    files: FileEntry[]
+  }
+  const root: Dir = { dirs: new Map(), files: [] }
+  for (const f of files) {
+    const parts = f.file.split("/")
+    let cur = root
+    for (let i = 0; i < parts.length - 1; i++) {
+      const d = parts[i]
+      if (!cur.dirs.has(d)) cur.dirs.set(d, { dirs: new Map(), files: [] })
+      cur = cur.dirs.get(d)!
+    }
+    cur.files.push(f)
   }
 
   const dirNodes = (dir: Dir, path: string): SNode[] => {
     const out: SNode[] = []
     for (const [n, d] of [...dir.dirs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
       const p = path ? `${path}/${n}` : n
-      const target = `dir:backend/${p}`
+      const target = `dir:${p}`
       const id = `dir:${p}`
       openIds[id] = true
       const children = dirNodes(d, p)
@@ -236,15 +219,11 @@ function buildData(
     return out
   }
 
-  const data: SNode[] = [
-    { id: "sec:components", name: "COMPONENTS", kind: "section", children: compNodes },
-    { id: "sec:backend", name: "BACKEND", kind: "section", children: dirNodes(root, "") },
-  ]
+  const data = dirNodes(root, "")
   return { data, openIds }
 }
 
 const GLYPH: Record<Kind, ReactNode> = {
-  section: "",
   dir: ICONS.dir,
   file: ICONS.file,
   fn: ICONS.fn,
@@ -252,11 +231,12 @@ const GLYPH: Record<Kind, ReactNode> = {
   comp: ICONS.comp,
   story: ICONS.story,
   captured: ICONS.captured,
+  section: "§",
 }
 
 function Node({ node, style }: NodeRendererProps<SNode>) {
   const d = node.data
-  const { selectedId, testsRunning, onComment, onSelectComponent, onSelectBackend } = useContext(SidebarCtx)
+  const { selectedId, testsRunning, onComment, onSelect } = useContext(SidebarCtx)
   const isActive = selectedId === d.id
   const showDot = d.testStatus && (node.isLeaf || !node.isOpen)
 
@@ -267,8 +247,7 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
       onComment(d.target, d.label ?? d.name, e.clientX, e.clientY)
       return
     }
-    if (d.sel?.type === "component") onSelectComponent(d.sel.value)
-    else if (d.sel?.type === "backend") onSelectBackend(d.sel.value)
+    if (d.sel) onSelect(d.sel)
     if (!node.isLeaf) node.toggle()
   }
 
@@ -289,7 +268,7 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
       ) : (
         <span className="glyph-slot" />
       )}
-      {d.kind !== "section" && <span className="glyph">{GLYPH[d.kind]}</span>}
+      {<span className="glyph">{GLYPH[d.kind]}</span>}
       <span className="label">
         {d.name}
         {d.kind === "captured" && <em> ⟨captured⟩</em>}
@@ -325,18 +304,15 @@ function useSize() {
 }
 
 export function SidebarTree({
-  components,
-  backend,
-  active,
+  files,
   selection,
-  backendSel,
-  onSelectComponent,
-  onSelectBackend,
+  onSelect,
   comments,
   onComment,
   diff,
   testState,
 }: Props) {
+  const [term, setTerm] = useState("")
   const results = testState?.results ?? null
   const testsRunning = testState?.status === "running"
   const failingTests = useMemo(() => {
@@ -346,32 +322,43 @@ export function SidebarTree({
     return set
   }, [results])
   const { data, openIds } = useMemo(
-    () => buildData(components, backend, diff, comments, failingTests),
-    [components, backend, diff, comments, failingTests]
+    () => buildData(files, diff, comments, failingTests),
+    [files, diff, comments, failingTests]
   )
 
-  const selectedId =
-    active === "backend"
-      ? backendSel
-        ? `sym:${backendSel.symbol}`
-        : null
-      : selection.view === "code"
-        ? `comp:${selection.comp}`
-        : selection.view === "story"
-          ? `story:${selection.storyId}`
-          : selection.view === "captured"
-            ? `cap:${selection.comp}:${selection.exportName}`
-            : null
+  const selectedId = selection.symbol
+    ? `sym:${selection.file}:${selection.symbol}`
+    : selection.view === "story"
+      ? `story:${selection.storyId}`
+      : selection.view === "captured"
+        ? (() => {
+            const fe = files.find((f) => f.file === selection.file)
+            return fe?.component ? `cap:${fe.component.name}:${selection.exportName}` : null
+          })()
+        : `file:${selection.file}`
 
   const ctx = useMemo<Ctx>(
-    () => ({ selectedId, testsRunning, onComment, onSelectComponent, onSelectBackend }),
-    [selectedId, testsRunning, onComment, onSelectComponent, onSelectBackend]
+    () => ({ selectedId, testsRunning, onComment, onSelect }),
+    [selectedId, testsRunning, onComment, onSelect]
   )
 
   const [ref, size] = useSize()
 
   return (
     <SidebarCtx.Provider value={ctx}>
+      <div className="sidebar-search">
+        <input
+          className="sidebar-search-input"
+          placeholder="Filter files & symbols…"
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+        />
+        {term && (
+          <button className="sidebar-search-clear" onClick={() => setTerm("")} title="Clear">
+            ✕
+          </button>
+        )}
+      </div>
       <div className="sidebar-tree" ref={ref}>
         <Tree<SNode>
           data={data}
@@ -386,6 +373,8 @@ export function SidebarTree({
           disableDrag
           disableDrop
           disableEdit
+          searchTerm={term}
+          searchMatch={(node, t) => node.data.name.toLowerCase().includes(t.toLowerCase())}
         >
           {Node}
         </Tree>

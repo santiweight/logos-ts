@@ -190,11 +190,7 @@ function buildElkGraph(
   }
 
   const topChildren: ElkNode[] = []
-  const order = ["frontend", "shared", "backend"]
-  const sorted = [...dirTree.children.entries()].sort((a, b) =>
-    (order.indexOf(a[0]) === -1 ? 99 : order.indexOf(a[0])) -
-    (order.indexOf(b[0]) === -1 ? 99 : order.indexOf(b[0]))
-  )
+  const sorted = [...dirTree.children.entries()].sort((a, b) => a[0].localeCompare(b[0]))
 
   for (const [dirName, dt] of sorted) {
     topChildren.push(buildDirElk(dirName, dt, `dir:${dirName}`))

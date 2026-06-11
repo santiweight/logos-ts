@@ -3,29 +3,32 @@ import type { StudioIndex } from "./types"
 export function indexToArchText(index: StudioIndex): string {
   const lines: string[] = []
 
-  for (const f of index.backend) {
+  for (const f of index.files) {
+    const hasItems = f.items.length > 0 || f.component
+    if (!hasItems) continue
+
     lines.push(`// ${f.file}`)
+
     for (const it of f.items) {
       if (it.kind === "function") {
         lines.push(`declare function ${it.signature}`)
       } else {
         lines.push(`declare class ${it.name} {`)
-        for (const field of it.fields) lines.push(`  ${field.name}: ${field.type}`)
-        for (const m of it.methods) lines.push(`  ${m.signature}`)
+        for (const field of it.fields ?? []) lines.push(`  ${field.name}: ${field.type}`)
+        for (const m of it.methods ?? []) lines.push(`  ${m.signature}`)
         lines.push(`}`)
       }
     }
-    lines.push("")
-  }
 
-  for (const c of index.components) {
-    lines.push(`// component: ${c.file}`)
-    lines.push(`declare function ${c.signature}`)
-    if (c.propsName) {
-      lines.push(`interface ${c.propsName} {`)
-      for (const f of c.propsFields) lines.push(`  ${f.name}: ${f.type}`)
-      lines.push(`}`)
+    if (f.component) {
+      lines.push(`declare function ${f.component.signature}`)
+      if (f.component.propsName) {
+        lines.push(`interface ${f.component.propsName} {`)
+        for (const p of f.component.propsFields) lines.push(`  ${p.name}: ${p.type}`)
+        lines.push(`}`)
+      }
     }
+
     lines.push("")
   }
 
@@ -43,7 +46,6 @@ export function lineDiff(a: string, b: string): DiffLine[] {
   const n = aLines.length
   const m = bLines.length
 
-  // Myers-style LCS via DP for simplicity (fine for architecture-sized texts)
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
   for (let i = n - 1; i >= 0; i--)
     for (let j = m - 1; j >= 0; j--)

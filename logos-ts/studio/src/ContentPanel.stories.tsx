@@ -1,13 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { ContentPanel } from "./ContentPanel"
-import type { ComponentEntry } from "./types"
+import type { FileEntry } from "./types"
 
-const component: ComponentEntry = {
-  name: "JobCard",
+const file: FileEntry = {
   file: "src/components/JobCard.tsx",
-  storiesFile: "src/components/JobCard.stories.tsx",
-  signature: "JobCard(props: JobCardProps)",
-  componentCode: `export const JobCard: FC<JobCardProps> = ({ title, company, remote, tags, postedAt }) => {
+  code: `export const JobCard: FC<JobCardProps> = ({ title, company, remote, tags, postedAt }) => {
   const formatted = formatDate(postedAt)
   return (
     <article className="job-card">
@@ -23,29 +20,30 @@ const component: ComponentEntry = {
     </article>
   )
 }`,
-  propsName: "JobCardProps",
-  propsCode: `interface JobCardProps {
-  title: string
-  company: string
-  remote?: boolean
-  tags: string[]
-  postedAt: number
-}`,
-  propsFields: [
-    { name: "title", type: "string" },
-    { name: "company", type: "string" },
-    { name: "remote?", type: "boolean" },
-    { name: "tags", type: "string[]" },
-    { name: "postedAt", type: "number" },
+  items: [
+    { kind: "function", name: "JobCard", signature: "JobCard(props: JobCardProps)", code: "", deps: [], tests: [] },
   ],
-  deps: ["formatDate", "Badge", "Chip"],
-  stories: [
-    { id: "jobcard--default", exportName: "Default" },
-    { id: "jobcard--remote", exportName: "Remote" },
-  ],
-  captured: [
-    { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: '<article class="job-card"><header><h3>Senior Engineer</h3><span class="company">Acme</span></header></article>' },
-  ],
+  component: {
+    name: "JobCard",
+    signature: "JobCard(props: JobCardProps)",
+    componentCode: `export const JobCard: FC<JobCardProps> = ({ title, company }) => <article>{title}</article>`,
+    propsName: "JobCardProps",
+    propsCode: `interface JobCardProps { title: string; company: string; remote?: boolean; tags: string[]; postedAt: number }`,
+    propsFields: [
+      { name: "title", type: "string" },
+      { name: "company", type: "string" },
+      { name: "remote?", type: "boolean" },
+      { name: "tags", type: "string[]" },
+      { name: "postedAt", type: "number" },
+    ],
+    stories: [
+      { id: "jobcard--default", exportName: "Default" },
+      { id: "jobcard--remote", exportName: "Remote" },
+    ],
+    captured: [
+      { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: '<article class="job-card"><header><h3>Senior Engineer</h3></header></article>' },
+    ],
+  },
 }
 
 const noop = () => {}
@@ -60,8 +58,8 @@ const meta: Meta<typeof ContentPanel> = {
     ),
   ],
   args: {
-    component,
-    selection: { comp: "JobCard", view: "code" },
+    file,
+    selection: { file: "src/components/JobCard.tsx", view: "code" },
     storybookUrl: "",
     onView: noop,
     onCapture: noop,
@@ -78,13 +76,13 @@ export const CodeView: Story = {}
 
 export const CapturedView: Story = {
   args: {
-    selection: { comp: "JobCard", view: "captured", exportName: "Default" },
+    selection: { file: "src/components/JobCard.tsx", view: "captured", exportName: "Default" },
   },
 }
 
 export const StoryView: Story = {
   args: {
-    selection: { comp: "JobCard", view: "story", storyId: "jobcard--default" },
+    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: "jobcard--default" },
     storybookUrl: "http://localhost:6006",
   },
 }

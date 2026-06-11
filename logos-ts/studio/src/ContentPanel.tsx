@@ -1,9 +1,9 @@
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { GraphView } from "./GraphView"
-import type { CommentApi, ComponentEntry, DiffStatus, Selection, View } from "./types"
+import type { CommentApi, DiffStatus, FileEntry, FileItem, Selection, View } from "./types"
 
 interface Props {
-  component: ComponentEntry
+  file: FileEntry
   selection: Selection
   storybookUrl: string
   onView: (view: View) => void
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function ContentPanel({
-  component,
+  file,
   selection,
   storybookUrl,
   onView,
@@ -23,15 +23,26 @@ export function ContentPanel({
   onComment,
   diff,
 }: Props) {
-  const tabs: View[] = ["code", "arch", "story", "captured"]
-  const label =
-    selection.view === "arch"
-      ? `${component.name} / arch`
-      : selection.view === "story"
-        ? `${component.name} / ${storyExport(component, selection.storyId)}`
-        : selection.view === "captured"
-          ? `${component.name} / ${selection.exportName} ⟨captured⟩`
-          : component.name
+  const comp = file.component
+  const symbol = selection.symbol
+    ? file.items.find((it) => it.name === selection.symbol)
+    : null
+
+  const tabs: View[] = comp
+    ? ["code", "arch", "story", "captured"]
+    : ["code", "arch"]
+
+  const label = symbol
+    ? `${file.file} / ${symbol.kind === "class" ? "⬚" : "ƒ"} ${symbol.name}`
+    : comp && selection.view === "arch"
+      ? `${comp.name} / arch`
+      : comp && selection.view === "story"
+        ? `${comp.name} / ${storyExport(comp, selection.storyId)}`
+        : comp && selection.view === "captured"
+          ? `${comp.name} / ${selection.exportName} ⟨captured⟩`
+          : comp
+            ? comp.name
+            : file.file
 
   return (
     <CommentCtx.Provider value={{ comments, onComment }}>
@@ -53,18 +64,20 @@ export function ContentPanel({
         </header>
 
         <div className="content-body">
-          {selection.view === "code" && <CodeView component={component} />}
-          {selection.view === "arch" && <GraphView focusFile={component.file} />}
-          {selection.view === "story" && (
+          {selection.view === "arch" && <GraphView focusFile={file.file} />}
+          {selection.view === "story" && comp && (
             <StoryView
               storyId={selection.storyId}
               storybookUrl={storybookUrl}
               onCapture={onCapture}
             />
           )}
-          {selection.view === "captured" && (
-            <CapturedView component={component} exportName={selection.exportName} />
+          {selection.view === "captured" && comp && (
+            <CapturedView component={comp} exportName={selection.exportName} />
           )}
+          {selection.view === "code" && symbol && <SymbolView item={symbol} />}
+          {selection.view === "code" && !symbol && comp && <ComponentCodeView component={comp} />}
+          {selection.view === "code" && !symbol && !comp && <FileCodeView file={file} />}
         </div>
       </section>
       </DiffCtx.Provider>
@@ -72,11 +85,11 @@ export function ContentPanel({
   )
 }
 
-function storyExport(c: ComponentEntry, storyId?: string): string {
+function storyExport(c: NonNullable<FileEntry["component"]>, storyId?: string): string {
   return c.stories.find((s) => s.id === storyId)?.exportName ?? c.stories[0]?.exportName ?? "—"
 }
 
-function CodeView({ component }: { component: ComponentEntry }) {
+function ComponentCodeView({ component }: { component: NonNullable<FileEntry["component"]> }) {
   const fieldsDesc = component.propsFields.map((f) => `${f.name}: ${f.type}`).join("\n")
   return (
     <div className="content-body">
@@ -101,8 +114,124 @@ function CodeView({ component }: { component: ComponentEntry }) {
           />
         )}
       </div>
-      <div className="deps">
-        deps → {component.deps.map((d) => d.split("#")[1] ?? d).join(" · ") || "—"}
+    </div>
+  )
+}
+
+function SymbolView({ item }: { item: FileItem }) {
+  if (item.kind === "function") {
+    return (
+      <div className="content-body">
+        <div className="rows">
+          <Row
+            tag="impl"
+            tagClass="impl"
+            title={item.signature}
+            code={item.code}
+            target={`fn:${item.name}`}
+            label={`ƒ ${item.name}`}
+          />
+          {item.tests.map((t) => (
+            <Row
+              key={t.name}
+              tag="test"
+              tagClass="test"
+              title={t.name}
+              desc={t.description}
+              code={t.code}
+              indent
+              target={`test:${t.file}::${t.name}`}
+              label={`test · ${t.name}`}
+            />
+          ))}
+        </div>
+        <div className="deps">deps → {item.deps.join(" · ") || "—"}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="content-body">
+      <div className="rows">
+        <Row
+          tag="class"
+          tagClass="cls"
+          title={`class ${item.name}`}
+          code={item.code}
+          target={`cls:${item.name}`}
+          label={`⬚ ${item.name}`}
+        />
+        {item.tests.map((t) => (
+          <Row
+            key={t.name}
+            tag="test"
+            tagClass="test"
+            title={t.name}
+            desc={t.description}
+            code={t.code}
+            indent
+            target={`test:${t.file}::${t.name}`}
+            label={`test · ${t.name}`}
+          />
+        ))}
+        {(item.methods ?? []).map((m) => (
+          <div key={m.name}>
+            <Row
+              tag="method"
+              tagClass="method"
+              title={m.signature}
+              code={m.code}
+              target={`method:${item.name}.${m.name}`}
+              label={`· ${m.name}`}
+            />
+            {m.tests.map((t) => (
+              <Row
+                key={t.name}
+                tag="test"
+                tagClass="test"
+                title={t.name}
+                desc={t.description}
+                code={t.code}
+                indent
+                target={`test:${t.file}::${t.name}`}
+                label={`test · ${t.name}`}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="deps">deps → {item.deps.join(" · ") || "—"}</div>
+    </div>
+  )
+}
+
+function FileCodeView({ file }: { file: FileEntry }) {
+  return (
+    <div className="content-body">
+      <div className="rows">
+        {file.items.map((it) =>
+          it.kind === "function" ? (
+            <Row
+              key={it.name}
+              tag="fn"
+              tagClass="impl"
+              title={it.signature}
+              code={it.code}
+              target={`fn:${it.name}`}
+              label={`ƒ ${it.name}`}
+            />
+          ) : (
+            <Row
+              key={it.name}
+              tag="class"
+              tagClass="cls"
+              title={`class ${it.name}`}
+              code={it.code}
+              target={`cls:${it.name}`}
+              label={`⬚ ${it.name}`}
+            />
+          )
+        )}
       </div>
     </div>
   )
@@ -128,6 +257,9 @@ function StoryView({
         </button>
       </div>
       <iframe className="story-frame" src={src} title={storyId} />
+      <div className="hint">
+        Requires a Storybook dev server running for this project.
+      </div>
     </div>
   )
 }
@@ -136,7 +268,7 @@ function CapturedView({
   component,
   exportName,
 }: {
-  component: ComponentEntry
+  component: NonNullable<FileEntry["component"]>
   exportName?: string
 }) {
   const cap = component.captured.find((c) => c.exportName === exportName) ?? component.captured[0]

@@ -1,83 +1,64 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { SidebarTree } from "./SidebarTree"
-import type { BackendFile, ComponentEntry, Comment, TestState } from "./types"
+import type { FileEntry, Comment, TestState } from "./types"
 
-const components: ComponentEntry[] = [
+const files: FileEntry[] = [
   {
-    name: "JobCard",
     file: "src/components/JobCard.tsx",
-    storiesFile: "src/components/JobCard.stories.tsx",
-    signature: "JobCard(props: JobCardProps)",
-    componentCode: "export const JobCard = ...",
-    propsName: "JobCardProps",
-    propsCode: "interface JobCardProps { ... }",
-    propsFields: [
-      { name: "title", type: "string" },
-      { name: "company", type: "string" },
-      { name: "remote?", type: "boolean" },
+    code: "export const JobCard = ...",
+    items: [
+      { kind: "function", name: "JobCard", signature: "JobCard(props: JobCardProps)", code: "", deps: [], tests: [] },
     ],
-    deps: ["formatDate", "Badge"],
-    stories: [
-      { id: "jobcard--default", exportName: "Default" },
-      { id: "jobcard--remote", exportName: "Remote" },
-    ],
-    captured: [
-      { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: null },
-    ],
+    component: {
+      name: "JobCard",
+      signature: "JobCard(props: JobCardProps)",
+      componentCode: "export const JobCard = ...",
+      propsName: "JobCardProps",
+      propsCode: "interface JobCardProps { ... }",
+      propsFields: [
+        { name: "title", type: "string" },
+        { name: "company", type: "string" },
+      ],
+      stories: [
+        { id: "jobcard--default", exportName: "Default" },
+        { id: "jobcard--remote", exportName: "Remote" },
+      ],
+      captured: [
+        { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: null },
+      ],
+    },
   },
   {
-    name: "FilterBar",
     file: "src/components/FilterBar.tsx",
-    storiesFile: "src/components/FilterBar.stories.tsx",
-    signature: "FilterBar(props: FilterBarProps)",
-    componentCode: "export const FilterBar = ...",
-    propsName: "FilterBarProps",
-    propsFields: [
-      { name: "filters", type: "Filter[]" },
-      { name: "onChange", type: "(f: Filter[]) => void" },
+    code: "export const FilterBar = ...",
+    items: [
+      { kind: "function", name: "FilterBar", signature: "FilterBar(props: FilterBarProps)", code: "", deps: [], tests: [] },
     ],
-    deps: ["Chip", "useFilters"],
-    stories: [{ id: "filterbar--default", exportName: "Default" }],
-    captured: [],
+    component: {
+      name: "FilterBar",
+      signature: "FilterBar(props: FilterBarProps)",
+      componentCode: "export const FilterBar = ...",
+      propsFields: [
+        { name: "filters", type: "Filter[]" },
+        { name: "onChange", type: "(f: Filter[]) => void" },
+      ],
+      stories: [{ id: "filterbar--default", exportName: "Default" }],
+      captured: [],
+    },
   },
-  {
-    name: "Badge",
-    file: "src/components/Badge.tsx",
-    storiesFile: "src/components/Badge.stories.tsx",
-    signature: "Badge(props: BadgeProps)",
-    componentCode: "export const Badge = ...",
-    propsFields: [{ name: "label", type: "string" }],
-    deps: [],
-    stories: [
-      { id: "badge--default", exportName: "Default" },
-      { id: "badge--accent", exportName: "Accent" },
-      { id: "badge--muted", exportName: "Muted" },
-    ],
-    captured: [],
-  },
-]
-
-const backend: BackendFile[] = [
   {
     file: "backend/api/jobs.ts",
     code: "...",
     items: [
-      { kind: "function", name: "parseJob", signature: "parseJob(raw: RawJob): Job", code: "...", deps: ["sanitize"], tests: [{ name: "parses valid job", file: "backend/api/jobs.test.ts", code: "..." }] },
-      { kind: "function", name: "filterJobs", signature: "filterJobs(jobs: Job[], q: Query): Job[]", code: "...", deps: [], tests: [] },
-    ],
-  },
-  {
-    file: "backend/api/search.ts",
-    code: "...",
-    items: [
-      { kind: "function", name: "searchIndex", signature: "searchIndex(q: string): Result[]", code: "...", deps: ["tokenize"], tests: [{ name: "returns matches", file: "backend/api/search.test.ts", code: "..." }] },
+      { kind: "function", name: "parseJob", signature: "parseJob(raw: RawJob): Job", code: "", deps: [], tests: [] },
+      { kind: "function", name: "filterJobs", signature: "filterJobs(jobs: Job[], q: Query): Job[]", code: "", deps: [], tests: [] },
     ],
   },
   {
     file: "backend/models/JobStore.ts",
     code: "...",
     items: [
-      { kind: "class", name: "JobStore", fields: [{ name: "jobs", type: "Job[]" }], methods: [{ name: "add", signature: "add(j: Job): void", code: "...", tests: [] }, { name: "find", signature: "find(id: string): Job | undefined", code: "...", tests: [{ name: "finds by id", file: "backend/models/JobStore.test.ts", code: "..." }] }], deps: ["Job"], tests: [{ name: "constructs empty", file: "backend/models/JobStore.test.ts", code: "..." }], code: "..." },
+      { kind: "class", name: "JobStore", fields: [], methods: [], deps: [], tests: [], code: "" },
     ],
   },
 ]
@@ -94,13 +75,9 @@ const meta: Meta<typeof SidebarTree> = {
     ),
   ],
   args: {
-    components,
-    backend,
-    active: "component",
-    selection: { comp: "JobCard", view: "code" },
-    backendSel: null,
-    onSelectComponent: noop,
-    onSelectBackend: noop,
+    files,
+    selection: { file: "src/components/JobCard.tsx", view: "code" },
+    onSelect: noop,
     comments: {},
     onComment: noop,
     diff: {},
@@ -113,19 +90,11 @@ type Story = StoryObj<typeof SidebarTree>
 
 export const Default: Story = {}
 
-export const BackendSelected: Story = {
-  args: {
-    active: "backend",
-    backendSel: { symbol: "parseJob" },
-  },
-}
-
 export const WithDiff: Story = {
   args: {
     diff: {
       "fn:parseJob": "changed",
       "fn:filterJobs": "added",
-      "component:Badge": "changed",
     },
   },
 }

@@ -3,8 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "logos-studio": "./bin/logos-studio.mjs"
+  },
   "scripts": {
-    "index": "tsx ../src/build-index.ts ../../hn-jobs src/studio-index.json",
+    "index": "tsx ../src/build-index.ts ${LOGOS_PROJECT:-../../hn-jobs} src/studio-index.json",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
@@ -20,6 +23,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@storybook/react": "^10.4.4",
     "@storybook/react-vite": "^10.4.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
