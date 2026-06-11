@@ -1,6 +1,7 @@
 node_modules
 .agent-runs/
 .workspaces/
+.storybook.pid
 comments.json
 *.bodies.json
 .vite/

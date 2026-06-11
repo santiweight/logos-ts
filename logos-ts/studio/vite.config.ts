@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync
 import { fileURLToPath } from "node:url"
 import { dirname, resolve, relative, join } from "node:path"
 import * as commentDb from "../src/comment-db"
+import { cleanupStalePid, writePid } from "../src/child-cleanup"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -393,17 +394,22 @@ function studioApi(): Plugin {
 }
 
 let storybookUrl = ""
+const STORYBOOK_PID_FILE = resolve(STUDIO, ".storybook.pid")
 
 function autoStorybook(): Plugin {
   let child: ReturnType<typeof spawn> | null = null
   return {
     name: "auto-storybook",
     configureServer() {
+      cleanupStalePid(STORYBOOK_PID_FILE)
+
       const npx = resolve(FRONTEND, "node_modules/.bin/storybook")
       child = spawn(npx, ["dev", "--ci", "--no-open"], {
         cwd: FRONTEND,
         stdio: ["ignore", "pipe", "pipe"],
       })
+      if (child.pid) writePid(STORYBOOK_PID_FILE, child.pid)
+
       child.stdout?.on("data", (d) => {
         const s = d.toString()
         const m = s.match(/https?:\/\/localhost:(\d+)/)
@@ -414,9 +420,10 @@ function autoStorybook(): Plugin {
       })
       child.stderr?.on("data", () => {})
       child.on("error", (e) => console.error("[storybook]", e.message))
-      process.on("exit", () => child?.kill())
-      process.on("SIGINT", () => { child?.kill(); process.exit() })
-      process.on("SIGTERM", () => { child?.kill(); process.exit() })
+      const cleanup = () => { child?.kill(); try { unlinkSync(STORYBOOK_PID_FILE) } catch {} }
+      process.on("exit", cleanup)
+      process.on("SIGINT", () => { cleanup(); process.exit() })
+      process.on("SIGTERM", () => { cleanup(); process.exit() })
     },
   }
 }
