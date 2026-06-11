@@ -113,6 +113,15 @@ function studioApi(): Plugin {
         res.end(JSON.stringify(testState))
       })
 
+      server.middlewares.use("/api/graph", (_req, res) => {
+        const json = execFileSync(tsx, [resolve(LOGOS_TS, "src/build-graph.ts"), HN], {
+          cwd: LOGOS_TS,
+          encoding: "utf8",
+        })
+        res.setHeader("content-type", "application/json")
+        res.end(json)
+      })
+
       server.middlewares.use("/api/workspaces", async (req, res) => {
         res.setHeader("content-type", "application/json")
         const sub = (req.url || "/").replace(/^\//, "").split("?")[0] // "" or "ws-123"
