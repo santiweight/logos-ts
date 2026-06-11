@@ -1,4 +1,5 @@
 import { CommentCtx, DiffCtx, Row } from "./arch"
+import { GraphView } from "./GraphView"
 import type { CommentApi, ComponentEntry, DiffStatus, Selection, View } from "./types"
 
 interface Props {
@@ -22,13 +23,15 @@ export function ContentPanel({
   onComment,
   diff,
 }: Props) {
-  const tabs: View[] = ["code", "story", "captured"]
+  const tabs: View[] = ["code", "arch", "story", "captured"]
   const label =
-    selection.view === "story"
-      ? `${component.name} / ${storyExport(component, selection.storyId)}`
-      : selection.view === "captured"
-        ? `${component.name} / ${selection.exportName} ⟨captured⟩`
-        : component.name
+    selection.view === "arch"
+      ? `${component.name} / arch`
+      : selection.view === "story"
+        ? `${component.name} / ${storyExport(component, selection.storyId)}`
+        : selection.view === "captured"
+          ? `${component.name} / ${selection.exportName} ⟨captured⟩`
+          : component.name
 
   return (
     <CommentCtx.Provider value={{ comments, onComment }}>
@@ -43,7 +46,7 @@ export function ContentPanel({
                 className={`tab ${selection.view === t ? "active" : ""}`}
                 onClick={() => onView(t)}
               >
-                {t === "code" ? "Code" : t === "story" ? "Story" : "Captured"}
+                {t === "code" ? "Code" : t === "arch" ? "Arch" : t === "story" ? "Story" : "Captured"}
               </button>
             ))}
           </div>
@@ -51,6 +54,7 @@ export function ContentPanel({
 
         <div className="content-body">
           {selection.view === "code" && <CodeView component={component} />}
+          {selection.view === "arch" && <GraphView focusFile={component.file} />}
           {selection.view === "story" && (
             <StoryView
               storyId={selection.storyId}

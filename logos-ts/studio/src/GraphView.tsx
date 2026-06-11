@@ -446,7 +446,7 @@ function elkToReactFlow(
   return { nodes, edges }
 }
 
-function GraphViewInner() {
+function GraphViewInner({ focusFile }: { focusFile?: string }) {
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
@@ -526,6 +526,26 @@ function GraphViewInner() {
   const dirTree = useMemo(() => buildDirTree(files), [files])
 
   useEffect(() => {
+    if (!focusFile || files.size === 0) return
+
+    const fileId = `file:${focusFile}`
+    const dirPath = fileToDir.get(fileId)
+    if (!dirPath) return
+
+    setExpandedDirs((prev) => {
+      const next = new Set(prev)
+      const parts = dirPath.split("/")
+      let acc = "dir:" + parts[0]
+      next.add(acc)
+      for (let i = 1; i < parts.length; i++) {
+        acc += "/" + parts[i]
+        next.add(acc)
+      }
+      return next
+    })
+  }, [focusFile, files, fileToDir])
+
+  useEffect(() => {
     if (!graphData || files.size === 0) return
 
     const elkGraph = buildElkGraph(dirTree, expandedDirs, expandedFiles, expandedClasses, graphData, fileToDir)
@@ -539,7 +559,15 @@ function GraphViewInner() {
       setNodes(rfNodes)
       setEdges(rfEdges)
       setLayouting(false)
-      setTimeout(() => fitView({ padding: 0.12, duration: 300 }), 50)
+      const focusNodeId = focusFile ? `file:${focusFile}` : undefined
+      const focusNode = focusNodeId ? rfNodes.find((n) => n.id === focusNodeId) : undefined
+      setTimeout(() => {
+        if (focusNode) {
+          fitView({ nodes: [focusNode], padding: 0.5, duration: 300 })
+        } else {
+          fitView({ padding: 0.12, duration: 300 })
+        }
+      }, 50)
     }).catch(() => {
       setLayouting(false)
     })
@@ -585,11 +613,11 @@ function GraphViewInner() {
   )
 }
 
-export function GraphView() {
+export function GraphView({ focusFile }: { focusFile?: string }) {
   return (
     <div className="graph-view">
       <ReactFlowProvider>
-        <GraphViewInner />
+        <GraphViewInner focusFile={focusFile} />
       </ReactFlowProvider>
     </div>
   )

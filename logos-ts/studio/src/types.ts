@@ -65,7 +65,7 @@ export interface StudioIndex {
   backend: BackendFile[]
 }
 
-export type View = "code" | "story" | "captured"
+export type View = "code" | "arch" | "story" | "captured"
 
 export interface Selection {
   comp: string

@@ -6,7 +6,6 @@ import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { ArchDiffPanel } from "./ArchDiffPanel"
-import { GraphView } from "./GraphView"
 import { diffIndex } from "./diff"
 import type {
   BackendSel,
@@ -186,7 +185,6 @@ export function App() {
   // ---- agents run automatically/declaratively: a change on a workspace ⇒ an
   // agent is working it. No manual trigger. ----
   const [archDiffOpen, setArchDiffOpen] = useState(false)
-  const [graphOpen, setGraphOpen] = useState(false)
 
   const [agentEvents, setAgentEvents] = useState<AgentMsg[]>([])
   const [agentRunning, setAgentRunning] = useState(false)
@@ -367,9 +365,7 @@ export function App() {
       </aside>
 
       <main className="main">
-        {graphOpen ? (
-          <GraphView />
-        ) : archDiffOpen && workspaceIndex ? (
+        {archDiffOpen && workspaceIndex ? (
           <ArchDiffPanel
             base={index}
             workspace={workspaceIndex}
@@ -413,17 +409,9 @@ export function App() {
               <a className="exit-ws" onClick={onBase}>
                 exit to base
               </a>
-              <a className="graph-tab" onClick={() => setGraphOpen((o) => !o)}>
-                {graphOpen ? "close graph" : "dep graph"}
-              </a>
             </>
           ) : (
-            <>
-              {`logos-ts · ${index.root.split("/").pop()}`}
-              <a className="graph-tab" onClick={() => setGraphOpen((o) => !o)}>
-                {graphOpen ? "close graph" : "dep graph"}
-              </a>
-            </>
+            `logos-ts · ${index.root.split("/").pop()}`
           )}
         </span>
         <span>

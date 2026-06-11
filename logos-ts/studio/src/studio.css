@@ -629,14 +629,6 @@ body {
   right: -4px !important;
 }
 
-/* Graph tab in status bar */
-.graph-tab {
-  text-decoration: underline;
-  cursor: pointer;
-  margin-left: 8px;
-}
-.graph-tab:hover { opacity: 0.85; }
-
 /* Directory group node */
 .dir-node {
   background: rgba(30, 30, 38, 0.95);
