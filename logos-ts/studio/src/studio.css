@@ -239,7 +239,7 @@ body {
 }
 .anode:hover { background: #2a2a30; }
 .anode.active { background: #2f3a4a; color: #fff; }
-.anode .caret { width: 11px; flex: none; color: var(--muted); font-size: 10px; }
+.anode .glyph-slot { width: 9px; flex: none; }
 .anode .glyph { width: 13px; flex: none; text-align: center; color: var(--muted); font-size: 11px; }
 .anode .label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .anode .label em { color: var(--muted); font-style: normal; }
@@ -247,6 +247,16 @@ body {
 .anode .count.ok { color: var(--ok); }
 .anode .fns { color: var(--accent); font-size: 11px; flex: none; }
 .anode .cbadge { font-size: 11px; color: #e0c060; flex: none; }
+.anode .test-dot { font-size: 9px; flex: none; width: 9px; text-align: center; }
+.anode .test-dot.pass { color: var(--ok); }
+.anode .test-dot.fail { color: #e05555; }
+.anode .test-dot.stale { opacity: .45; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: .45; } 50% { opacity: .2; } }
+
+.test-status { font-size: 11px; }
+.test-status.pass { color: var(--ok); }
+.test-status.fail { color: #e05555; }
+.test-status.running { color: var(--accent); }
 
 /* section headers — quiet, uppercase, like the old tree titles */
 .anode.section {

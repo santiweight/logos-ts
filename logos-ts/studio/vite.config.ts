@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin, type Connect } from "vite"
 import react from "@vitejs/plugin-react"
-import { execFileSync, spawn } from "node:child_process"
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, symlinkSync } from "node:fs"
+import { execFile, execFileSync, spawn } from "node:child_process"
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, symlinkSync, watch } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve, relative, join } from "node:path"
 
@@ -61,6 +61,48 @@ function studioApi(): Plugin {
         })
         res.setHeader("content-type", "application/json")
         res.end(json)
+      })
+
+      // Persistent test runner — starts on boot, re-runs on file changes.
+      type TestState = {
+        status: "running" | "pass" | "fail" | "idle"
+        results: { total: number; passed: number; failed: number; failures: { test: string; file: string; message: string }[] } | null
+        runningSince: number | null
+      }
+      const testState: TestState = { status: "idle", results: null, runningSince: null }
+
+      const runTests = () => {
+        if (testState.status === "running") return
+        testState.status = "running"
+        testState.runningSince = Date.now()
+        execFile("node", ["scripts/healthcheck.mjs"], { cwd: HN, timeout: 120_000 }, (_err, stdout) => {
+          try {
+            const parsed = JSON.parse(stdout)
+            testState.results = parsed
+            testState.status = (parsed.failed ?? 0) > 0 ? "fail" : "pass"
+          } catch {
+            testState.status = testState.results ? (testState.results.failed > 0 ? "fail" : "pass") : "idle"
+          }
+          testState.runningSince = null
+        })
+      }
+
+      // Watch source dirs for changes and re-run.
+      const DEBOUNCE_MS = 1500
+      let debounce: ReturnType<typeof setTimeout> | null = null
+      const onFileChange = (filename: string | null) => {
+        if (!filename || !/\.(tsx?|jsx?)$/.test(filename)) return
+        if (debounce) clearTimeout(debounce)
+        debounce = setTimeout(runTests, DEBOUNCE_MS)
+      }
+      for (const dir of ["frontend/src", "backend", "shared"]) {
+        try { watch(resolve(HN, dir), { recursive: true }, (_ev, f) => onFileChange(f)) } catch { /* dir may not exist */ }
+      }
+      runTests() // kick off immediately on server start
+
+      server.middlewares.use("/api/test-results", (_req, res) => {
+        res.setHeader("content-type", "application/json")
+        res.end(JSON.stringify(testState))
       })
 
       server.middlewares.use("/api/workspaces", async (req, res) => {

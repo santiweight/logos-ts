@@ -96,6 +96,23 @@ export interface CommentApi {
 
 export type DiffStatus = "added" | "changed" | "removed"
 
+export interface TestFailure {
+  test: string
+  file: string
+  message: string
+}
+export interface TestRun {
+  total: number
+  passed: number
+  failed: number
+  failures: TestFailure[]
+}
+export interface TestState {
+  status: "running" | "pass" | "fail" | "idle"
+  results: TestRun | null
+  runningSince: number | null
+}
+
 // A workspace = a branch: a cheap copy of the whole index that accumulates
 // changes (comments). Iterate by adding comments to it; Fork to branch.
 export interface WorkspaceMeta {

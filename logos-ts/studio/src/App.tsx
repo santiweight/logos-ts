@@ -11,6 +11,7 @@ import type {
   Comment,
   Selection,
   StudioIndex,
+  TestState,
   View,
   Workspace,
   WorkspaceMeta,
@@ -82,11 +83,22 @@ export function App() {
       /* static seed remains */
     }
   }, [])
+  const [testState, setTestState] = useState<TestState | null>(null)
+  const refreshTests = useCallback(async () => {
+    try {
+      const res = await fetch("/api/test-results")
+      if (res.ok) setTestState((await res.json()) as TestState)
+    } catch { /* no dev server */ }
+  }, [])
+
   useEffect(() => {
     refresh()
     refreshComments()
     refreshWorkspaces()
-  }, [refresh, refreshComments, refreshWorkspaces])
+    refreshTests()
+    const iv = setInterval(refreshTests, 2_000)
+    return () => clearInterval(iv)
+  }, [refresh, refreshComments, refreshWorkspaces, refreshTests])
 
   const openWorkspace = useCallback(async (id: string) => {
     try {
@@ -192,7 +204,7 @@ export function App() {
           es.close()
           setAgentRunning(false)
           runningWsRef.current = null
-          refreshWorkspaces().then(() => openWorkspace(wsId)) // re-load → diff updates
+          Promise.all([refreshWorkspaces(), refreshTests()]).then(() => openWorkspace(wsId))
           if (pendingRef.current.has(wsId)) {
             // changes arrived mid-run — reconcile again
             pendingRef.current.delete(wsId)
@@ -340,6 +352,7 @@ export function App() {
           comments={commentsByTarget}
           onComment={openComment}
           diff={diff}
+          testState={testState}
         />
       </aside>
 
@@ -394,6 +407,16 @@ export function App() {
               `▣ agent log${agentEvents.length ? ` (${agentEvents.length})` : ""}`
             )}
           </span>
+          {"   "}
+          {testState && (
+            <span className={`test-status ${testState.status}`}>
+              {testState.status === "running" ? (
+                <><span className="ag-spin">⟳</span> tests running</>
+              ) : testState.results ? (
+                `${testState.results.passed}✓ ${testState.results.failed}✗`
+              ) : null}
+            </span>
+          )}
           {"   "}
           {busy ??
             `${components.length} components · ${view.backend.length} backend files · ${comments.length} comments · ${workspaces.length} workspaces`}
