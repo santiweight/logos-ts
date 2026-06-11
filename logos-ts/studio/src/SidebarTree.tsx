@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Tree, type NodeApi, type NodeRendererProps } from "react-arborist"
 import type {
   BackendFile,
@@ -169,10 +169,10 @@ function buildData(
       openIds[id] = true // dirs open by default — files are the skeleton, fns hide inside
       out.push({
         id,
-        name: `${n}/`,
+        name: n,
         kind: "dir",
         target,
-        label: `📁 ${n}/`,
+        label: n,
         comments: cCount(target),
         children: dirNodes(d, p),
       })
@@ -188,13 +188,19 @@ function buildData(
   return { data, openIds }
 }
 
-const GLYPH: Record<Kind, string> = {
+const svgIcon = (d: string) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-2px" }}>
+    <path d={d} />
+  </svg>
+)
+
+const GLYPH: Record<Kind, ReactNode> = {
   section: "",
-  dir: "📁",
-  file: "📄",
+  dir: svgIcon("M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"),
+  file: svgIcon("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"),
   fn: "ƒ",
   cls: "⬚",
-  comp: "◈",
+  comp: "",
   story: "◆",
   captured: "✓",
 }
