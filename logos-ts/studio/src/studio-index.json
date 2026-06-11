@@ -1,6 +1,6 @@
 {
   "root": "/Users/santiagoweight/projects/logos/hn-jobs",
-  "storybookUrl": "http://localhost:6006",
+  "storybookUrl": "",
   "components": [
     {
       "name": "DirectoryView",

@@ -64,7 +64,7 @@ function findCaptured(storyEntry: StoryEntry, absRoot: string): CapturedNode[] {
   return out
 }
 
-export function buildStudioIndex(root: string, storybookUrl = "http://localhost:6006"): StudioIndex {
+export function buildStudioIndex(root: string, storybookUrl = ""): StudioIndex {
   const absRoot = resolve(root)
   const project = loadProject(root)
   const sfs = project.getSourceFiles().filter((s) => !s.getFilePath().includes("/node_modules/"))
@@ -125,9 +125,9 @@ export function buildStudioIndex(root: string, storybookUrl = "http://localhost:
   return { root: absRoot, storybookUrl, components, backend }
 }
 
-// CLI: tsx src/build-index.ts <root> <outFile>
-const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json"] = process.argv
-const index = buildStudioIndex(root)
+// CLI: tsx src/build-index.ts <root> <outFile> [storybookUrl]
+const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json", sbUrl] = process.argv
+const index = buildStudioIndex(root, sbUrl || undefined)
 if (outFile === "-") {
   // stdout mode: emit JSON only, for the studio dev server to serve live.
   process.stdout.write(JSON.stringify(index))

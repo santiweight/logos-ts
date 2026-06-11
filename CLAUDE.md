@@ -43,10 +43,10 @@ cd studio && npm install
 cd ../../hn-jobs/frontend && npm install
 
 # Storybook (backs the studio's Story tab) — from hn-jobs/frontend
-npm run storybook        # → http://localhost:6006
+npm run storybook        # auto-assigns a free port
 
-# studio — from logos-ts/studio
-npm run dev              # → http://localhost:5180
+# studio (auto-starts Storybook) — from logos-ts/studio
+npm run dev              # auto-assigns a free port, prints the URL
 ```
 
 Leaving a comment in the studio (alt-click a node) declares a change and

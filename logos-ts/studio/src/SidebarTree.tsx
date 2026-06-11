@@ -283,7 +283,7 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
       ) : (
         <span className="glyph-slot" />
       )}
-      {d.kind !== "section" && <span className="glyph">{glyph(d, node.isOpen)}</span>}
+      {d.kind !== "section" && <span className="glyph">{GLYPH[d.kind]}</span>}
       <span className="label">
         {d.name}
         {d.kind === "captured" && <em> ⟨captured⟩</em>}

@@ -35,13 +35,16 @@ const loadWorkspaceMetas = () => {
 }
 
 // Snapshot the current architecture/index — the "fork".
-const snapshotIndex = () =>
-  JSON.parse(
-    execFileSync(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"], {
+const snapshotIndex = () => {
+  const args = [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"]
+  if (storybookUrl) args.push(storybookUrl)
+  return JSON.parse(
+    execFileSync(tsx, args, {
       cwd: LOGOS_TS,
       encoding: "utf8",
     })
   )
+}
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((res) => {
@@ -57,7 +60,9 @@ function studioApi(): Plugin {
     name: "logos-ts-studio-api",
     configureServer(server) {
       server.middlewares.use("/api/index", (_req, res) => {
-        const json = execFileSync(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"], {
+        const args = [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"]
+        if (storybookUrl) args.push(storybookUrl)
+        const json = execFileSync(tsx, args, {
           cwd: LOGOS_TS,
           encoding: "utf8",
         })
@@ -294,8 +299,10 @@ function studioApi(): Plugin {
             }
           }
           try {
+            const reindexArgs = [resolve(LOGOS_TS, "src/build-index.ts"), dir, "-"]
+            if (storybookUrl) reindexArgs.push(storybookUrl)
             ws.index = JSON.parse(
-              execFileSync(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), dir, "-"], {
+              execFileSync(tsx, reindexArgs, {
                 cwd: LOGOS_TS,
                 encoding: "utf8",
               })
@@ -385,19 +392,25 @@ function studioApi(): Plugin {
   }
 }
 
+let storybookUrl = ""
+
 function autoStorybook(): Plugin {
   let child: ReturnType<typeof spawn> | null = null
   return {
     name: "auto-storybook",
     configureServer() {
       const npx = resolve(FRONTEND, "node_modules/.bin/storybook")
-      child = spawn(npx, ["dev", "-p", "6006", "--no-open"], {
+      child = spawn(npx, ["dev", "--ci", "--no-open"], {
         cwd: FRONTEND,
         stdio: ["ignore", "pipe", "pipe"],
       })
       child.stdout?.on("data", (d) => {
         const s = d.toString()
-        if (s.includes("Local:")) console.log("[storybook] ready on :6006")
+        const m = s.match(/https?:\/\/localhost:(\d+)/)
+        if (m) {
+          storybookUrl = `http://localhost:${m[1]}`
+          console.log(`[storybook] ready on ${storybookUrl}`)
+        }
       })
       child.stderr?.on("data", () => {})
       child.on("error", (e) => console.error("[storybook]", e.message))
@@ -411,7 +424,7 @@ function autoStorybook(): Plugin {
 export default defineConfig({
   plugins: [react(), studioApi(), autoStorybook()],
   server: {
-    port: 5180,
+    port: 0,
     // never watch agent forks / workspace snapshots (they'd force full reloads)
     watch: { ignored: ["**/.workspaces/**", "**/.agent-runs/**"] },
   },
