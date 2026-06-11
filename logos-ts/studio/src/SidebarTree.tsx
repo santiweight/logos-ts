@@ -135,7 +135,7 @@ function buildData(
       name: it.name,
       kind: isClass ? "cls" : "fn",
       target,
-      label: `${isClass ? "⬚" : "ƒ"} ${it.name}`,
+      label: it.name,
       status,
       tests: testsOf(it),
       comments: cCount(target),
@@ -152,7 +152,7 @@ function buildData(
       name,
       kind: "file",
       target,
-      label: `📄 ${name}`,
+      label: name,
       comments: cCount(target),
       fns: f.items.length,
       tests: f.items.reduce((n, it) => n + testsOf(it), 0),
@@ -188,21 +188,21 @@ function buildData(
   return { data, openIds }
 }
 
-const svgIcon = (d: string) => (
+const svgIcon = (...paths: string[]) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-2px" }}>
-    <path d={d} />
+    {paths.map((d, i) => <path key={i} d={d} />)}
   </svg>
 )
 
 const GLYPH: Record<Kind, ReactNode> = {
   section: "",
   dir: svgIcon("M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"),
-  file: svgIcon("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"),
-  fn: "ƒ",
-  cls: "⬚",
+  file: svgIcon("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z", "M14 2v6h6"),
+  fn: svgIcon("M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", "M9 12c0-3 1.5-5 3-5s3 2 3 5-1.5 5-3 5-3-2-3-5"),
+  cls: svgIcon("M3 3h18v18H3z", "M9 3v18", "M3 9h18"),
   comp: "",
-  story: "◆",
-  captured: "✓",
+  story: svgIcon("M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"),
+  captured: svgIcon("M20 6L9 17l-5-5"),
 }
 
 function Node({ node, style }: NodeRendererProps<SNode>) {
@@ -234,9 +234,9 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
         {d.name}
         {d.kind === "captured" && <em> ⟨captured⟩</em>}
       </span>
-      {d.kind === "file" && d.fns ? <span className="fns">{d.fns}ƒ</span> : null}
+      {d.kind === "file" && d.fns ? <span className="fns">{d.fns}</span> : null}
       {d.kind === "comp" && d.stories ? <span className="count">{d.stories}</span> : null}
-      {d.comments ? <span className="cbadge">💬{d.comments}</span> : null}
+      {d.comments ? <span className="cbadge">{d.comments}</span> : null}
       {d.tests ? <span className="count ok">✓{d.tests}</span> : null}
     </div>
   )
