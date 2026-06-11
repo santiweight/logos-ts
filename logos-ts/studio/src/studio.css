@@ -185,8 +185,109 @@ body {
   grid-area: sidebar;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
+
+/* search / filter box */
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-search-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  background: #16161a;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+}
+.sidebar-search-input::placeholder { color: var(--muted); }
+.sidebar-search-input:focus { outline: none; border-color: var(--accent); }
+.sidebar-search-clear {
+  font: inherit;
+  font-size: 11px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.sidebar-search-clear:hover { color: var(--text); }
+
+.sidebar-tree { flex: 1; min-height: 0; }
+
+/* arborist rows — one virtualized list for components + backend */
+.anode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding-right: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  border-left: 3px solid transparent; /* diff marker slot, keeps text aligned */
+}
+.anode:hover { background: #2a2a30; }
+.anode.active { background: #2f3a4a; color: #fff; }
+.anode .caret { width: 11px; flex: none; color: var(--muted); font-size: 10px; }
+.anode .glyph { width: 13px; flex: none; text-align: center; color: var(--muted); font-size: 11px; }
+.anode .label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.anode .label em { color: var(--muted); font-style: normal; }
+.anode .count { color: var(--muted); font-size: 11px; flex: none; }
+.anode .count.ok { color: var(--ok); }
+.anode .fns { color: var(--accent); font-size: 11px; flex: none; }
+.anode .cbadge { font-size: 11px; color: #e0c060; flex: none; }
+
+/* section headers — quiet, uppercase, like the old tree titles */
+.anode.section {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.anode.section:hover { background: transparent; color: var(--text); }
+
+/* files are the skeleton: readable; dirs slightly bolder */
+.anode.dir { font-weight: 600; }
+.anode.dir .label { color: var(--text); }
+.anode.file .label { color: var(--text); }
+.anode.comp { font-weight: 600; }
+.anode.comp .glyph { color: var(--accent); }
+
+/* functions/classes/stories are subordinate: smaller + muted */
+.anode.fn,
+.anode.cls,
+.anode.story,
+.anode.captured {
+  font-size: 11px;
+}
+.anode.fn .label,
+.anode.cls .label,
+.anode.story .label,
+.anode.captured .label {
+  color: var(--muted);
+}
+.anode.fn .glyph { color: #c08bf0; }
+.anode.cls .glyph { color: var(--accent); }
+.anode.story .glyph { color: var(--muted); }
+.anode.captured .glyph { color: var(--ok); }
+
+/* diff tints carry over from the old tree */
+.anode.diff-added { border-left-color: var(--ok); }
+.anode.diff-changed { border-left-color: #4a9eff; }
+.anode.diff-removed { border-left-color: #e5484d; }
+.anode.diff-added .label { color: var(--ok); }
+.anode.diff-changed .label { color: #6fb4ff; }
+.anode.diff-removed .label { color: #e5847d; text-decoration: line-through; }
 
 .tree-title {
   padding: 10px 12px 6px;

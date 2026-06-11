@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import { StoryTree } from "./StoryTree"
-import { BackendTree } from "./BackendTree"
+import { SidebarTree } from "./SidebarTree"
 import { ContentPanel } from "./ContentPanel"
 import { BackendPanel } from "./BackendPanel"
 import { CommentPopup } from "./CommentPopup"
@@ -24,9 +23,6 @@ export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
   const [active, setActive] = useState<"component" | "backend">("component")
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(seed.components[0] ? [seed.components[0].name] : [])
-  )
   const [selection, setSelection] = useState<Selection>({
     comp: seed.components[0]?.name ?? "",
     view: "code",
@@ -233,14 +229,6 @@ export function App() {
     }
   }, [createWorkspace, activeWorkspaceId])
 
-  const toggleExpanded = useCallback((name: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      next.has(name) ? next.delete(name) : next.add(name)
-      return next
-    })
-  }, [])
-
   const selectComponent = useCallback((sel: Selection) => {
     setActive("component")
     setSelection(sel)
@@ -341,20 +329,14 @@ export function App() {
       />
 
       <aside className="sidebar">
-        <StoryTree
+        <SidebarTree
           components={components}
-          selection={selection}
-          active={active === "component"}
-          expanded={expanded}
-          onSelect={selectComponent}
-          onToggle={toggleExpanded}
-          diff={diff}
-        />
-        <BackendTree
           backend={view.backend}
-          active={active === "backend"}
-          selection={backendSel}
-          onSelect={selectBackend}
+          active={active}
+          selection={selection}
+          backendSel={backendSel}
+          onSelectComponent={selectComponent}
+          onSelectBackend={selectBackend}
           comments={commentsByTarget}
           onComment={openComment}
           diff={diff}
