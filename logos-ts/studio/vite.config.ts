@@ -4,6 +4,7 @@ import { execFileSync, spawn } from "node:child_process"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, symlinkSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve, relative, join } from "node:path"
+import * as commentDb from "../src/comment-db"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -11,15 +12,16 @@ const HN = resolve(STUDIO, "../../hn-jobs")
 const FRONTEND = resolve(HN, "frontend")
 const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
 const vitest = resolve(FRONTEND, "node_modules/.bin/vitest")
-const COMMENTS = resolve(STUDIO, "comments.json")
+const LEGACY_COMMENTS = resolve(STUDIO, "comments.json")
 const WS_DIR = resolve(STUDIO, ".workspaces")
 
-const loadComments = () => {
-  try {
-    return JSON.parse(readFileSync(COMMENTS, "utf8"))
-  } catch {
-    return []
-  }
+type SqliteDb = Awaited<ReturnType<typeof commentDb.open>>
+let _commentConn: SqliteDb | null = null
+async function commentConn(): Promise<SqliteDb> {
+  if (_commentConn) return _commentConn
+  _commentConn = await commentDb.open(HN)
+  await commentDb.migrateStudioJson(_commentConn, LEGACY_COMMENTS)
+  return _commentConn
 }
 
 const loadWorkspaceMetas = () => {
@@ -103,9 +105,8 @@ function studioApi(): Plugin {
         }
         if (req.method === "DELETE" && sub) {
           rmSync(resolve(WS_DIR, `${sub}.json`), { force: true })
-          // cascade: a branch's pending comments go with it
-          const kept = loadComments().filter((c: { workspaceId?: string }) => c.workspaceId !== sub)
-          writeFileSync(COMMENTS, JSON.stringify(kept, null, 2))
+          const db = await commentConn()
+          commentDb.removeByWorkspace(db, sub)
           res.end(JSON.stringify({ ok: true }))
           return
         }
@@ -115,7 +116,7 @@ function studioApi(): Plugin {
 
       // Live agent run over SSE: materialize a real fork, spawn `claude` to
       // address the workspace's comments, and stream its tool-call events.
-      server.middlewares.use("/api/agent/run", (req, res) => {
+      server.middlewares.use("/api/agent/run", async (req, res) => {
         const wsId = new URL(req.url || "", "http://x").searchParams.get("workspace") || ""
         res.setHeader("content-type", "text/event-stream")
         res.setHeader("cache-control", "no-cache")
@@ -128,7 +129,9 @@ function studioApi(): Plugin {
           return res.end()
         }
         const ws = JSON.parse(readFileSync(wsPath, "utf8"))
-        const changes = loadComments().filter((c: { workspaceId?: string }) => c.workspaceId === wsId)
+        const db = await commentConn()
+        const allComments = commentDb.list(db)
+        const changes = allComments.filter((c) => c.workspaceId === wsId)
         if (!changes.length) {
           send({ type: "error", message: "this workspace has no changes to address" })
           return res.end()
@@ -275,35 +278,40 @@ function studioApi(): Plugin {
       server.middlewares.use("/api/comments", async (req, res) => {
         res.setHeader("content-type", "application/json")
         const sub = (req.url || "/").replace(/^\//, "").split("?")[0]
-        if (req.method === "GET") {
-          res.end(JSON.stringify(loadComments()))
-          return
-        }
-        if (req.method === "DELETE" && sub) {
-          const kept = loadComments().filter((c: { id: string }) => c.id !== sub)
-          writeFileSync(COMMENTS, JSON.stringify(kept, null, 2))
-          res.end(JSON.stringify({ ok: true }))
-          return
-        }
-        if (req.method === "POST") {
-          const body = JSON.parse((await readBody(req)) || "{}")
-          const list = loadComments()
-          const comment = {
-            id: `${Date.now()}-${Math.round(Math.random() * 1e6)}`,
-            target: String(body.target ?? ""),
-            label: String(body.label ?? ""),
-            text: String(body.text ?? ""),
-            workspaceId: body.workspaceId ?? null,
-            mode: body.mode === "arch" ? "arch" : "code",
-            createdAt: Date.now(),
+        try {
+          const db = await commentConn()
+          if (req.method === "GET") {
+            res.end(JSON.stringify(commentDb.list(db)))
+            return
           }
-          list.push(comment)
-          writeFileSync(COMMENTS, JSON.stringify(list, null, 2))
-          res.end(JSON.stringify(comment))
-          return
+          if (req.method === "DELETE" && sub) {
+            commentDb.remove(db, sub)
+            res.end(JSON.stringify({ ok: true }))
+            return
+          }
+          if (req.method === "POST") {
+            const body = JSON.parse((await readBody(req)) || "{}")
+            const row = commentDb.insert(db, {
+              id: `${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+              target: String(body.target ?? ""),
+              label: String(body.label ?? ""),
+              text: String(body.text ?? ""),
+              workspaceId: body.workspaceId ?? null,
+              mode: body.mode === "arch" ? "arch" : "code",
+              createdAt: Date.now(),
+              storyId: body.storyId ?? null,
+              selector: body.selector ?? null,
+              component: body.component ?? null,
+            })
+            res.end(JSON.stringify(row))
+            return
+          }
+          res.statusCode = 405
+          res.end()
+        } catch (err) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ error: String(err) }))
         }
-        res.statusCode = 405
-        res.end()
       })
 
       server.middlewares.use("/api/capture", async (req, res) => {
