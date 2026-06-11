@@ -125,9 +125,9 @@ export function buildStudioIndex(root: string, storybookUrl = ""): StudioIndex {
   return { root: absRoot, storybookUrl, components, backend }
 }
 
-// CLI: tsx src/build-index.ts <root> <outFile> [storybookUrl]
-const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json", sbUrl] = process.argv
-const index = buildStudioIndex(root, sbUrl || undefined)
+// CLI: tsx src/build-index.ts <root> <outFile>
+const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json"] = process.argv
+const index = buildStudioIndex(root, process.env.STORYBOOK_URL)
 if (outFile === "-") {
   // stdout mode: emit JSON only, for the studio dev server to serve live.
   process.stdout.write(JSON.stringify(index))

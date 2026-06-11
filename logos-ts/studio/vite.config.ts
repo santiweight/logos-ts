@@ -2,6 +2,7 @@ import { defineConfig, type Plugin, type Connect } from "vite"
 import react from "@vitejs/plugin-react"
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, symlinkSync, watch } from "node:fs"
+import { createServer } from "node:net"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve, relative, join } from "node:path"
 import * as commentDb from "../src/comment-db"
@@ -37,16 +38,13 @@ const loadWorkspaceMetas = () => {
 }
 
 // Snapshot the current architecture/index — the "fork".
-const snapshotIndex = () => {
-  const args = [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"]
-  if (storybookUrl) args.push(storybookUrl)
-  return JSON.parse(
-    execFileSync(tsx, args, {
+const snapshotIndex = () =>
+  JSON.parse(
+    execFileSync(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"], {
       cwd: LOGOS_TS,
       encoding: "utf8",
     })
   )
-}
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((res) => {
@@ -70,11 +68,10 @@ function studioApi(): Plugin {
       })
 
       server.middlewares.use("/api/index", (_req, res) => {
-        const args = [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"]
-        if (storybookUrl) args.push(storybookUrl)
-        const json = execFileSync(tsx, args, {
+        const json = execFileSync(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"], {
           cwd: LOGOS_TS,
           encoding: "utf8",
+          env: { ...process.env, STORYBOOK_URL: `http://localhost:${storybookPort}` },
         })
         res.setHeader("content-type", "application/json")
         res.end(json)
@@ -321,10 +318,8 @@ function studioApi(): Plugin {
             }
           }
           try {
-            const reindexArgs = [resolve(LOGOS_TS, "src/build-index.ts"), dir, "-"]
-            if (storybookUrl) reindexArgs.push(storybookUrl)
             ws.index = JSON.parse(
-              execFileSync(tsx, reindexArgs, {
+              execFileSync(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), dir, "-"], {
                 cwd: LOGOS_TS,
                 encoding: "utf8",
               })
@@ -421,18 +416,26 @@ function studioApi(): Plugin {
   }
 }
 
-let storybookUrl = ""
-const STORYBOOK_PID_FILE = resolve(STUDIO, ".storybook.pid")
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.listen(0, () => {
+      const port = (srv.address() as import("node:net").AddressInfo).port
+      srv.close(() => resolve(port))
+    })
+    srv.on("error", reject)
+  })
+}
+
+let storybookPort = 6006
 
 function autoStorybook(): Plugin {
   let child: ReturnType<typeof spawn> | null = null
   return {
     name: "auto-storybook",
-    configureServer() {
-      cleanupStalePid(STORYBOOK_PID_FILE)
-
-      const npx = resolve(FRONTEND, "node_modules/.bin/storybook")
-      child = spawn(npx, ["dev", "--ci", "--no-open"], {
+    async configureServer() {
+      storybookPort = await getFreePort()
+      child = spawn("npx", ["storybook", "dev", "-p", String(storybookPort), "--no-open"], {
         cwd: FRONTEND,
         stdio: ["ignore", "pipe", "pipe"],
       })
@@ -440,11 +443,7 @@ function autoStorybook(): Plugin {
 
       child.stdout?.on("data", (d) => {
         const s = d.toString()
-        const m = s.match(/https?:\/\/localhost:(\d+)/)
-        if (m) {
-          storybookUrl = `http://localhost:${m[1]}`
-          console.log(`[storybook] ready on ${storybookUrl}`)
-        }
+        if (s.includes("Local:")) console.log(`[storybook] ready on :${storybookPort}`)
       })
       child.stderr?.on("data", () => {})
       child.on("error", (e) => console.error("[storybook]", e.message))

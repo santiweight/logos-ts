@@ -495,9 +495,9 @@ function toolbarBtnStyle(enabled: boolean): React.CSSProperties {
     display: "flex",
     alignItems: "center",
     gap: 6,
-    background: "#252529",
-    color: enabled ? "#d6d6da" : "#8a8a92",
-    border: "1px solid #34343a",
+    background: "#27272b",
+    color: enabled ? "#d4d4d8" : "#85858f",
+    border: "1px solid #2e2e34",
     borderRadius: 6,
     padding: "5px 10px",
     fontSize: 11,
@@ -505,6 +505,7 @@ function toolbarBtnStyle(enabled: boolean): React.CSSProperties {
     cursor: "pointer",
     boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    transition: "background 120ms ease, color 120ms ease",
   }
 }
 
@@ -520,24 +521,24 @@ const countPill: React.CSSProperties = {
 }
 
 const hintBox: React.CSSProperties = {
-  background: "#252529",
-  border: "1px solid #34343a",
+  background: "#27272b",
+  border: "1px solid #2e2e34",
   borderRadius: 6,
   padding: "4px 8px",
   fontSize: 10,
-  color: "#8a8a92",
+  color: "#85858f",
   boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
 }
 
 const kbd: React.CSSProperties = {
-  background: "#34343a",
-  border: "1px solid #44444a",
+  background: "#2e2e34",
+  border: "1px solid #3a3a42",
   borderRadius: 3,
   padding: "1px 5px",
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
   fontSize: 10,
-  color: "#d6d6da",
+  color: "#d4d4d8",
 }
 
 export function CommentToolbar({

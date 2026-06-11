@@ -76,7 +76,7 @@ export function ChangesRail({
         <div className="rail-loading muted small">Loading workspaces…</div>
       )}
       {!workspacesLoading && workspaces.length === 0 && (
-        <div className="rail-empty muted small">none yet — alt-click an item to start one</div>
+        <div className="rail-empty muted small"></div>
       )}
 
       {workspaces

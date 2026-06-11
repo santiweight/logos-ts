@@ -1,7 +1,7 @@
 import React, { type ReactNode } from "react"
 
 export const svgIcon = (d: string, size = 14) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-2px", flexShrink: 0 }}>
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-2px", flexShrink: 0 }}>
     <path d={d} />
   </svg>
 )
@@ -11,7 +11,7 @@ export const ICONS = {
   file: svgIcon("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"),
   fn: "ƒ",
   cls: "⬚",
-  comp: svgIcon("M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7"),
+  comp: svgIcon("M16 18l6-6-6-6M8 6l-6 6 6 6"),
   story: "◆",
   captured: "✓",
 } as const satisfies Record<string, ReactNode>

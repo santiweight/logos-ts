@@ -249,7 +249,7 @@ const GLYPH: Record<Kind, ReactNode> = {
   file: ICONS.file,
   fn: ICONS.fn,
   cls: ICONS.cls,
-  comp: "",
+  comp: ICONS.comp,
   story: ICONS.story,
   captured: ICONS.captured,
 }
@@ -272,12 +272,18 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
     if (!node.isLeaf) node.toggle()
   }
 
+  const guides = []
+  for (let i = 1; i < node.level; i++) {
+    guides.push(<span key={i} className="indent-guide" style={{ left: i * 12 + 3 }} />)
+  }
+
   return (
     <div
       className={`anode ${d.kind} ${isActive ? "active" : ""} ${d.status ? `diff-${d.status}` : ""}`}
       style={style}
       onClick={onClick}
     >
+      {guides}
       {showDot ? (
         <span className={`test-dot ${d.testStatus}${testsRunning ? " stale" : ""}`}>●</span>
       ) : (
@@ -298,9 +304,9 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
 
 const rowHeight = (node: NodeApi<SNode>) => {
   const k = node.data.kind
-  if (k === "section") return 24
-  if (k === "fn" || k === "cls" || k === "story" || k === "captured") return 19
-  return 23
+  if (k === "section") return 18
+  if (k === "fn" || k === "cls" || k === "story" || k === "captured") return 16
+  return 18
 }
 
 function useSize() {
@@ -331,7 +337,6 @@ export function SidebarTree({
   diff,
   testState,
 }: Props) {
-  const [term, setTerm] = useState("")
   const results = testState?.results ?? null
   const testsRunning = testState?.status === "running"
   const failingTests = useMemo(() => {
@@ -367,19 +372,6 @@ export function SidebarTree({
 
   return (
     <SidebarCtx.Provider value={ctx}>
-      <div className="sidebar-search">
-        <input
-          className="sidebar-search-input"
-          placeholder="Filter components & symbols…"
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-        />
-        {term && (
-          <button className="sidebar-search-clear" onClick={() => setTerm("")} title="Clear">
-            ✕
-          </button>
-        )}
-      </div>
       <div className="sidebar-tree" ref={ref}>
         <Tree<SNode>
           data={data}
@@ -394,8 +386,6 @@ export function SidebarTree({
           disableDrag
           disableDrop
           disableEdit
-          searchTerm={term}
-          searchMatch={(node, t) => node.data.name.toLowerCase().includes(t.toLowerCase())}
         >
           {Node}
         </Tree>
