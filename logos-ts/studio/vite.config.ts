@@ -335,8 +335,31 @@ function studioApi(): Plugin {
   }
 }
 
+function autoStorybook(): Plugin {
+  let child: ReturnType<typeof spawn> | null = null
+  return {
+    name: "auto-storybook",
+    configureServer() {
+      const npx = resolve(FRONTEND, "node_modules/.bin/storybook")
+      child = spawn(npx, ["dev", "-p", "6006", "--no-open"], {
+        cwd: FRONTEND,
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+      child.stdout?.on("data", (d) => {
+        const s = d.toString()
+        if (s.includes("Local:")) console.log("[storybook] ready on :6006")
+      })
+      child.stderr?.on("data", () => {})
+      child.on("error", (e) => console.error("[storybook]", e.message))
+      process.on("exit", () => child?.kill())
+      process.on("SIGINT", () => { child?.kill(); process.exit() })
+      process.on("SIGTERM", () => { child?.kill(); process.exit() })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), studioApi()],
+  plugins: [react(), studioApi(), autoStorybook()],
   server: {
     port: 5180,
     // never watch agent forks / workspace snapshots (they'd force full reloads)

@@ -520,6 +520,37 @@ body {
 
 .empty { color: var(--muted); padding: 24px; }
 
+/* ---- Architecture diff ---- */
+.arch-diff-code {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  white-space: pre;
+  overflow: auto;
+  flex: 1;
+}
+.arch-diff-line {
+  padding: 0 12px;
+  line-height: 1.6;
+}
+.arch-diff-prefix {
+  display: inline-block;
+  width: 16px;
+  color: var(--muted);
+  user-select: none;
+}
+.arch-diff-add { background: rgba(78, 197, 122, 0.12); color: #8be9a8; }
+.arch-diff-del { background: rgba(229, 72, 77, 0.12); color: #e5847d; }
+.arch-diff-same { color: var(--muted); }
+.arch-diff-stats { font-size: 12px; }
+.arch-diff-stats .arch-diff-add { background: none; color: var(--ok); font-weight: 600; }
+.arch-diff-stats .arch-diff-del { background: none; color: #e5484d; font-weight: 600; }
+.arch-diff-toggle {
+  text-decoration: underline;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
 /* ---- Status bar ---- */
 .statusbar {
   grid-area: status;

@@ -5,6 +5,7 @@ import { BackendPanel } from "./BackendPanel"
 import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
+import { ArchDiffPanel } from "./ArchDiffPanel"
 import { diffIndex } from "./diff"
 import type {
   BackendSel,
@@ -167,6 +168,8 @@ export function App() {
 
   // ---- agents run automatically/declaratively: a change on a workspace ⇒ an
   // agent is working it. No manual trigger. ----
+  const [archDiffOpen, setArchDiffOpen] = useState(false)
+
   const [agentEvents, setAgentEvents] = useState<AgentMsg[]>([])
   const [agentRunning, setAgentRunning] = useState(false)
   const [agentWorkspace, setAgentWorkspace] = useState<string | null>(null)
@@ -344,7 +347,13 @@ export function App() {
       </aside>
 
       <main className="main">
-        {active === "backend" && backendSel ? (
+        {archDiffOpen && workspaceIndex ? (
+          <ArchDiffPanel
+            base={index}
+            workspace={workspaceIndex}
+            onClose={() => setArchDiffOpen(false)}
+          />
+        ) : active === "backend" && backendSel ? (
           <BackendPanel
             backend={view.backend}
             selection={backendSel}
@@ -376,6 +385,9 @@ export function App() {
           {activeWs ? (
             <>
               ⑂ {activeWs.name}{" "}
+              <a className="arch-diff-toggle" onClick={() => setArchDiffOpen((o) => !o)}>
+                {archDiffOpen ? "close diff" : "arch diff"}
+              </a>{" "}
               <a className="exit-ws" onClick={onBase}>
                 exit to base
               </a>
