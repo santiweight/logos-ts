@@ -179,8 +179,8 @@ function studioApi(): Plugin {
             encoding: "utf8",
             maxBuffer: 16 * 1024 * 1024,
           })
-        } catch {
-          /* fall back to no preloaded context */
+        } catch (e) {
+          send({ type: "stderr", message: "context build failed: " + String(e) })
         }
 
         const list = changes.map((c: { label: string; text: string }) => `- (${c.label}) ${c.text}`).join("\n")
