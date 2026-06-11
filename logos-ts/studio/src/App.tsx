@@ -36,6 +36,7 @@ export function App() {
   // ---- workspaces (forks) ----
   const [railOpen, setRailOpen] = useState(true)
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
+  const [workspacesLoading, setWorkspacesLoading] = useState(true)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "comment"; id: string } | null>(
@@ -68,10 +69,13 @@ export function App() {
   }, [])
   const refreshWorkspaces = useCallback(async () => {
     try {
+      setWorkspacesLoading(true)
       const res = await fetch("/api/workspaces")
       if (res.ok) setWorkspaces((await res.json()) as WorkspaceMeta[])
     } catch {
       /* no dev server */
+    } finally {
+      setWorkspacesLoading(false)
     }
   }, [])
   const refresh = useCallback(async () => {
@@ -309,6 +313,7 @@ export function App() {
         onToggle={() => setRailOpen((o) => !o)}
         comments={comments}
         workspaces={workspaces}
+        workspacesLoading={workspacesLoading}
         activeWorkspaceId={activeWorkspaceId}
         selected={selected}
         onBase={() => {
