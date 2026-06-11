@@ -15,6 +15,12 @@ import {
   resolve,
   type StoryComment,
 } from "./comment-store"
+import {
+  CommentThread,
+  CommentComposer,
+  popoverShell,
+  type SubmitPayload,
+} from "../../../logos-ts/studio/src/comment-ui"
 
 const ACCENT = "var(--accent)"
 const BORDER = "var(--border)"
@@ -49,7 +55,6 @@ export function CommentLayer({
   const [hover, setHover] = useState<HoverTarget | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [openSelector, setOpenSelector] = useState<string | null>(null)
-  // Bumped on scroll/resize/mutation so pins recompute their positions.
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick((t) => t + 1), [])
 
@@ -60,7 +65,6 @@ export function CommentLayer({
     refresh()
   }, [refresh])
 
-  // Reset transient UI when switching stories.
   useEffect(() => {
     setDraft(null)
     setOpenSelector(null)
@@ -71,7 +75,6 @@ export function CommentLayer({
     return !!(el && rootRef.current?.contains(el) && !el.closest("[data-comment-ui]"))
   }, [])
 
-  // Track the Alt key.
   useEffect(() => {
     if (!enabled) return
     const onDown = (e: KeyboardEvent) => {
@@ -97,7 +100,6 @@ export function CommentLayer({
     }
   }, [enabled])
 
-  // Highlight the hovered element while Alt is held.
   useEffect(() => {
     if (!enabled || !altDown) return
     const onMove = (e: MouseEvent) => {
@@ -112,7 +114,6 @@ export function CommentLayer({
     return () => document.removeEventListener("mousemove", onMove)
   }, [enabled, altDown, inStory])
 
-  // Alt+click pins a comment. Capture phase so we beat link navigation etc.
   useEffect(() => {
     if (!enabled) return
     const onClick = (e: MouseEvent) => {
@@ -132,7 +133,6 @@ export function CommentLayer({
     return () => document.removeEventListener("click", onClick, true)
   }, [enabled, inStory])
 
-  // Reposition pins when the layout shifts.
   useEffect(() => {
     window.addEventListener("scroll", bump, true)
     window.addEventListener("resize", bump)
@@ -145,7 +145,6 @@ export function CommentLayer({
     }
   }, [bump])
 
-  // Group comments by their anchor element.
   const groups = useMemo(() => {
     const map = new Map<string, StoryComment[]>()
     for (const c of comments) {
@@ -159,10 +158,18 @@ export function CommentLayer({
   const author = "you"
   const root = rootRef.current
 
-  const saveDraft = async (body: string) => {
+  const saveDraft = async (p: SubmitPayload) => {
     if (!draft) return
     const selector = draft.selector
-    await addComment({ storyId, component, selector, label: draft.label, body, author })
+    await addComment({
+      storyId,
+      component,
+      selector,
+      label: draft.label,
+      text: p.text,
+      author,
+      mode: p.mode,
+    })
     setDraft(null)
     refresh()
     setOpenSelector(selector)
@@ -177,14 +184,12 @@ export function CommentLayer({
       </div>
 
       <div data-comment-ui style={overlayStyle}>
-        {/* Alt-hover highlight */}
         {enabled && altDown && hover && (
           <div style={highlightStyle(hover.rect)}>
             <span style={highlightLabelStyle}>{hover.label}</span>
           </div>
         )}
 
-        {/* Pins for each anchored element */}
         {enabled &&
           root &&
           Array.from(groups.entries()).map(([selector, list]) => {
@@ -205,7 +210,6 @@ export function CommentLayer({
             )
           })}
 
-        {/* Thread popover for the open pin */}
         {enabled &&
           root &&
           openSelector &&
@@ -213,41 +217,44 @@ export function CommentLayer({
             const el = resolve(root, openSelector)
             const list = groups.get(openSelector)
             if (!el || !list) return null
+            const rect = el.getBoundingClientRect()
             return (
-              <Thread
-                rect={el.getBoundingClientRect()}
-                comments={list}
-                onAdd={async (body) => {
-                  await addComment({
-                    storyId,
-                    component,
-                    selector: openSelector,
-                    label: list[0]?.label ?? openSelector,
-                    body,
-                    author,
-                  })
-                  refresh()
-                }}
-                onRemove={async (id) => {
-                  await removeComment(id)
-                  refresh()
-                }}
-                onClose={() => setOpenSelector(null)}
-              />
+              <div style={{ ...popoverShell, ...popoverPos(rect), position: "absolute", pointerEvents: "auto" }}>
+                <CommentThread
+                  label={list[0]?.label ?? openSelector}
+                  comments={list}
+                  onAdd={async (p) => {
+                    await addComment({
+                      storyId,
+                      component,
+                      selector: openSelector,
+                      label: list[0]?.label ?? openSelector,
+                      text: p.text,
+                      author,
+                      mode: p.mode,
+                    })
+                    refresh()
+                  }}
+                  onRemove={async (id) => {
+                    await removeComment(id)
+                    refresh()
+                  }}
+                  onClose={() => setOpenSelector(null)}
+                />
+              </div>
             )
           })()}
 
-        {/* Composer for a new pin */}
         {enabled && draft && (
-          <Composer
-            rect={draft.rect}
-            label={draft.label}
-            onSave={saveDraft}
-            onCancel={() => setDraft(null)}
-          />
+          <div style={{ ...popoverShell, ...popoverPos(draft.rect), position: "absolute", pointerEvents: "auto" }}>
+            <CommentComposer
+              label={draft.label}
+              onSave={saveDraft}
+              onCancel={() => setDraft(null)}
+            />
+          </div>
         )}
 
-        {/* Toolbar */}
         <div style={toolbarStyle}>
           <button
             type="button"
@@ -270,7 +277,7 @@ export function CommentLayer({
   )
 }
 
-// --- Pins & popovers ---------------------------------------------------------
+// --- Pin ---------------------------------------------------------------------
 
 function Pin({
   rect,
@@ -299,127 +306,6 @@ function Pin({
     >
       {count > 1 ? count : "💬"}
     </button>
-  )
-}
-
-function Thread({
-  rect,
-  comments,
-  onAdd,
-  onRemove,
-  onClose,
-}: {
-  rect: DOMRect
-  comments: StoryComment[]
-  onAdd: (body: string) => void
-  onRemove: (id: string) => void
-  onClose: () => void
-}) {
-  const [body, setBody] = useState("")
-  const submit = () => {
-    const text = body.trim()
-    if (!text) return
-    onAdd(text)
-    setBody("")
-  }
-  return (
-    <div style={popoverStyle(rect)}>
-      <div style={popoverHeaderStyle}>
-        <span style={{ fontWeight: 600 }}>{comments[0]?.label}</span>
-        <button type="button" onClick={onClose} style={closeBtnStyle} title="Close">
-          ×
-        </button>
-      </div>
-      <div style={{ maxHeight: 220, overflowY: "auto" }}>
-        {comments.map((c) => (
-          <div key={c.id} style={messageStyle}>
-            <div style={messageMetaStyle}>
-              <span style={{ fontWeight: 600, color: FG }}>{c.author}</span>
-              <span>{formatTime(c.createdAt)}</span>
-              <button
-                type="button"
-                onClick={() => onRemove(c.id)}
-                style={deleteBtnStyle}
-                title="Delete"
-              >
-                delete
-              </button>
-            </div>
-            <div style={{ whiteSpace: "pre-wrap" }}>{c.body}</div>
-            {c.agentId && (
-              <div style={agentBadgeStyle} title="The agent assigned to implement this comment">
-                <span style={{ fontFamily: "monospace" }}>{c.agentId}</span>
-                <span style={agentStatusStyle(c.agentStatus)}>{c.agentStatus ?? "pending"}</span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      <textarea
-        autoFocus
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit()
-          if (e.key === "Escape") onClose()
-        }}
-        placeholder="Reply…"
-        style={textareaStyle}
-      />
-      <div style={composerActionsStyle}>
-        <span style={{ fontSize: 10, color: MUTED }}>⌘/Ctrl+Enter</span>
-        <button type="button" onClick={submit} style={primaryBtnStyle} disabled={!body.trim()}>
-          Comment
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function Composer({
-  rect,
-  label,
-  onSave,
-  onCancel,
-}: {
-  rect: DOMRect
-  label: string
-  onSave: (body: string) => void
-  onCancel: () => void
-}) {
-  const [body, setBody] = useState("")
-  const submit = () => {
-    const text = body.trim()
-    if (text) onSave(text)
-  }
-  return (
-    <div style={popoverStyle(rect)}>
-      <div style={popoverHeaderStyle}>
-        <span style={{ color: MUTED }}>
-          New comment on <span style={{ color: FG, fontWeight: 600 }}>{label}</span>
-        </span>
-        <button type="button" onClick={onCancel} style={closeBtnStyle} title="Cancel">
-          ×
-        </button>
-      </div>
-      <textarea
-        autoFocus
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit()
-          if (e.key === "Escape") onCancel()
-        }}
-        placeholder="Add a comment…"
-        style={textareaStyle}
-      />
-      <div style={composerActionsStyle}>
-        <span style={{ fontSize: 10, color: MUTED }}>⌘/Ctrl+Enter</span>
-        <button type="button" onClick={submit} style={primaryBtnStyle} disabled={!body.trim()}>
-          Comment
-        </button>
-      </div>
-    </div>
   )
 }
 
@@ -478,121 +364,11 @@ const pinStyle: React.CSSProperties = {
   boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
 }
 
-function popoverStyle(rect: DOMRect): React.CSSProperties {
-  const left = Math.min(rect.right + 12, window.innerWidth - 280)
-  const top = Math.min(Math.max(rect.top, 8), window.innerHeight - 200)
+function popoverPos(rect: DOMRect): React.CSSProperties {
   return {
-    position: "absolute",
-    left,
-    top,
-    width: 260,
-    background: BG,
-    border: `1px solid ${BORDER}`,
-    borderRadius: 6,
-    boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
-    pointerEvents: "auto",
-    color: FG,
-    overflow: "hidden",
+    left: Math.min(rect.right + 12, window.innerWidth - 280),
+    top: Math.min(Math.max(rect.top, 8), window.innerHeight - 200),
   }
-}
-
-const popoverHeaderStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 8,
-  padding: "8px 10px",
-  borderBottom: "1px solid var(--border-faint)",
-  fontSize: 12,
-}
-
-const messageStyle: React.CSSProperties = {
-  padding: "8px 10px",
-  borderBottom: "1px solid var(--border-faint)",
-}
-
-const messageMetaStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  fontSize: 11,
-  color: MUTED,
-  marginBottom: 3,
-}
-
-const agentBadgeStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  marginTop: 6,
-  fontSize: 10,
-  color: MUTED,
-}
-
-function agentStatusStyle(status?: string): React.CSSProperties {
-  const color =
-    status === "done" ? "var(--success)" : status === "error" ? "var(--error)" : MUTED
-  return {
-    border: `1px solid ${color}`,
-    color,
-    borderRadius: 3,
-    padding: "0 5px",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  }
-}
-
-const textareaStyle: React.CSSProperties = {
-  width: "100%",
-  border: "none",
-  borderTop: "1px solid var(--border-faint)",
-  padding: "8px 10px",
-  resize: "vertical",
-  minHeight: 52,
-  font: "inherit",
-  color: FG,
-  background: BG,
-  boxSizing: "border-box",
-  outline: "none",
-}
-
-const composerActionsStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  padding: "6px 10px",
-  borderTop: "1px solid var(--border-faint)",
-}
-
-const primaryBtnStyle: React.CSSProperties = {
-  background: FG,
-  color: BG,
-  border: "none",
-  borderRadius: 4,
-  padding: "5px 12px",
-  fontSize: 12,
-  fontWeight: 600,
-  cursor: "pointer",
-}
-
-const closeBtnStyle: React.CSSProperties = {
-  background: "none",
-  border: "none",
-  fontSize: 18,
-  lineHeight: 1,
-  cursor: "pointer",
-  color: MUTED,
-  padding: 0,
-}
-
-const deleteBtnStyle: React.CSSProperties = {
-  marginLeft: "auto",
-  background: "none",
-  border: "none",
-  color: "var(--error)",
-  fontSize: 11,
-  cursor: "pointer",
-  padding: 0,
 }
 
 const toolbarStyle: React.CSSProperties = {
@@ -649,14 +425,4 @@ const kbdStyle: React.CSSProperties = {
   fontFamily: "monospace",
   fontSize: 10,
   color: FG,
-}
-
-function formatTime(ts: number): string {
-  const d = new Date(ts)
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
 }
