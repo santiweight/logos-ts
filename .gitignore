@@ -1,0 +1,11 @@
+node_modules
+.agent-runs/
+.workspaces/
+comments.json
+*.bodies.json
+.vite/
+dist/
+.logos/
+.logos_cache/
+.DS_Store
+*.log
