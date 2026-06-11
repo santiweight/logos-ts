@@ -1,10 +1,3 @@
-// Vercel-style element-pinned comments for Storybook stories.
-//
-// Hold Alt (Option on macOS) and the element under the cursor is highlighted;
-// Alt+click pins a comment to it. Pins are grouped per anchored element and
-// open into a small thread popover. Everything is rendered in a fixed overlay
-// that sits above the story but lets pointer events fall through to the story
-// (so Alt-hover can read the real elements) except over its own UI.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   addComment,
@@ -18,15 +11,14 @@ import {
 import {
   CommentThread,
   CommentComposer,
+  CommentToolbar,
+  Highlight,
+  Pin,
+  overlayStyle,
+  popoverPos,
   popoverShell,
   type SubmitPayload,
 } from "../../../logos-ts/studio/src/comment-ui"
-
-const ACCENT = "var(--accent)"
-const BORDER = "var(--border)"
-const FG = "var(--fg)"
-const MUTED = "var(--muted)"
-const BG = "var(--bg)"
 
 interface HoverTarget {
   rect: DOMRect
@@ -185,9 +177,7 @@ export function CommentLayer({
 
       <div data-comment-ui style={overlayStyle}>
         {enabled && altDown && hover && (
-          <div style={highlightStyle(hover.rect)}>
-            <span style={highlightLabelStyle}>{hover.label}</span>
-          </div>
+          <Highlight rect={hover.rect} label={hover.label} />
         )}
 
         {enabled &&
@@ -255,174 +245,13 @@ export function CommentLayer({
           </div>
         )}
 
-        <div style={toolbarStyle}>
-          <button
-            type="button"
-            onClick={() => setEnabled((v) => !v)}
-            style={toolbarBtnStyle(enabled)}
-            title={enabled ? "Comments on — click to disable" : "Comments off"}
-          >
-            💬 {enabled ? "Comments" : "Comments off"}
-            {total > 0 && <span style={countPillStyle}>{total}</span>}
-          </button>
-          {enabled && (
-            <span style={hintStyle}>
-              <kbd style={kbdStyle}>Alt</kbd>
-              {altDown ? " + click an element" : " + hover to comment"}
-            </span>
-          )}
-        </div>
+        <CommentToolbar
+          enabled={enabled}
+          onToggle={() => setEnabled((v) => !v)}
+          total={total}
+          altDown={altDown}
+        />
       </div>
     </>
   )
-}
-
-// --- Pin ---------------------------------------------------------------------
-
-function Pin({
-  rect,
-  count,
-  active,
-  onClick,
-}: {
-  rect: DOMRect
-  count: number
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        ...pinStyle,
-        left: rect.right - 9,
-        top: rect.top - 9,
-        background: active ? FG : ACCENT,
-        color: active ? ACCENT : FG,
-        outline: active ? `2px solid ${FG}` : "none",
-      }}
-      title={`${count} comment${count === 1 ? "" : "s"}`}
-    >
-      {count > 1 ? count : "💬"}
-    </button>
-  )
-}
-
-// --- Styles ------------------------------------------------------------------
-
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  pointerEvents: "none",
-  zIndex: 2147483000,
-  font: "13px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-}
-
-function highlightStyle(rect: DOMRect): React.CSSProperties {
-  return {
-    position: "absolute",
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-    height: rect.height,
-    border: `2px solid ${FG}`,
-    background: "rgba(255, 248, 168, 0.25)",
-    borderRadius: 2,
-    pointerEvents: "none",
-    boxSizing: "border-box",
-  }
-}
-
-const highlightLabelStyle: React.CSSProperties = {
-  position: "absolute",
-  top: -19,
-  left: -2,
-  background: FG,
-  color: ACCENT,
-  fontSize: 10,
-  fontFamily: "monospace",
-  padding: "2px 6px",
-  borderRadius: "3px 3px 0 0",
-  whiteSpace: "nowrap",
-}
-
-const pinStyle: React.CSSProperties = {
-  position: "absolute",
-  width: 22,
-  height: 22,
-  borderRadius: "11px 11px 11px 2px",
-  border: `1.5px solid ${FG}`,
-  fontSize: 11,
-  fontWeight: 700,
-  cursor: "pointer",
-  pointerEvents: "auto",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 0,
-  boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
-}
-
-function popoverPos(rect: DOMRect): React.CSSProperties {
-  return {
-    left: Math.min(rect.right + 12, window.innerWidth - 280),
-    top: Math.min(Math.max(rect.top, 8), window.innerHeight - 200),
-  }
-}
-
-const toolbarStyle: React.CSSProperties = {
-  position: "absolute",
-  bottom: 14,
-  right: 14,
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  pointerEvents: "auto",
-}
-
-function toolbarBtnStyle(enabled: boolean): React.CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    background: enabled ? ACCENT : BG,
-    color: FG,
-    border: `1px solid ${BORDER}`,
-    borderRadius: 6,
-    padding: "6px 10px",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
-  }
-}
-
-const countPillStyle: React.CSSProperties = {
-  background: FG,
-  color: BG,
-  borderRadius: 9,
-  padding: "0 6px",
-  fontSize: 11,
-  minWidth: 16,
-  textAlign: "center",
-}
-
-const hintStyle: React.CSSProperties = {
-  background: BG,
-  border: "1px solid var(--border-faint)",
-  borderRadius: 6,
-  padding: "5px 9px",
-  fontSize: 11,
-  color: MUTED,
-}
-
-const kbdStyle: React.CSSProperties = {
-  background: "var(--bg-alt)",
-  border: "1px solid var(--border-soft)",
-  borderRadius: 3,
-  padding: "1px 5px",
-  fontFamily: "monospace",
-  fontSize: 10,
-  color: FG,
 }

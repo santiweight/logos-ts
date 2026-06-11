@@ -453,7 +453,7 @@ body {
 .row.diff-changed > .row-head { background: rgba(74, 158, 255, 0.08); }
 .row.diff-removed > .row-head { background: rgba(229, 72, 77, 0.08); }
 
-/* comment popup styles are now inline in CommentPopup.tsx */
+/* comment popup styles are baked into popoverShell (comment-ui.tsx) */
 
 .empty { color: var(--muted); padding: 24px; }
 
