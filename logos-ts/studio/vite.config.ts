@@ -191,14 +191,33 @@ function studioApi(): Plugin {
               `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change (its path is the header in the context).\n\n` +
               `Address these change requests:\n${list}\n\n` +
               `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck. ` +
-              `Verify with the ONE test API — from the project root run \`node scripts/healthcheck.mjs\` (or scope it, e.g. \`node scripts/healthcheck.mjs job-filters\`). ` +
-              `Iterate until the tests relevant to your change pass; ignore pre-existing stub failures you didn't cause.`
+              `Do NOT run tests yourself. Tests auto-run on every file save via the test-runner MCP. ` +
+              `After making changes, call \`test_results(wait_for_completion=true)\` to wait for the auto-triggered run to finish and see the results. ` +
+              `Iterate until the tests relevant to your change pass; ignore pre-existing stub failures you didn't cause. ` +
+              `Always check test_results before finishing — do not consider your work done until tests pass.`
 
         send({ type: "status", message: "starting agent…" })
+        const testRunnerConfig = JSON.stringify({
+          cwd: dir,
+          command: ["node", "scripts/healthcheck.mjs"],
+          watch: ["frontend/src", "backend", "shared"],
+          filePattern: "\\.(tsx?|jsx?)$",
+        })
+        const mcpConfig = {
+          mcpServers: {
+            "test-runner": {
+              command: tsx,
+              args: [resolve(LOGOS_TS, "src/test-runner-mcp.ts"), testRunnerConfig],
+            },
+          },
+        }
+        const mcpConfigPath = resolve(RUNS, `${wsId}.mcp.json`)
+        writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
+
         const child = spawn(
           "claude",
-          ["-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
-          { cwd: dir, stdio: ["ignore", "pipe", "pipe"] } // close stdin so it doesn't wait 3s for input
+          ["-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
+          { cwd: dir, stdio: ["ignore", "pipe", "pipe"] }
         )
         let buf = ""
         child.stdout.on("data", (d) => {
@@ -240,6 +259,7 @@ function studioApi(): Plugin {
           } catch {
             /* re-index best effort */
           }
+          rmSync(mcpConfigPath, { force: true })
           send({ type: "done", code })
           res.end()
         })
