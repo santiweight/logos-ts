@@ -1,0 +1,7 @@
+{
+  "name": "hn-jobs",
+  "private": true,
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}

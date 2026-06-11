@@ -94,6 +94,10 @@ function buildData(
   const cCount = (target: string) => comments[target]?.length ?? 0
 
   // COMPONENTS
+  const failingFiles = failingTests
+    ? new Set([...failingTests].map((k) => k.slice(0, k.indexOf(":"))))
+    : null
+
   const compNodes: SNode[] = components.map((c) => {
     const status = diff[`component:${c.name}`] ?? (c.propsName ? diff[`props:${c.propsName}`] : undefined)
     const stories: SNode[] = c.stories.map((s) => ({
@@ -102,15 +106,21 @@ function buildData(
       kind: "story",
       sel: { type: "component", value: { comp: c.name, view: "story" as View, storyId: s.id } },
     }))
-    const captured: SNode[] = c.captured.map((cap) => ({
-      id: `cap:${c.name}:${cap.exportName}`,
-      name: cap.exportName,
-      kind: "captured",
-      sel: {
-        type: "component",
-        value: { comp: c.name, view: "captured" as View, exportName: cap.exportName },
-      },
-    }))
+    const captured: SNode[] = c.captured.map((cap) => {
+      const capStatus: "pass" | "fail" | undefined = failingFiles
+        ? failingFiles.has(cap.testFile) ? "fail" : "pass"
+        : undefined
+      return {
+        id: `cap:${c.name}:${cap.exportName}`,
+        name: cap.exportName,
+        kind: "captured",
+        testStatus: capStatus,
+        sel: {
+          type: "component",
+          value: { comp: c.name, view: "captured" as View, exportName: cap.exportName },
+        },
+      }
+    })
     const kids = [...stories, ...captured]
     return {
       id: `comp:${c.name}`,
@@ -118,6 +128,7 @@ function buildData(
       kind: "comp",
       status,
       stories: c.stories.length,
+      testStatus: rollUpTestStatus(captured),
       sel: { type: "component", value: { comp: c.name, view: "code" as View } },
       children: kids.length ? kids : undefined,
     }
