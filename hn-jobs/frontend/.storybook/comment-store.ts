@@ -12,20 +12,22 @@
 
 export interface StoryComment {
   id: string
-  storyId: string // Storybook story id, e.g. "directory-jobrow--default"
-  selector: string // :scope-relative path from the story root
-  label: string // human-readable anchor, e.g. 'a "Acme"'
-  body: string
+  storyId: string
+  selector: string
+  label: string
+  text: string
   author: string
   createdAt: number
-  component?: string // component title, e.g. "JobRow" (for agent routing)
-  // Set by the server: the one agent that owns this comment (1:1) + its status.
+  component?: string
+  workspaceId?: string | null
+  mode?: string
+  target?: string
   agentId?: string
   agentStatus?: string
 }
 
 const ENDPOINT = "/api/story-comments"
-const KEY = "hn-jobs:story-comments:v1" // localStorage fallback
+const KEY = "hn-jobs:story-comments:v1"
 
 export async function listComments(storyId: string): Promise<StoryComment[]> {
   const all = await readAll()
@@ -43,6 +45,8 @@ export async function addComment(
       body: JSON.stringify(comment),
     })
     if (!res.ok) throw new Error(`POST ${res.status}`)
+    const data = (await res.json()) as { comment?: StoryComment }
+    if (data.comment) return data.comment
   } catch {
     localWriteAll([...localReadAll(), comment])
   }
@@ -93,9 +97,6 @@ function newId(): string {
 
 // --- DOM anchoring -----------------------------------------------------------
 
-// A :scope-relative selector (e.g. ":scope > tbody > tr:nth-of-type(2) > td")
-// that resolves the element from the story root. nth-of-type keeps it stable
-// across re-renders without relying on data-* attributes the app doesn't have.
 export function cssPath(el: Element, root: Element): string {
   if (el === root) return ":scope"
   const parts: string[] = []
@@ -121,7 +122,6 @@ export function resolve(root: Element, selector: string): Element | null {
   }
 }
 
-// Short human label for an element: tag + trimmed text content.
 export function describe(el: Element): string {
   const tag = el.tagName.toLowerCase()
   const text = (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 32)

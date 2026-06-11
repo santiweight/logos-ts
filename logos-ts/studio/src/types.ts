@@ -81,12 +81,18 @@ export interface BackendSel {
 
 export interface Comment {
   id: string
-  target: string // stable tag, e.g. "fn:parseJob", "cls:JobStore", "method:JobStore.upsertJob", "test:..."
+  target: string
   label: string
   text: string
-  workspaceId: string | null // which workspace this change lives on (null = unassigned)
-  mode: "code" | "arch" // how the agent addresses it: edit code, or edit the architecture (signatures)
+  workspaceId: string | null
+  mode: "code" | "arch"
   createdAt: number
+  author?: string
+  storyId?: string | null
+  selector?: string | null
+  component?: string | null
+  agentId?: string | null
+  agentStatus?: string | null
 }
 
 export interface CommentApi {

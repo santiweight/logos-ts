@@ -1,5 +1,5 @@
-import { useState } from "react"
 import type { Comment } from "./types"
+import { CommentThread, popoverShell, type SubmitPayload } from "./comment-ui"
 
 interface Props {
   x: number
@@ -11,74 +11,22 @@ interface Props {
 }
 
 export function CommentPopup({ x, y, label, comments, onAdd, onClose }: Props) {
-  const [text, setText] = useState("")
-  const [mode, setMode] = useState<"code" | "arch">("code")
-  const [fork, setFork] = useState(false)
-  const submit = () => {
-    const t = text.trim()
-    if (t) {
-      onAdd(t, mode, fork)
-      setText("")
-    }
-  }
-  const left = Math.min(x, window.innerWidth - 340)
+  const left = Math.min(x, window.innerWidth - 290)
   const top = Math.min(y, window.innerHeight - 280)
 
+  const handleAdd = (p: SubmitPayload) => onAdd(p.text, p.mode, p.fork)
+
   return (
-    <div className="comment-overlay" onClick={onClose}>
-      <div className="comment-pop" style={{ left, top }} onClick={(e) => e.stopPropagation()}>
-        <div className="comment-h">
-          💬 <span className="comment-target">{label}</span>
-        </div>
-        <div className="comment-list">
-          {comments.length === 0 ? (
-            <div className="muted small">No comments yet.</div>
-          ) : (
-            comments.map((c) => (
-              <div key={c.id} className="comment-item">
-                {c.text}
-              </div>
-            ))
-          )}
-        </div>
-        <textarea
-          autoFocus
-          className="comment-input"
-          value={text}
-          placeholder="Add a comment…  (⌘/Ctrl+Enter)"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              e.preventDefault()
-              submit()
-            } else if (e.key === "Escape") {
-              onClose()
-            }
-          }}
-        />
-        <div className="comment-actions">
-          <span className="mode-switch" title="How the agent addresses this change">
-            <button className={mode === "code" ? "on" : ""} onClick={() => setMode("code")}>
-              code
-            </button>
-            <button className={mode === "arch" ? "on" : ""} onClick={() => setMode("arch")}>
-              arch
-            </button>
-          </span>
-          <button
-            className={`fork-toggle ${fork ? "on" : ""}`}
-            title="Fork a new workspace for this change instead of applying to the current one"
-            onClick={() => setFork((f) => !f)}
-          >
-            ⑂ fork
-          </button>
-          <span className="spacer" />
-          <button onClick={onClose}>Close</button>
-          <button className="primary" onClick={submit}>
-            Comment
-          </button>
-        </div>
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={{ ...popoverShell, position: "fixed", left, top }} onClick={(e) => e.stopPropagation()}>
+        <CommentThread label={label} comments={comments} onAdd={handleAdd} onClose={onClose} />
       </div>
     </div>
   )
+}
+
+const overlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 100,
 }
