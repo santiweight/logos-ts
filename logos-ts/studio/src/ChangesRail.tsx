@@ -5,6 +5,7 @@ interface Props {
   onToggle: () => void
   comments: Comment[]
   workspaces: WorkspaceMeta[]
+  workspacesLoading: boolean
   activeWorkspaceId: string | null
   selected: { type: "workspace" | "comment"; id: string } | null
   onBase: () => void
@@ -23,6 +24,7 @@ export function ChangesRail({
   onToggle,
   comments,
   workspaces,
+  workspacesLoading,
   activeWorkspaceId,
   selected,
   onBase,
@@ -67,7 +69,10 @@ export function ChangesRail({
       </div>
 
       <div className="rail-sec">workspaces · ⌘⌫ to delete · alt-click code to add a change</div>
-      {workspaces.length === 0 && (
+      {workspacesLoading && workspaces.length === 0 && (
+        <div className="rail-loading muted small">Loading workspaces…</div>
+      )}
+      {!workspacesLoading && workspaces.length === 0 && (
         <div className="rail-empty muted small">none yet — alt-click an item to start one</div>
       )}
 

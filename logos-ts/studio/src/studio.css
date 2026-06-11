@@ -59,6 +59,8 @@ body {
 }
 .rail-sec { padding: 8px 10px 2px; color: var(--muted); font-size: 10px; letter-spacing: 0.08em; }
 .rail-empty { padding: 6px 10px; }
+.rail-loading { padding: 6px 10px; animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
 .rail-row { padding: 6px 10px; cursor: pointer; border-left: 2px solid transparent; position: relative; }
 .rail-row:hover { background: #1f1f24; }
 .rail-del {
