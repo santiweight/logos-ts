@@ -1,4 +1,9 @@
 import type { Comment, WorkspaceMeta } from "./types"
+import { svgIcon } from "./icons"
+
+const branchIcon = svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 12)
+const plusIcon = svgIcon("M12 5v14M5 12h14", 12)
+const collapseIcon = svgIcon("M15 18l-6-6 6-6", 12)
 
 interface Props {
   open: boolean
@@ -41,7 +46,7 @@ export function ChangesRail({
     return (
       <div className="rail collapsed">
         <button className="rail-toggle" onClick={onToggle} title="Workspaces">
-          ⑂
+          {branchIcon}
         </button>
         {workspaces.length > 0 && <div className="rail-count">{workspaces.length}</div>}
       </div>
@@ -56,10 +61,10 @@ export function ChangesRail({
         <span>CHANGES</span>
         <span>
           <button className="rail-toggle" onClick={onNewWorkspace} title="New workspace">
-            +
+            {plusIcon}
           </button>
           <button className="rail-toggle" onClick={onToggle} title="Collapse">
-            ‹
+            {collapseIcon}
           </button>
         </span>
       </div>
@@ -67,8 +72,6 @@ export function ChangesRail({
       <div className={`rail-row base ${!activeWorkspaceId ? "active" : ""}`} onClick={onBase}>
         <span className="rail-dot">●</span> Base
       </div>
-
-      <div className="rail-sec">workspaces · ⌘⌫ to delete · alt-click code to add a change</div>
       {workspacesLoading && workspaces.length === 0 && (
         <div className="rail-loading muted small">Loading workspaces…</div>
       )}
@@ -99,24 +102,24 @@ export function ChangesRail({
                 >
                   ×
                 </button>
-                <span className="rail-dot fork">⑂</span> {w.name}
+                <span className="rail-dot fork">{branchIcon}</span> {w.name}
                 {w.parentId && <span className="rail-status"> · branch</span>}
-                {!isActive && <span className="rail-status"> · {wsComments.length} change(s)</span>}
+                {!isActive && wsComments.length > 0 && <span className="rail-status"> · {wsComments.length}</span>}
                 {agentRunning && agentWorkspace === w.id && (
-                  <span className="rail-agent" title="An agent is addressing this workspace">
-                    <span className="ag-spin">⟳</span> agent…
+                  <span className="rail-agent" title="Agent running">
+                    <span className="ag-spin">↻</span>
                   </span>
                 )}
                 {isActive && (
                   <button
                     className="rail-fork"
-                    title="Fork (branch to compare)"
+                    title="Fork workspace"
                     onClick={(e) => {
                       e.stopPropagation()
                       onFork()
                     }}
                   >
-                    fork ⑂
+                    fork
                   </button>
                 )}
               </div>

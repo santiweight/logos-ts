@@ -41,12 +41,16 @@ body {
 .rail-toggle {
   font: inherit;
   background: transparent;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 4px;
-  color: var(--text);
+  color: var(--muted);
   cursor: pointer;
-  padding: 2px 8px;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+.rail-toggle:hover { color: var(--text); background: #2a2a30; }
 .rail-count { color: var(--accent); font-size: 11px; }
 .rail-head {
   display: flex;
@@ -57,8 +61,8 @@ body {
   font-size: 11px;
   letter-spacing: 0.08em;
 }
-.rail-sec { padding: 8px 10px 2px; color: var(--muted); font-size: 10px; letter-spacing: 0.08em; }
-.rail-empty { padding: 6px 10px; }
+.rail-sec { padding: 6px 10px 2px; color: var(--muted); font-size: 10px; letter-spacing: 0.04em; }
+.rail-empty { padding: 6px 10px; color: var(--muted); font-size: 11px; }
 .rail-loading { padding: 6px 10px; animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
 .rail-row { padding: 6px 10px; cursor: pointer; border-left: 2px solid transparent; position: relative; }
@@ -80,20 +84,22 @@ body {
 .rail-del:hover { color: #e5484d; }
 .rail-row.ws { font-weight: 600; }
 .rail-row.comment { padding-left: 22px; font-weight: 400; }
-.rail-dot.fork { color: var(--accent); }
+.rail-dot.fork { color: var(--accent); display: inline-flex; vertical-align: middle; margin-right: 2px; }
 .rail-fork {
   float: right;
   font: inherit;
-  font-size: 11px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 3px;
   color: var(--muted);
   cursor: pointer;
-  padding: 0 6px;
+  padding: 1px 6px;
 }
-.rail-fork:hover { color: var(--text); }
-.rail-head span button + button { margin-left: 4px; }
+.rail-fork:hover { color: var(--text); border-color: var(--muted); }
+.rail-head span { display: flex; align-items: center; gap: 2px; }
+.rail-head span button + button { margin-left: 0; }
 .rail-run {
   float: right;
   margin-right: 4px;
@@ -150,7 +156,8 @@ body {
 .rail-comment { color: var(--text); margin: 2px 0; white-space: pre-wrap; }
 .rail-status { color: var(--muted); font-size: 11px; }
 .rail-status.forked { color: var(--accent); }
-.exit-ws { color: #06121f; text-decoration: underline; cursor: pointer; margin-left: 6px; }
+.exit-ws { color: var(--muted); text-decoration: underline; cursor: pointer; margin-left: 6px; }
+.exit-ws:hover { color: var(--text); }
 .cmode { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 4px; border-radius: 2px; margin-left: 6px; }
 .cmode.arch { background: rgba(74, 158, 255, 0.18); color: #6fb4ff; }
 .cmode.code { background: #ffffff14; color: var(--muted); }
@@ -495,10 +502,12 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 0 12px;
-  background: var(--accent);
-  color: #06121f;
+  background: #1a1a1d;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
   font-size: 11px;
 }
+.statusbar a { color: var(--accent); }
 
 /* ---- Graph view ---- */
 .graph-view {

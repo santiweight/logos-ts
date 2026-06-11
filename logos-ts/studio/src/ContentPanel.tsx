@@ -128,9 +128,6 @@ function StoryView({
         </button>
       </div>
       <iframe className="story-frame" src={src} title={storyId} />
-      <div className="hint">
-        Requires the Storybook dev server (<code>npm run storybook</code> in hn-jobs/frontend).
-      </div>
     </div>
   )
 }

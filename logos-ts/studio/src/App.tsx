@@ -4,6 +4,7 @@ import { ContentPanel } from "./ContentPanel"
 import { BackendPanel } from "./BackendPanel"
 import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
+import { svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { ArchDiffPanel } from "./ArchDiffPanel"
 import { diffIndex } from "./diff"
@@ -238,6 +239,32 @@ export function App() {
   // Closing just hides the terminal; the last run's log + a running agent persist.
   const closeAgent = useCallback(() => setAgentOpen(false), [])
 
+  // Adopt orphan comments (Storybook comments land without a workspace).
+  const adoptingRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const iv = setInterval(async () => {
+      const res = await fetch("/api/comments").catch(() => null)
+      if (!res?.ok) return
+      const all = (await res.json()) as Comment[]
+      const orphans = all.filter(
+        (c) => !c.workspaceId && c.agentStatus === "pending" && !adoptingRef.current.has(c.id)
+      )
+      for (const c of orphans) {
+        adoptingRef.current.add(c.id)
+        const wsId = await createWorkspace()
+        if (!wsId) { adoptingRef.current.delete(c.id); continue }
+        await fetch(`/api/comments/${c.id}/workspace`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ workspaceId: wsId }),
+        })
+        await refreshComments()
+        ensureAgent(wsId, c.mode as "code" | "arch")
+      }
+    }, 2_000)
+    return () => clearInterval(iv)
+  }, [createWorkspace, refreshComments, ensureAgent])
+
   // Fork = branch the current workspace (or base) into a parallel copy.
   const onFork = useCallback(async () => {
     setBusy("forking workspace…")
@@ -402,7 +429,7 @@ export function App() {
         <span>
           {activeWs ? (
             <>
-              ⑂ {activeWs.name}{" "}
+              {svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 11)} {activeWs.name}{" "}
               <a className="arch-diff-toggle" onClick={() => setArchDiffOpen((o) => !o)}>
                 {archDiffOpen ? "close diff" : "arch diff"}
               </a>{" "}

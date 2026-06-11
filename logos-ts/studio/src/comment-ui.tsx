@@ -495,49 +495,49 @@ function toolbarBtnStyle(enabled: boolean): React.CSSProperties {
     display: "flex",
     alignItems: "center",
     gap: 6,
-    background: C.bg,
-    color: C.fg,
-    border: `1px solid ${C.border}`,
+    background: "#252529",
+    color: enabled ? "#d6d6da" : "#8a8a92",
+    border: "1px solid #34343a",
     borderRadius: 6,
-    padding: "6px 10px",
-    fontSize: 12,
-    fontWeight: 600,
+    padding: "5px 10px",
+    fontSize: 11,
+    fontWeight: 500,
     cursor: "pointer",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    opacity: enabled ? 1 : 0.6,
   }
 }
 
 const countPill: React.CSSProperties = {
-  background: C.accent,
-  color: C.bg,
+  background: "#4a9eff",
+  color: "#fff",
   borderRadius: 9,
-  padding: "0 6px",
-  fontSize: 11,
-  minWidth: 16,
+  padding: "0 5px",
+  fontSize: 10,
+  minWidth: 14,
   textAlign: "center",
+  fontWeight: 600,
 }
 
 const hintBox: React.CSSProperties = {
-  background: C.bg,
-  border: `1px solid ${C.border}`,
+  background: "#252529",
+  border: "1px solid #34343a",
   borderRadius: 6,
-  padding: "5px 9px",
-  fontSize: 11,
-  color: C.muted,
-  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+  padding: "4px 8px",
+  fontSize: 10,
+  color: "#8a8a92",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
 }
 
 const kbd: React.CSSProperties = {
-  background: "#f5f5f5",
-  border: `1px solid ${C.border}`,
+  background: "#34343a",
+  border: "1px solid #44444a",
   borderRadius: 3,
   padding: "1px 5px",
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
   fontSize: 10,
-  color: C.fg,
+  color: "#d6d6da",
 }
 
 export function CommentToolbar({
@@ -563,21 +563,21 @@ export function CommentToolbar({
         pointerEvents: "auto",
       }}
     >
+      {enabled && (
+        <span style={hintBox}>
+          <kbd style={kbd}>Alt</kbd>
+          {altDown ? " + click" : " + hover"}
+        </span>
+      )}
       <button
         type="button"
         onClick={onToggle}
         style={toolbarBtnStyle(enabled)}
         title={enabled ? "Comments on — click to disable" : "Comments off"}
       >
-        {enabled ? "Comments" : "Comments off"}
         {total > 0 && <span style={countPill}>{total}</span>}
+        {enabled ? "Comments" : "Off"}
       </button>
-      {enabled && (
-        <span style={hintBox}>
-          <kbd style={kbd}>Alt</kbd>
-          {altDown ? " + click an element" : " + hover to comment"}
-        </span>
-      )}
     </div>
   )
 }

@@ -179,6 +179,10 @@ export function removeByWorkspace(conn: SqliteDb, workspaceId: string): void {
   for (const r of rows) remove(conn, r.id)
 }
 
+export function setWorkspace(conn: SqliteDb, commentId: string, workspaceId: string): void {
+  conn.prepare("UPDATE comments SET workspace_id = ? WHERE id = ?").run(workspaceId, commentId)
+}
+
 export function updateAgent(conn: SqliteDb, agentId: string, patch: AgentPatch): void {
   const now = Date.now()
   conn

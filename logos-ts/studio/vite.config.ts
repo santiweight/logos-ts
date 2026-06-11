@@ -15,6 +15,7 @@ const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
 const vitest = resolve(FRONTEND, "node_modules/.bin/vitest")
 const LEGACY_COMMENTS = resolve(STUDIO, "comments.json")
 const WS_DIR = resolve(STUDIO, ".workspaces")
+const STUDIO_PORT_FILE = resolve(HN, ".logos", "studio-port")
 
 type SqliteDb = Awaited<ReturnType<typeof commentDb.open>>
 let _commentConn: SqliteDb | null = null
@@ -60,6 +61,14 @@ function studioApi(): Plugin {
   return {
     name: "logos-ts-studio-api",
     configureServer(server) {
+      server.httpServer?.once("listening", () => {
+        const addr = server.httpServer!.address()
+        if (addr && typeof addr === "object") {
+          mkdirSync(resolve(HN, ".logos"), { recursive: true })
+          writeFileSync(STUDIO_PORT_FILE, String(addr.port))
+        }
+      })
+
       server.middlewares.use("/api/index", (_req, res) => {
         const args = [resolve(LOGOS_TS, "src/build-index.ts"), HN, "-"]
         if (storybookUrl) args.push(storybookUrl)
@@ -228,7 +237,9 @@ function studioApi(): Plugin {
         // Pre-load architecture context (recursive descent over the change's deps)
         // so the agent skips discovery entirely.
         send({ type: "status", message: "building architecture context…" })
-        const targets = [...new Set(changes.map((c: { target: string }) => c.target))]
+        const targets = [...new Set(changes.map((c: { target: string; component?: string | null }) =>
+          c.component ? `component:${c.component}` : c.target
+        ))]
         let context = ""
         try {
           context = execFileSync(tsx, [resolve(LOGOS_TS, "src/context.ts"), dir, "40000", ...targets], {
@@ -241,13 +252,14 @@ function studioApi(): Plugin {
         }
 
         const list = changes.map((c: { label: string; text: string }) => `- (${c.label}) ${c.text}`).join("\n")
+        const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
         const prompt =
           mode === "arch"
-            ? `${context}\n\n` +
+            ? `${context}\n\n${sandbox}` +
               `You are in ARCHITECTURE MODE. The code is shown as pure SIGNATURES using \`declare\` — no bodies, no \`=\`, no values (e.g. \`export declare function parseJob(text: string): ParsedJob\`, \`export declare const TECH_KEYWORDS: TechKeyword[]\`, \`declare class JobStore { upsertJob(job: Job): Job }\`). The real implementations, values, and imports are filled back in automatically after you finish.\n\n` +
               `Restructure the ARCHITECTURE to satisfy the change: move / split / rename / add these \`declare\` signatures across files (you may create and delete files). Keep everything as bare \`declare\` declarations — do NOT write bodies, values, or import statements. Just shape the signatures and where they live. Do not run tests.\n\n` +
               `Change requests:\n${list}\n`
-            : `${context}\n\n` +
+            : `${context}\n\n${sandbox}` +
               `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change (its path is the header in the context).\n\n` +
               `Address these change requests:\n${list}\n\n` +
               `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck. ` +
@@ -341,6 +353,13 @@ function studioApi(): Plugin {
           const db = await commentConn()
           if (req.method === "GET") {
             res.end(JSON.stringify(commentDb.list(db)))
+            return
+          }
+          if (req.method === "PUT" && sub.endsWith("/workspace")) {
+            const id = sub.replace(/\/workspace$/, "")
+            const body = JSON.parse((await readBody(req)) || "{}")
+            commentDb.setWorkspace(db, id, body.workspaceId)
+            res.end(JSON.stringify({ ok: true }))
             return
           }
           if (req.method === "DELETE" && sub) {
