@@ -5,49 +5,47 @@ on:
     branches: ["**"]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: |
             logos-ts/package-lock.json
             logos-ts/studio/package-lock.json
+            hn-jobs/package-lock.json
             hn-jobs/frontend/package-lock.json
 
-      - name: Install logos-ts dependencies
-        working-directory: logos-ts
-        run: npm ci
+      - name: Install dependencies
+        run: |
+          npm ci --prefix logos-ts
+          npm ci --prefix logos-ts/studio
+          npm ci --prefix hn-jobs
+          npm ci --prefix hn-jobs/frontend
 
-      - name: Typecheck logos-ts
-        working-directory: logos-ts
-        run: npm run typecheck
+      - name: Typecheck Logos core
+        run: npm run typecheck --prefix logos-ts
 
-      - name: Test logos-ts
-        working-directory: logos-ts
-        run: npm test
+      - name: Test Logos core
+        run: npm test --prefix logos-ts -- --run
 
-      - name: Install studio dependencies
-        working-directory: logos-ts/studio
-        run: npm ci
+      - name: Typecheck Studio
+        run: npm run typecheck --prefix logos-ts/studio
 
-      - name: Typecheck studio
-        working-directory: logos-ts/studio
-        run: npm run typecheck
+      - name: Test Studio
+        run: npm test --prefix logos-ts/studio -- --run
 
-      - name: Test studio workspace flows
-        working-directory: logos-ts/studio
-        run: npm test -- ChangesRail.test.tsx workspace-api.integration.test.ts
-
-      - name: Install sample frontend dependencies
-        working-directory: hn-jobs/frontend
-        run: npm ci
+      - name: Run sample app healthcheck
+        run: node scripts/healthcheck.mjs
+        working-directory: hn-jobs
 
       - name: Typecheck sample frontend
-        working-directory: hn-jobs/frontend
-        run: npm run typecheck
+        run: npm run typecheck --prefix hn-jobs/frontend
