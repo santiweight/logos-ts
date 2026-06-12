@@ -44,7 +44,6 @@ export interface FileItem {
 }
 export interface StudioIndex {
   root: string
-  storybookUrl: string
   files: FileEntry[]
 }
 
@@ -76,7 +75,7 @@ function findCaptured(storyEntry: StoryEntry, absRoot: string): CapturedNode[] {
   return out
 }
 
-export function buildStudioIndex(root: string, storybookUrl = "", existingProject?: ReturnType<typeof loadProject>): StudioIndex {
+export function buildStudioIndex(root: string, existingProject?: ReturnType<typeof loadProject>): StudioIndex {
   const absRoot = resolve(root)
   const project = existingProject ?? loadProject(root)
   const sfs = project.getSourceFiles().filter((s) => !s.getFilePath().includes("/node_modules/"))
@@ -178,13 +177,13 @@ export function buildStudioIndex(root: string, storybookUrl = "", existingProjec
   }
 
   files.sort((a, b) => a.file.localeCompare(b.file))
-  return { root: absRoot, storybookUrl, files }
+  return { root: absRoot, files }
 }
 
 // CLI: tsx src/build-index.ts <root> <outFile>
 if (process.argv[1]?.match(/build-index\.[tj]s$/)) {
   const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json"] = process.argv
-  const index = buildStudioIndex(root, process.env["STORYBOOK_URL"])
+  const index = buildStudioIndex(root)
   if (outFile === "-") {
     process.stdout.write(JSON.stringify(index))
   } else {

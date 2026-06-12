@@ -41,7 +41,7 @@ export function App() {
   const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
 
-  const view = activeWorkspaceId && workspaceIndex ? workspaceIndex : index
+  const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
 
   const [storybookUrls, setStorybookUrls] = useState<Record<string, string>>({})
   const [storybookStates, setStorybookStates] = useState<Record<string, SbState>>({})
@@ -57,7 +57,7 @@ export function App() {
   }, [])
   const activeStorybookUrl = activeWorkspaceId
     ? storybookUrls[activeWorkspaceId] ?? ""
-    : index.storybookUrl || ""
+    : ""
   const activeStorybookState = activeWorkspaceId
     ? storybookStates[activeWorkspaceId] ?? null
     : null
@@ -376,6 +376,10 @@ export function App() {
   const nComps = view.files.filter((f) => f.component).length
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
 
+  if (!activeWorkspaceId || !workspaceIndex) {
+    return <div className="studio"><div className="empty">Opening workspace…</div></div>
+  }
+
   return (
     <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`}>
       <ChangesRail
@@ -411,7 +415,7 @@ export function App() {
       </aside>
 
       <main className="main">
-        {archDiffOpen && workspaceIndex ? (
+        {archDiffOpen ? (
           <ArchDiffPanel
             base={index}
             workspace={workspaceIndex}
@@ -423,7 +427,7 @@ export function App() {
             selection={selection}
             storybookUrl={activeStorybookUrl}
             storybookState={activeStorybookState}
-            onRetryStorybook={activeWorkspaceId ? retryStorybook : null}
+            onRetryStorybook={retryStorybook}
             onView={setView}
             onCapture={onCapture}
             comments={goalsByTarget}

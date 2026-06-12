@@ -19,7 +19,7 @@ interface FileEntry {
     stories: StoryNode[]; captured: CapturedNode[]
   }
 }
-interface StudioIndex { root: string; storybookUrl: string; files: FileEntry[] }
+interface StudioIndex { root: string; files: FileEntry[] }
 type DiffStatus = "added" | "changed" | "removed"
 
 function collectNodes(index: StudioIndex): Map<string, string> {
@@ -78,7 +78,7 @@ function makeFile(file: string, items: FileItem[] = [], component?: FileEntry["c
 }
 
 function makeIndex(files: FileEntry[]): StudioIndex {
-  return { root: "/test", storybookUrl: "", files }
+  return { root: "/test", files }
 }
 
 function makeComponent(name: string, overrides?: Partial<NonNullable<FileEntry["component"]>>): NonNullable<FileEntry["component"]> {

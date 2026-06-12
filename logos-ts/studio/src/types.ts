@@ -59,7 +59,6 @@ export interface FileEntry {
 
 export interface StudioIndex {
   root: string
-  storybookUrl: string
   files: FileEntry[]
 }
 
