@@ -1,0 +1,36 @@
+{
+  "name": "posted-date-column",
+  "codebase": "../../../hn-jobs",
+  "comment": {
+    "target": "component:JobTable",
+    "text": "Add a 'Posted' column as the last column (after Details) showing the job's postedAt date formatted as YYYY-MM-DD.",
+    "component": "JobTable",
+    "label": "table · job columns"
+  },
+  "agent": "implementation",
+  "tier": "deterministic",
+  "repeat": 3,
+  "checks": {
+    "typecheck": {
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ]
+    },
+    "behavior": {
+      "oracle": [
+        "../checks/posted-date-column.check.test.tsx",
+        "../checks/fixtures.ts"
+      ],
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "vitest",
+        "run",
+        "posted-date-column.check.test.tsx"
+      ]
+    }
+  }
+}

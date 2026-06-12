@@ -12,7 +12,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { execFile } from "node:child_process"
-import { mkdirSync, watch } from "node:fs"
+import { appendFileSync, mkdirSync, watch } from "node:fs"
 import { resolve } from "node:path"
 import { z } from "zod"
 
@@ -90,8 +90,30 @@ function startRun() {
     }
     lastCompleted = run
     if (currentRun === run) currentRun = null
+    recordRun(run)
     for (const w of waiters.splice(0)) w()
   })
+}
+
+// Every completed run is appended to runs.jsonl so external consumers (the
+// eval harness, the studio) can aggregate pass/fail without parsing MCP chat.
+function recordRun(run: Run) {
+  let summary: { total?: number; passed?: number; failed?: number } | null = null
+  if (run.output) {
+    try {
+      const parsed = JSON.parse(run.output)
+      summary = { total: parsed.total, passed: parsed.passed, failed: parsed.failed }
+    } catch { /* non-JSON test output */ }
+  }
+  const line = JSON.stringify({
+    id: run.id,
+    status: run.status,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    summary,
+    error: run.error,
+  })
+  try { appendFileSync(resolve(testCacheDir, "runs.jsonl"), line + "\n") } catch { /* best-effort */ }
 }
 
 // --- file watcher ---

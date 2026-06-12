@@ -1,0 +1,36 @@
+{
+  "name": "rename-company-header",
+  "codebase": "../../../hn-jobs",
+  "comment": {
+    "target": "component:JobTable",
+    "text": "Rename the 'Company' column header to 'Employer'.",
+    "component": "JobTable",
+    "label": "th · Company"
+  },
+  "agent": "implementation",
+  "tier": "deterministic",
+  "repeat": 3,
+  "checks": {
+    "typecheck": {
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ]
+    },
+    "behavior": {
+      "oracle": [
+        "../checks/rename-company-header.check.test.tsx",
+        "../checks/fixtures.ts"
+      ],
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "vitest",
+        "run",
+        "rename-company-header.check.test.tsx"
+      ]
+    }
+  }
+}

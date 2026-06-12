@@ -11,7 +11,25 @@
   },
   "agent": "implementation",
   "checks": {
-    "typecheck": { "cwd": "frontend", "cmd": ["npx", "tsc", "--noEmit"] },
-    "behavior": { "oracle": "../checks/bold-role-element.check.test.tsx", "cwd": "frontend", "cmd": ["npx", "vitest", "run", "bold-role-element.check.test.tsx"] }
-  }
+    "typecheck": {
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ]
+    },
+    "behavior": {
+      "oracle": "../checks/bold-role-element.check.test.tsx",
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "vitest",
+        "run",
+        "bold-role-element.check.test.tsx"
+      ]
+    }
+  },
+  "tier": "deterministic",
+  "repeat": 3
 }

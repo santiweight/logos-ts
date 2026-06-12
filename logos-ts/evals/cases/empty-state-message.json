@@ -1,0 +1,36 @@
+{
+  "name": "empty-state-message",
+  "codebase": "../../../hn-jobs",
+  "comment": {
+    "target": "component:JobTable",
+    "text": "Change the empty-state message to exactly: No jobs found — try removing some filters.",
+    "component": "JobTable",
+    "label": "td · No postings match"
+  },
+  "agent": "implementation",
+  "tier": "deterministic",
+  "repeat": 3,
+  "checks": {
+    "typecheck": {
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ]
+    },
+    "behavior": {
+      "oracle": [
+        "../checks/empty-state-message.check.test.tsx",
+        "../checks/fixtures.ts"
+      ],
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "vitest",
+        "run",
+        "empty-state-message.check.test.tsx"
+      ]
+    }
+  }
+}

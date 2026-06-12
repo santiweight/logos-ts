@@ -1,0 +1,14 @@
+{
+  "name": "fuzzy-search-arch",
+  "codebase": "../../../hn-jobs",
+  "comment": {
+    "target": "component:DirectoryView",
+    "text": "Make search into a fuzzy search: queries with small typos (e.g. 'enginer') should still match jobs ('Engineer'). Exact substring matches must keep working."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "frontend", "cmd": ["npx", "tsc", "--noEmit"] },
+    "behavior": { "oracle": "../checks/fuzzy-search.check.test.tsx", "cwd": "frontend", "cmd": ["npx", "vitest", "run", "fuzzy-search.check.test.tsx"] }
+  }
+}

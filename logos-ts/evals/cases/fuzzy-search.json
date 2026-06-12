@@ -1,13 +1,30 @@
 {
   "name": "fuzzy-search",
-  "codebase": "../../hn-jobs",
+  "codebase": "../../../hn-jobs",
   "comment": {
     "target": "component:DirectoryView",
     "text": "Make search into a fuzzy search"
   },
   "agent": "implementation",
   "checks": {
-    "typecheck": { "cwd": "frontend", "cmd": ["npx", "tsc", "--noEmit"] },
-    "behavior": { "oracle": "checks/fuzzy-search.check.test.tsx", "cwd": "frontend", "cmd": ["npx", "vitest", "run", "fuzzy-search.check.test.tsx"] }
-  }
+    "typecheck": {
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ]
+    },
+    "behavior": {
+      "oracle": "../checks/fuzzy-search.check.test.tsx",
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "vitest",
+        "run",
+        "fuzzy-search.check.test.tsx"
+      ]
+    }
+  },
+  "tier": "capability"
 }

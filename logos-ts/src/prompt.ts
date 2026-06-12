@@ -27,6 +27,23 @@ export function buildArchPrompt(context: string, sandbox: string, goalLine: stri
     `Change requests:\n${goalLine}\n`
 }
 
+export function buildImplPrompt(context: string, sandbox: string, goalLine: string, verifyNote: string): string {
+  return `${context}\n\n${sandbox}` +
+    `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change.\n\n` +
+    `Address these change requests:\n${goalLine}\n\n` +
+    `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck. ${verifyNote}`
+}
+
+export function buildVerifyNote(hasTests: boolean): string {
+  return `Do not run lint as part of default verification; strict lint is an optional cleanup pass only when explicitly requested.` +
+    (hasTests
+      ? ` Do NOT run tests yourself. Tests auto-run on every file save via the test-runner MCP. ` +
+        `After making changes, call \`test_results(wait_for_completion=true)\` to wait for the auto-triggered run to finish and see the results. ` +
+        `Iterate until the tests relevant to your change pass; ignore pre-existing stub failures you didn't cause. ` +
+        `Always check test_results before finishing — do not consider your work done until tests pass.`
+      : ` This project has no automated test runner configured. Verify your changes manually.`)
+}
+
 export function selectNextGoal<G extends { id: string; status: string }>(
   goals: G[],
   runningIds: { has(id: string): boolean },
