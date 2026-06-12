@@ -1,4 +1,4 @@
-import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph"
+import { Node, SyntaxKind, ts, type ObjectLiteralExpression, type SourceFile } from "ts-morph"
 import { basename } from "node:path"
 import type { StoryMap } from "./model.js"
 
@@ -21,8 +21,8 @@ function metaObject(sf: SourceFile): ObjectLiteralExpression | undefined {
   const ex = ea.getExpression()
   if (Node.isObjectLiteralExpression(ex)) return ex
   if (Node.isIdentifier(ex)) {
-    const decl = ex.getSymbol()?.getDeclarations()?.[0]
-    if (decl && Node.isVariableDeclaration(decl)) {
+    const decl = sf.getVariableDeclaration(ex.getText())
+    if (decl) {
       const init = decl.getInitializer()
       if (init && Node.isObjectLiteralExpression(init)) return init
     }
@@ -59,6 +59,25 @@ function kebabExport(name: string): string {
   return sanitize(spaced)
 }
 
+function namedExports(sf: SourceFile): string[] {
+  const names: string[] = []
+  for (const stmt of sf.getStatements()) {
+    const flags = ts.getCombinedModifierFlags(stmt.compilerNode as ts.Declaration)
+    if (!(flags & ts.ModifierFlags.Export)) continue
+    if (Node.isExportAssignment(stmt)) continue
+    if (Node.isVariableStatement(stmt)) {
+      for (const decl of stmt.getDeclarationList().getDeclarations()) names.push(decl.getName())
+    } else if (Node.isFunctionDeclaration(stmt)) {
+      const n = stmt.getName()
+      if (n) names.push(n)
+    } else if (Node.isClassDeclaration(stmt)) {
+      const n = stmt.getName()
+      if (n) names.push(n)
+    }
+  }
+  return names
+}
+
 // Full index of every story across the project.
 export function indexStories(sourceFiles: SourceFile[]): StoryEntry[] {
   const entries: StoryEntry[] = []
@@ -70,13 +89,12 @@ export function indexStories(sourceFiles: SourceFile[]): StoryEntry[] {
     const base = title ?? component
     const storiesModule = basename(sf.getFilePath()).replace(/\.(t|j)sx?$/, "")
 
-    for (const [exportName] of sf.getExportedDeclarations()) {
-      if (exportName === "default") continue
+    for (const name of namedExports(sf)) {
       entries.push({
-        id: `${sanitize(base)}--${kebabExport(exportName)}`,
+        id: `${sanitize(base)}--${kebabExport(name)}`,
         filePath: sf.getFilePath(),
         storiesModule,
-        exportName,
+        exportName: name,
         component,
       })
     }

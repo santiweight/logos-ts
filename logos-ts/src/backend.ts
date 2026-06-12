@@ -5,7 +5,7 @@ import {
   type FunctionDeclaration,
   type MethodDeclaration,
 } from "ts-morph"
-import { relative } from "node:path"
+import { relative, resolve, dirname } from "node:path"
 import type { DependencyTree } from "./model.js"
 
 export interface TestRef {
@@ -44,52 +44,92 @@ export interface BackendFile {
 }
 
 const isTestFile = (p: string) => /\.test\.(t|j)sx?$/.test(p)
-const inProject = (p: string) => !p.includes("/node_modules/")
 
 function signatureOf(fn: FunctionDeclaration | MethodDeclaration, name: string): string {
   const ps = fn
     .getParameters()
     .map((p) => `${p.getNameNode().getText()}: ${p.getTypeNode()?.getText() ?? "any"}`)
     .join(", ")
-  let ret = fn.getReturnTypeNode()?.getText()
-  if (!ret) {
-    try {
-      ret = fn.getReturnType().getText(fn)
-    } catch {
-      ret = ""
-    }
-  }
+  const ret = fn.getReturnTypeNode()?.getText() ?? ""
   return `${name}(${ps})${ret ? `: ${ret}` : ""}`
 }
 
 const shortDeps = (tree: DependencyTree, q: string) =>
   [...(tree.get(q) ?? [])].map((d) => d.split("#")[1] ?? d).sort()
 
-// For each it()/test(), resolve referenced symbols and attach to the finest:
-// free function -> the function; exactly one method of a class -> that method;
-// two or more methods of one class -> the class. (The ambient `new Class` edge
-// only attaches to the class when no method of it is referenced.)
+// Build a lookup of declarations across all non-test source files:
+//   name -> { qname, kind: "function" | "class" | "method", classQname? }
+interface DeclInfo {
+  qname: string
+  kind: "function" | "class" | "method"
+  classQname?: string
+}
+
+function buildDeclLookup(sfs: SourceFile[], absRoot: string): Map<string, Map<string, DeclInfo>> {
+  const byFile = new Map<string, Map<string, DeclInfo>>()
+  for (const sf of sfs) {
+    if (isTestFile(sf.getFilePath())) continue
+    const file = relative(absRoot, sf.getFilePath())
+    const decls = new Map<string, DeclInfo>()
+    for (const fd of sf.getFunctions()) {
+      const n = fd.getName()
+      if (n) decls.set(n, { qname: `${file}#${n}`, kind: "function" })
+    }
+    for (const cd of sf.getClasses()) {
+      const n = cd.getName()
+      if (n) {
+        const cq = `${file}#${n}`
+        decls.set(n, { qname: cq, kind: "class" })
+        for (const m of cd.getMethods()) {
+          decls.set(`${n}.${m.getName()}`, { qname: `${file}#${n}.${m.getName()}`, kind: "method", classQname: cq })
+        }
+      }
+    }
+    if (decls.size) byFile.set(sf.getFilePath(), decls)
+  }
+  return byFile
+}
+
+function resolveModule(fromFile: string, specifier: string, knownPaths: Set<string>): string | undefined {
+  if (!specifier.startsWith(".")) return undefined
+  const dir = dirname(fromFile)
+  for (const ext of ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+    const c = resolve(dir, specifier + ext)
+    if (knownPaths.has(c)) return c
+  }
+  return undefined
+}
+
 export function computeTestAttachments(sfs: SourceFile[], absRoot: string): Map<string, TestRef[]> {
   const out = new Map<string, TestRef[]>()
   const push = (q: string, t: TestRef) => {
     const arr = out.get(q) ?? out.set(q, []).get(q)!
     arr.push(t)
   }
-  const qn = (d: Node): string | null => {
-    const file = relative(absRoot, d.getSourceFile().getFilePath())
-    const k = d.getKindName()
-    if (k === "FunctionDeclaration") return `${file}#${(d as FunctionDeclaration).getName() ?? ""}`
-    if (k === "ClassDeclaration") return `${file}#${(d as any).getName?.() ?? ""}`
-    if (k === "MethodDeclaration") {
-      const cls = d.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)?.getName()
-      return cls ? `${file}#${cls}.${(d as MethodDeclaration).getName()}` : null
-    }
-    return null
-  }
+
+  const declsByFile = buildDeclLookup(sfs, absRoot)
+  const knownPaths = new Set(sfs.map((s) => s.getFilePath()))
 
   for (const sf of sfs) {
     if (!isTestFile(sf.getFilePath())) continue
     const file = relative(absRoot, sf.getFilePath())
+
+    // Build import map: imported name -> DeclInfo from source file
+    const importedDecls = new Map<string, DeclInfo>()
+    for (const imp of sf.getImportDeclarations()) {
+      const resolved = resolveModule(sf.getFilePath(), imp.getModuleSpecifierValue(), knownPaths)
+      if (!resolved) continue
+      const sourceDecls = declsByFile.get(resolved)
+      if (!sourceDecls) continue
+
+      for (const named of imp.getNamedImports()) {
+        const importedName = named.getAliasNode()?.getText() ?? named.getName()
+        const sourceName = named.getName()
+        const info = sourceDecls.get(sourceName)
+        if (info) importedDecls.set(importedName, info)
+      }
+    }
+
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const expr = call.getExpression()
       const fname = Node.isIdentifier(expr)
@@ -121,28 +161,48 @@ export function computeTestAttachments(sfs: SourceFile[], absRoot: string): Map<
           .join(" ")
           .trim() || undefined
 
+      // Collect all identifiers used in the test callback
+      const usedNames = new Set<string>()
+      for (const id of cb.getDescendantsOfKind(SyntaxKind.Identifier)) {
+        usedNames.add(id.getText())
+      }
+
+      // Also check for property access patterns like `instance.method()`
+      const methodCalls = new Set<string>()
+      for (const pae of cb.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+        const objText = pae.getExpression().getText()
+        const propName = pae.getName()
+        // Check if the object was created with `new ClassName()`
+        // We track the variable name -> class name mapping
+        methodCalls.add(`${objText}.${propName}`)
+      }
+
       const funcs = new Set<string>()
       const classes = new Set<string>()
       const methodsByClass = new Map<string, Set<string>>()
 
-      for (const id of cb.getDescendantsOfKind(SyntaxKind.Identifier)) {
-        let sym = id.getSymbol()
-        if (!sym) continue
-        sym = sym.getAliasedSymbol() ?? sym
-        for (const d of sym.getDeclarations()) {
-          if (!inProject(d.getSourceFile().getFilePath()) || isTestFile(d.getSourceFile().getFilePath()))
-            continue
-          const k = d.getKindName()
-          const q = qn(d)
-          if (!q) continue
-          if (k === "FunctionDeclaration") funcs.add(q)
-          else if (k === "ClassDeclaration") classes.add(q)
-          else if (k === "MethodDeclaration") {
-            const cls = d.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)?.getName()
-            const cf = relative(absRoot, d.getSourceFile().getFilePath())
-            const cq = `${cf}#${cls}`
-            const set = methodsByClass.get(cq) ?? methodsByClass.set(cq, new Set()).get(cq)!
-            set.add(q)
+      for (const [importedName, info] of importedDecls) {
+        if (!usedNames.has(importedName)) continue
+        if (info.kind === "function") funcs.add(info.qname)
+        else if (info.kind === "class") {
+          classes.add(info.qname)
+          // Check if any methods of this class are called via property access
+          const sourceFile = [...declsByFile.entries()].find(([, decls]) =>
+            [...decls.values()].some((d) => d.qname === info.qname)
+          )
+          if (sourceFile) {
+            for (const [declName, declInfo] of sourceFile[1]) {
+              if (declInfo.kind === "method" && declInfo.classQname === info.qname) {
+                const methodName = declName.split(".")[1]
+                // Check if any variable of this class type has this method called
+                for (const mc of methodCalls) {
+                  if (mc.endsWith(`.${methodName}`)) {
+                    const set = methodsByClass.get(info.qname) ?? methodsByClass.set(info.qname, new Set()).get(info.qname)!
+                    set.add(declInfo.qname)
+                  }
+                }
+              }
+            }
           }
         }
       }
