@@ -172,6 +172,14 @@ function studioApi(): Plugin {
               res.end("{}")
               return
             }
+            if (caps.storybook && !sbManager.get(sub)) {
+              const RUNS = resolve(STUDIO, "..", ".agent-runs")
+              const agentFrontend = join(RUNS, sub, relative(PROJECT_ROOT, caps.storybook.frontendDir))
+              const frontendDir = existsSync(agentFrontend) ? agentFrontend : caps.storybook.frontendDir
+              sbManager.ensure(sub, frontendDir).catch((e) =>
+                console.error(`[storybook:${sub}] failed to start:`, e.message)
+              )
+            }
             res.end(readFileSync(p, "utf8"))
             return
           }

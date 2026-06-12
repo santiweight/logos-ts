@@ -147,6 +147,33 @@ describe("workspace + storybook integration", () => {
     expect(Object.keys(urls)).toEqual(["base"])
   })
 
+  it("opening a workspace via GET starts its storybook on demand", async () => {
+    const wsRes = await api("/api/workspaces", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    const ws = await wsRes.json() as { id: string }
+
+    // Opening the workspace triggers on-demand Storybook start
+    await api(`/api/workspaces/${ws.id}`)
+
+    const deadline = Date.now() + 35_000
+    let wsSbUrl: string | undefined
+    while (Date.now() < deadline) {
+      const sbRes = await api("/api/storybooks")
+      const urls = await sbRes.json() as Record<string, string>
+      if (urls[ws.id]) {
+        wsSbUrl = urls[ws.id]
+        break
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    expect(wsSbUrl).toBeDefined()
+    expect(wsSbUrl).toMatch(/^http:\/\/localhost:\d+$/)
+    expect(wsSbUrl).not.toBe((await api("/api/storybooks").then(r => r.json()) as Record<string, string>).base)
+  }, 45_000)
+
   it("active storybook URL falls back to base when workspace has no storybook", async () => {
     const sbRes = await api("/api/storybooks")
     const urls = await sbRes.json() as Record<string, string>
