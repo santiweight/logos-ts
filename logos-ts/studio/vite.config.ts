@@ -349,7 +349,7 @@ function autoStorybook(): Plugin {
           )
         }
       }
-      const cleanup = () => sbManager.shutdownAll()
+      const cleanup = () => { wsMgr.abortAll(); sbManager.shutdownAll() }
       process.on("exit", cleanup)
       process.on("SIGINT", () => { cleanup(); process.exit() })
       process.on("SIGTERM", () => { cleanup(); process.exit() })

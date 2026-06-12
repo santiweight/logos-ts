@@ -8,7 +8,7 @@
 //   AgentRun   — executes one goal in a workspace's fork directory
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync, readdirSync } from "node:fs"
-import { resolve, relative, join, dirname } from "node:path"
+import { resolve, relative, join, dirname, basename } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
 import { promisify } from "node:util"
 
@@ -379,7 +379,12 @@ export class WorkspaceManager {
     const child = spawn(
       "claude",
       ["-p", prompt, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
-      { cwd: dir, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        cwd: dir,
+        stdio: ["ignore", "pipe", "pipe"],
+        // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
+        env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+      },
     )
     this.runningAgents.set(goal.id, child)
 
@@ -449,6 +454,11 @@ export class WorkspaceManager {
 
   get sessionManager(): ClaudeSessionManager {
     return this.sessions
+  }
+
+  /** Kill all running agents (studio shutdown). */
+  abortAll(): void {
+    for (const goalId of [...this.runningAgents.keys()]) this.abort(goalId)
   }
 
   /** Kill the running agent for a goal. */

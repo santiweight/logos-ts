@@ -1,7 +1,7 @@
 /* eslint-disable prefer-const, @typescript-eslint/prefer-readonly, @typescript-eslint/no-dynamic-delete, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unused-vars */
 import { spawn, type ChildProcess } from "node:child_process"
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs"
-import { resolve, dirname } from "node:path"
+import { resolve, dirname, basename } from "node:path"
 
 export interface SbEntry {
   id: string
@@ -125,7 +125,14 @@ export class StorybookManager {
       const child = spawn(npx, ["dev", "--ci", "--no-open"], {
         cwd: frontendDir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, LOGOS_TS_SRC: this.logosSrc, LOGOS_PROJECT_ROOT: this.projectRoot },
+        env: {
+          ...process.env,
+          LOGOS_TS_SRC: this.logosSrc,
+          LOGOS_PROJECT_ROOT: this.projectRoot,
+          // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
+          LOGOS_SESSION: basename(this.projectRoot),
+          LOGOS_WS: id,
+        },
       })
 
       let resolved = false
