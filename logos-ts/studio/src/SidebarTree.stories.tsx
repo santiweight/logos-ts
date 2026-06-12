@@ -28,11 +28,51 @@ const files: FileEntry[] = [
       ],
     },
   },
-{
+  {
+    file: "src/components/FiltersSidebar.tsx",
+    code: "export const FiltersSidebar = ...",
+    items: [
+      { kind: "function", name: "FiltersSidebar", signature: "FiltersSidebar()", code: "", deps: [], tests: [] },
+    ],
+    component: {
+      name: "FiltersSidebar",
+      signature: "FiltersSidebar()",
+      componentCode: "export const FiltersSidebar = ...",
+      propsName: null,
+      propsCode: null,
+      propsFields: [],
+      stories: [
+        { id: "filterssidebar--default", exportName: "Default" },
+      ],
+      captured: [],
+    },
+  },
+  {
+    file: "src/components/HeaderNav.tsx",
+    code: "export const HeaderNav = ...",
+    items: [
+      { kind: "function", name: "HeaderNav", signature: "HeaderNav()", code: "", deps: [], tests: [] },
+      { kind: "function", name: "NavLink", signature: "NavLink(props: NavLinkProps)", code: "", deps: [], tests: [] },
+    ],
+    component: {
+      name: "HeaderNav",
+      signature: "HeaderNav()",
+      componentCode: "export const HeaderNav = ...",
+      propsName: null,
+      propsCode: null,
+      propsFields: [],
+      stories: [
+        { id: "headernav--default", exportName: "Default" },
+      ],
+      captured: [],
+    },
+  },
+  {
     file: "backend/api/jobs.ts",
     code: "...",
     items: [
       { kind: "function", name: "parseJob", signature: "parseJob(raw: RawJob): Job", code: "", deps: [], tests: [] },
+      { kind: "function", name: "fetchJobs", signature: "fetchJobs(): Promise<Job[]>", code: "", deps: [], tests: [] },
     ],
   },
   {
@@ -40,6 +80,13 @@ const files: FileEntry[] = [
     code: "...",
     items: [
       { kind: "class", name: "JobStore", fields: [], methods: [], deps: [], tests: [], code: "" },
+    ],
+  },
+  {
+    file: "backend/utils/slug.ts",
+    code: "...",
+    items: [
+      { kind: "function", name: "slugify", signature: "slugify(s: string): string", code: "", deps: [], tests: [{ name: "slugifies", file: "backend/utils/slug.test.ts" }] },
     ],
   },
 ]

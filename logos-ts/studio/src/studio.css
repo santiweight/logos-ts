@@ -178,7 +178,7 @@ body {
 }
 
 
-.sidebar-tree { flex: 1; min-height: 0; padding-top: 2px; }
+.sidebar-tree { flex: 1; min-height: 0; padding-top: 4px; }
 
 .indent-guide {
   position: absolute;
@@ -192,10 +192,10 @@ body {
 .anode {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   height: 100%;
-  padding-right: 6px;
-  margin: 0 2px;
+  padding-right: 8px;
+  margin: 0 4px;
   cursor: pointer;
   white-space: nowrap;
   user-select: none;

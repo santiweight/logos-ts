@@ -122,10 +122,12 @@ function buildData(
     }
   }
 
+  const stripExt = (n: string) => n.replace(/\.(tsx?|jsx?)$/, "")
+
   const fileNode = (f: FileEntry): SNode => {
-    const name = f.file.split("/").pop() ?? f.file
+    const rawName = f.file.split("/").pop() ?? f.file
+    const baseName = stripExt(rawName)
     const target = `file:${f.file}`
-    const children: SNode[] = []
 
     if (f.component) {
       const comp = f.component
@@ -149,6 +151,28 @@ function buildData(
           sel: { file: f.file, view: "captured" as View, exportName: cap.exportName },
         }
       })
+
+      const otherItems = f.items.filter((it) => it.name !== comp.name)
+      const canInline = otherItems.length === 0
+
+      if (canInline) {
+        const compChildren = [...storyNodes, ...capturedNodes]
+        return {
+          id: `comp:${comp.name}`,
+          name: comp.name,
+          kind: "comp",
+          target: compTarget,
+          label: comp.name,
+          status,
+          stories: comp.stories.length,
+          comments: cCount(compTarget) + cCount(target),
+          testStatus: rollUpTestStatus(capturedNodes),
+          sel: { file: f.file, view: "code" },
+          children: compChildren.length ? compChildren : undefined,
+        }
+      }
+
+      const children: SNode[] = []
       const compId = `comp:${comp.name}`
       children.push({
         id: compId,
@@ -161,19 +185,45 @@ function buildData(
         children: [...storyNodes, ...capturedNodes].length ? [...storyNodes, ...capturedNodes] : undefined,
       })
       openIds[`file:${f.file}`] = true
+
+      const items = otherItems.slice().sort((a, b) => a.name.localeCompare(b.name))
+      for (const it of items) children.push(symNode(it, f.file))
+
+      return {
+        id: `file:${f.file}`,
+        name: baseName,
+        kind: "file",
+        target,
+        label: baseName,
+        comments: cCount(target),
+        fns: f.items.length + 1,
+        tests: f.items.reduce((n, it) => n + testsOf(it), 0),
+        testStatus: rollUpTestStatus(children),
+        children: children.length ? children : undefined,
+        sel: { file: f.file, view: "code" },
+      }
     }
 
+    // No component — check if single item matches file name
+    if (f.items.length === 1 && f.items[0].name === baseName) {
+      const it = f.items[0]
+      const sym = symNode(it, f.file)
+      sym.comments = (sym.comments ?? 0) + cCount(target)
+      return sym
+    }
+
+    const children: SNode[] = []
     const items = f.items.slice().sort((a, b) => a.name.localeCompare(b.name))
     for (const it of items) children.push(symNode(it, f.file))
 
     return {
       id: `file:${f.file}`,
-      name,
+      name: baseName,
       kind: "file",
       target,
-      label: name,
+      label: baseName,
       comments: cCount(target),
-      fns: f.items.length + (f.component ? 1 : 0),
+      fns: f.items.length,
       tests: f.items.reduce((n, it) => n + testsOf(it), 0),
       testStatus: rollUpTestStatus(children),
       children: children.length ? children : undefined,
@@ -284,9 +334,9 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
 
 const rowHeight = (node: NodeApi<SNode>) => {
   const k = node.data.kind
-  if (k === "section") return 18
-  if (k === "fn" || k === "cls" || k === "story" || k === "captured") return 16
-  return 18
+  if (k === "section") return 22
+  if (k === "fn" || k === "cls" || k === "story" || k === "captured") return 20
+  return 22
 }
 
 function useSize() {
@@ -335,7 +385,19 @@ export function SidebarTree({
             const fe = files.find((f) => f.file === selection.file)
             return fe?.component ? `cap:${fe.component.name}:${selection.exportName}` : null
           })()
-        : `file:${selection.file}`
+        : (() => {
+            const fe = files.find((f) => f.file === selection.file)
+            if (fe?.component) {
+              const others = fe.items.filter((it) => it.name !== fe.component!.name)
+              if (others.length === 0) return `comp:${fe.component.name}`
+            }
+            if (fe && !fe.component && fe.items.length === 1) {
+              const baseName = (fe.file.split("/").pop() ?? "").replace(/\.(tsx?|jsx?)$/, "")
+              if (fe.items[0].name === baseName)
+                return `sym:${fe.file}:${fe.items[0].name}`
+            }
+            return `file:${selection.file}`
+          })()
 
   const ctx = useMemo<Ctx>(
     () => ({ selectedId, testsRunning, onComment, onSelect }),
