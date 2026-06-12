@@ -96,10 +96,19 @@ function ArchitectureReview({
   lines: DiffLine[]
   stats: { add: number; del: number }
 }) {
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
   if (stats.add === 0 && stats.del === 0) {
     return <div className="empty">No architectural changes in this workspace.</div>
   }
   const files = splitArchitectureDiff(lines)
+  const toggleFile = (file: string) => {
+    setExpandedFiles((current) => {
+      const next = new Set(current)
+      if (next.has(file)) next.delete(file)
+      else next.add(file)
+      return next
+    })
+  }
   return (
     <div className="arch-review">
       <div className="arch-review-summary">
@@ -107,30 +116,43 @@ function ArchitectureReview({
         <span className="review-stat-add">+{stats.add}</span>
         <span className="review-stat-del">-{stats.del}</span>
       </div>
-      {files.map((file) => (
-        <section key={file.file} className="review-file-card">
-          <header className="review-file-header">
-            <div className="review-file-profile">
-              <span className={`review-file-avatar ${file.status}`}>
-                {file.status === "added" ? "+" : file.status === "removed" ? "-" : "~"}
-              </span>
-              <div>
-                <strong>{file.file}</strong>
-                <small>{file.status}</small>
-              </div>
-            </div>
-            <div className="review-file-stats">
-              {file.add > 0 && <span className="review-stat-add">+{file.add}</span>}
-              {file.del > 0 && <span className="review-stat-del">-{file.del}</span>}
-            </div>
-          </header>
-          <pre className="inline-diff">
-            {file.lines.map((line, index) => (
-              <CodeDiffRow key={`${file.file}-${index}`} line={line} />
-            ))}
-          </pre>
-        </section>
-      ))}
+      <div className="review-file-list">
+        {files.map((file) => {
+          const expanded = expandedFiles.has(file.file)
+          return (
+            <section key={file.file} className={`review-file-card ${expanded ? "expanded" : "collapsed"}`}>
+              <button
+                className="review-file-header"
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => toggleFile(file.file)}
+              >
+                <div className="review-file-profile">
+                  <span className={`review-file-avatar ${file.status}`}>
+                    {file.status === "added" ? "+" : file.status === "removed" ? "-" : "~"}
+                  </span>
+                  <div>
+                    <strong>{file.file}</strong>
+                    <small>{file.status}{expanded ? "" : " - click to expand"}</small>
+                  </div>
+                </div>
+                <div className="review-file-stats">
+                  {file.add > 0 && <span className="review-stat-add">+{file.add}</span>}
+                  {file.del > 0 && <span className="review-stat-del">-{file.del}</span>}
+                  <span className="review-expand-mark">{expanded ? "-" : "+"}</span>
+                </div>
+              </button>
+              {expanded && (
+                <pre className="inline-diff">
+                  {file.lines.map((line, index) => (
+                    <CodeDiffRow key={`${file.file}-${index}`} line={line} />
+                  ))}
+                </pre>
+              )}
+            </section>
+          )
+        })}
+      </div>
     </div>
   )
 }

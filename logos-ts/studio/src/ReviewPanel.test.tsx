@@ -92,6 +92,12 @@ describe("ReviewPanel", () => {
 
     expect(screen.getByText("components/JobCard.tsx")).toBeInTheDocument()
     expect(container.querySelectorAll(".review-file-card")).toHaveLength(1)
+    const header = screen.getByRole("button", { name: /components\/JobCard\.tsx/ })
+    expect(header).toHaveAttribute("aria-expanded", "false")
+    expect(container.querySelector(".inline-diff-add")).toBeNull()
+
+    fireEvent.click(header)
+    expect(header).toHaveAttribute("aria-expanded", "true")
     expect(container.querySelector(".inline-diff-add")).not.toBeNull()
     expect(container.querySelector(".tok-keyword")?.textContent).toBe("declare")
     expect(container.querySelector(".tok-type")?.textContent).toBe("string")
