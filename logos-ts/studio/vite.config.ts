@@ -341,8 +341,16 @@ function studioApi(): Plugin {
           const testFile = (out.match(/captured -> (.+)/)?.[1] ?? "").trim()
           const frontendDir = resolve(captureRoot, relative(PROJECT_ROOT, caps.storybook.frontendDir))
           const frontendVitest = resolve(frontendDir, "node_modules/.bin/vitest")
+          const vitestCacheDir = resolve(captureRoot, ".logos_cache", "vitest")
+          mkdirSync(vitestCacheDir, { recursive: true })
           execFileSync(frontendVitest, ["run", "--update", resolve(frontendDir, testFile)], {
-            cwd: frontendDir, encoding: "utf8",
+            cwd: frontendDir,
+            encoding: "utf8",
+            env: {
+              ...process.env,
+              LOGOS_VITEST_CACHE_DIR: vitestCacheDir,
+              NODE_ENV: "test",
+            },
           })
           if (workspace) wsMgr.reindex(workspace.id)
           res.end(JSON.stringify({ ok: true, testFile }))
