@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-plus-operands, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-floating-promises, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unnecessary-type-arguments */
+/* eslint-disable no-restricted-syntax, @typescript-eslint/restrict-plus-operands, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-floating-promises, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unnecessary-type-arguments */
 import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   ReactFlow,

@@ -1,4 +1,4 @@
-/* eslint-disable functional/immutable-data, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unused-vars, no-restricted-syntax */
+/* eslint-disable @typescript-eslint/no-unused-vars, no-restricted-syntax */
 import { memo, useCallback } from "react"
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 

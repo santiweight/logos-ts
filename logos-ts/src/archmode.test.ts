@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs"
 import { execFileSync } from "node:child_process"

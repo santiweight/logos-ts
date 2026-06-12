@@ -1,4 +1,3 @@
-/* eslint-disable functional/no-loop-statements, functional/immutable-data, @typescript-eslint/no-explicit-any, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-non-null-assertion, @typescript-eslint/restrict-template-expressions, functional/no-let, @typescript-eslint/no-unnecessary-condition */
 import { Node, SyntaxKind, type SourceFile } from "ts-morph"
 import { relative, resolve } from "node:path"
 import { loadProject } from "./project.js"
@@ -258,7 +257,7 @@ export function buildArchContext(root: string, targets: string[], budget = 40000
       for (const ta of sf.getTypeAliases()) names.push(ta.getName())
       for (const en of sf.getEnums()) names.push(en.getName())
       for (const vd of sf.getVariableDeclarations()) {
-        const init = vd.getInitializer?.()
+        const init = vd.getInitializer()
         names.push(
           init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
             ? `<${vd.getName()}>`

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions */
 import type { FC } from "react"
 import type { Job } from "../../shared/types"
 import { formatSalary, formatCompanyName, hostLabel } from "../format"

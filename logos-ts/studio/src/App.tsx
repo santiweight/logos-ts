@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-let, functional/no-loop-statements, functional/immutable-data, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-non-null-assertion, no-restricted-syntax */
+/* eslint-disable @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unnecessary-condition, no-restricted-syntax */
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { SidebarTree } from "./SidebarTree"
 import { ContentPanel } from "./ContentPanel"

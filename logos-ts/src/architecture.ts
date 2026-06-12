@@ -1,4 +1,3 @@
-/* eslint-disable functional/no-let, functional/no-loop-statements, functional/immutable-data */
 import {
   Node,
   type SourceFile,

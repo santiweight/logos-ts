@@ -1,4 +1,3 @@
-/* eslint-disable functional/no-throw-statements, @typescript-eslint/strict-boolean-expressions */
 import { writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { loadProject } from "./project.js"

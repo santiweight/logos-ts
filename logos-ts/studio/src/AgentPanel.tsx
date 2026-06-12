@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unnecessary-condition */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 import { useEffect, useRef } from "react"
 
 // Each streamed message from the agent-run SSE.
@@ -11,7 +11,6 @@ export interface AgentMsg {
 }
 
 function summarizeToolInput(name: string, input: Record<string, any>): string {
-  if (!input) return ""
   if (input["file_path"]) return input["file_path"]
   if (input["command"]) return String(input["command"]).slice(0, 80)
   if (input["pattern"]) return input["pattern"]

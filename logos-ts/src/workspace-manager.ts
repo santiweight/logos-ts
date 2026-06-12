@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, functional/no-let, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/restrict-plus-operands, @typescript-eslint/prefer-readonly, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-explicit-any, @typescript-eslint/no-floating-promises, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/require-await, @typescript-eslint/use-unknown-in-catch-callback-variable */
+/* eslint-disable no-restricted-syntax, @typescript-eslint/restrict-plus-operands, @typescript-eslint/prefer-readonly, @typescript-eslint/no-floating-promises, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/require-await, @typescript-eslint/use-unknown-in-catch-callback-variable */
 // WorkspaceManager: owns workspace lifecycle, goal queue, and agent sequencing.
 //
 // Ontology:
@@ -100,7 +100,6 @@ export class WorkspaceManager {
     for (const f of readdirSync(this.wsDir).filter((f) => f.endsWith(".json"))) {
       try {
         const ws = JSON.parse(readFileSync(resolve(this.wsDir, f), "utf8")) as WorkspaceState
-        if (!ws.goals) ws.goals = []
         this.workspaces.set(ws.id, ws)
       } catch { /* corrupt file */ }
     }
@@ -395,7 +394,7 @@ export class WorkspaceManager {
         )
         // Merge previousSnapshot from the base index
         const newIndex = ws.index as { files?: { component?: { captured?: { exportName: string; snapshot: string | null; previousSnapshot: string | null }[] } }[] }
-        if (newIndex?.files) {
+        if (newIndex.files) {
           for (const f of newIndex.files) {
             if (!f.component?.captured) continue
             for (const c of f.component.captured) {

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/strict-boolean-expressions */
 import { createContext, useContext, useState } from "react"
 import type { GoalApi, DiffStatus } from "./types"
 

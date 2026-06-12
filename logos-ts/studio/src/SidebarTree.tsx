@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unnecessary-type-assertion */
+/* eslint-disable no-restricted-syntax, @typescript-eslint/no-unnecessary-type-assertion */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { ICONS } from "./icons"
 import { Tree, type NodeApi, type NodeRendererProps } from "react-arborist"
@@ -55,7 +55,7 @@ const SidebarCtx = createContext<Ctx>({
 
 const testsOf = (it: FileItem): number =>
   it.kind === "class"
-    ? it.tests.length + (it.methods ?? []).reduce((n, m) => n + m.tests.length, 0)
+    ? it.tests.length + it.methods.reduce((n, m) => n + m.tests.length, 0)
     : it.tests.length
 
 function rollUpTestStatus(children: SNode[] | undefined): "pass" | "fail" | undefined {
@@ -97,7 +97,7 @@ function buildData(
     if (!failingTests) return undefined
     const allTests =
       it.kind === "class"
-        ? [...it.tests, ...(it.methods ?? []).flatMap((m) => m.tests)]
+        ? [...it.tests, ...it.methods.flatMap((m) => m.tests)]
         : it.tests
     if (allTests.length === 0) return undefined
     return allTests.some(isTestFailing) ? "fail" : "pass"
@@ -107,7 +107,7 @@ function buildData(
     const isClass = it.kind === "class"
     const target = `${isClass ? "cls" : "fn"}:${it.name}`
     let status = diff[target]
-    if (!status && isClass && (it.methods ?? []).some((m) => diff[`method:${it.name}.${m.name}`]))
+    if (!status && isClass && it.methods.some((m) => diff[`method:${it.name}.${m.name}`]))
       status = "changed"
     const testStatus = symTestStatus(it)
     return {

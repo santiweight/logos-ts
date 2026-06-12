@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, functional/immutable-data, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unused-vars */
+/* eslint-disable no-restricted-syntax, @typescript-eslint/no-unused-vars */
 import { Node, SyntaxKind, ts, type ObjectLiteralExpression, type SourceFile } from "ts-morph"
 import { basename } from "node:path"
 import type { StoryMap } from "./model.js"

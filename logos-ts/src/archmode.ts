@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion */
+/* eslint-disable no-restricted-syntax, @typescript-eslint/no-unnecessary-type-assertion */
 import { Node, SyntaxKind, type SourceFile, type Statement } from "ts-morph"
 import { writeFileSync, readFileSync, unlinkSync } from "node:fs"
 import { relative, resolve } from "node:path"

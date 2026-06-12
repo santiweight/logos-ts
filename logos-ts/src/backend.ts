@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-let, functional/no-loop-statements, functional/immutable-data, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-non-null-assertion, no-restricted-syntax */
+/* eslint-disable no-restricted-syntax */
 import {
   Node,
   SyntaxKind,

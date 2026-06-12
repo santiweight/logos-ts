@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return */
 import type { StudioIndex } from "./types"
 
 export function indexToArchText(index: StudioIndex): string {
@@ -15,8 +15,8 @@ export function indexToArchText(index: StudioIndex): string {
         lines.push(`declare function ${it.signature}`)
       } else {
         lines.push(`declare class ${it.name} {`)
-        for (const field of it.fields ?? []) lines.push(`  ${field.name}: ${field.type}`)
-        for (const m of it.methods ?? []) lines.push(`  ${m.signature}`)
+        for (const field of it.fields) lines.push(`  ${field.name}: ${field.type}`)
+        for (const m of it.methods) lines.push(`  ${m.signature}`)
         lines.push(`}`)
       }
     }

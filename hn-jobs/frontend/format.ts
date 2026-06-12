@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-non-null-assertion */
 // Pure presentation formatters used by directory/detail components.
 // Signatures match the shared Job fields (salaryPeriod et al. are plain strings).
 

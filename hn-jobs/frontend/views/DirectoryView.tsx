@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/strict-boolean-expressions, no-restricted-syntax */
+/* eslint-disable no-restricted-syntax */
 import { type FC } from "react"
 import type { Job } from "../../shared/types"
 import { SearchableFilter, type FilterItem } from "../components/SearchableFilter"

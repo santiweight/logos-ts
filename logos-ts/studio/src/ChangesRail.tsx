@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import type { Goal, WorkspaceMeta } from "./types"
 import { svgIcon } from "./icons"
 
@@ -77,7 +77,7 @@ export function ChangesRail({
         .map((w) => {
           const isActive = activeWorkspaceId === w.id
           const wsSelected = selected?.type === "workspace" && selected.id === w.id
-          const goals = w.goals ?? []
+          const goals = w.goals
           return (
             <div key={w.id}>
               <div
@@ -143,7 +143,7 @@ export function ChangesRail({
                         </button>
                         <div className="rail-target">
                           {g.label}
-                          <span className={`cmode ${g.mode ?? "code"}`}>{g.mode ?? "code"}</span>
+                          <span className={`cmode ${g.mode}`}>{g.mode}</span>
                           <span className={`goal-status ${g.status}`}>{g.status}</span>
                         </div>
                         <div className="rail-comment">{g.text}</div>

@@ -1,9 +1,7 @@
 import tseslint from "typescript-eslint";
-import functional from "eslint-plugin-functional";
 
 export default tseslint.config(
   {
-    // Only src/ is in the tsconfig project; loose scripts can't be type-checked
     ignores: ["**/node_modules/**", "**/dist/**", "studio/**", "*.mjs", "eslint.config.js", "evals/**", ".dev-sessions/**", ".workspaces/**"],
   },
   ...tseslint.configs.strictTypeChecked,
@@ -16,28 +14,23 @@ export default tseslint.config(
     },
   },
   {
-    plugins: { functional },
     rules: {
-      // --- @typescript-eslint strict rules ---
-      "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/strict-boolean-expressions": "error",
-      "@typescript-eslint/prefer-readonly": "error",
-      "@typescript-eslint/switch-exhaustiveness-check": "error",
-      "@typescript-eslint/no-unnecessary-condition": "error",
-      "@typescript-eslint/no-non-null-assertion": "error",
+      // --- bug-catchers (error) ---
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-misused-promises": "error",
       "@typescript-eslint/consistent-type-imports": "error",
+      "@typescript-eslint/switch-exhaustiveness-check": "error",
+      "@typescript-eslint/prefer-readonly": "error",
+      "@typescript-eslint/no-unnecessary-condition": "error",
 
-      // --- eslint-plugin-functional ---
-      "functional/no-let": "error",
-      "functional/immutable-data": ["error", {
-        ignoreClasses: true,
-        ignoreImmediateMutation: true,
-      }],
-      "functional/no-loop-statements": "error",
-      "functional/no-throw-statements": "error",
-      "functional/prefer-immutable-types": "off",
+      // --- worth seeing but not blocking (warn) ---
+      "@typescript-eslint/strict-boolean-expressions": "warn",
+      "@typescript-eslint/no-non-null-assertion": "warn",
+      "@typescript-eslint/no-explicit-any": "warn",
+
+      // --- too noisy, turn off ---
+      "@typescript-eslint/restrict-template-expressions": "off",
+      "@typescript-eslint/no-confusing-void-expression": "off",
 
       // --- ban undefined literal ---
       "no-restricted-syntax": [
@@ -48,15 +41,11 @@ export default tseslint.config(
         },
       ],
 
-      // --- no var, no let (covered above), prefer const ---
       "no-var": "error",
       "prefer-const": "error",
     },
   },
   // --- ts-morph API layer: relax no-unsafe-* rules ---
-  // These files interact directly with ts-morph, whose TypeScript Compiler
-  // API surfaces `any` extensively. The unsafe rules are enforced everywhere
-  // else (the "engine" layer).
   {
     files: [
       "src/architecture.ts",
@@ -75,7 +64,7 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-argument": "off",
       "@typescript-eslint/no-unsafe-return": "off",
-      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
 );

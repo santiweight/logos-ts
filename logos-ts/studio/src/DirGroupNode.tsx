@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/restrict-template-expressions */
 import { memo, useCallback } from "react"
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 

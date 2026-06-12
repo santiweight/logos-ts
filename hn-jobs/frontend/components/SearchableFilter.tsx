@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-confusing-void-expression */
 import type { FC } from "react"
 import { useState } from "react"
 

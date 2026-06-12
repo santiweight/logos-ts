@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import type { Meta, StoryObj } from "@storybook/react"
 import type { Job } from "../../shared/types"
 import { DirectoryView } from "./DirectoryView"

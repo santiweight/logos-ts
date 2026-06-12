@@ -1,4 +1,3 @@
-/* eslint-disable functional/no-let */
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs"
 
 export function cleanupStalePid(pidFile: string): void {

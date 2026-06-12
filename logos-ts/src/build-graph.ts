@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, functional/immutable-data, functional/no-let, @typescript-eslint/no-non-null-assertion, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions */
+/* eslint-disable no-restricted-syntax */
 import { resolve, relative } from "node:path"
 import { loadProject } from "./project.js"
 import { buildDependencyTree } from "./dependencies.js"

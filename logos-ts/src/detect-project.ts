@@ -1,4 +1,4 @@
-/* eslint-disable functional/no-loop-statements, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unsafe-member-access, functional/immutable-data */
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join, resolve, relative, dirname } from "node:path"
 

@@ -8,7 +8,7 @@
 //     "watch": ["frontend/src", "backend"],
 //     "filePattern": "\\.(tsx?|jsx?)$" }
 //
-/* eslint-disable functional/no-let, functional/immutable-data, functional/no-loop-statements, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-non-null-assertion, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-deprecated, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-deprecated, @typescript-eslint/no-unsafe-argument */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { execFile } from "node:child_process"
