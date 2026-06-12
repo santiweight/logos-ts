@@ -19,6 +19,7 @@ const AGENT_RUNS = resolve(LOGOS_TS, ".agent-runs")
 let server: ChildProcess
 let baseUrl: string
 let projectRoot: string
+const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
 function createProject(): string {
   const root = mkdtempSync(join(tmpdir(), "logos-storybook-project-"))
@@ -62,7 +63,7 @@ async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<st
     proc.stdout?.on("data", (d: Buffer) => {
       buf += d.toString()
       // The studio binds host 127.0.0.1 explicitly, so vite prints that, not "localhost".
-      const m = buf.match(/Local:\s+(http:\/\/(?:localhost|127\.0\.0\.1):\d+)/)
+      const m = buf.replace(ANSI_RE, "").match(/Local:\s+(http:\/\/(?:localhost|127\.0\.0\.1):\d+)/)
       if (m?.[1] != null) {
         clearTimeout(timeout)
         resolve(m[1])

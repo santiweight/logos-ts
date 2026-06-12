@@ -15,6 +15,7 @@ let binDir: string
 let server: ChildProcess
 let baseUrl: string
 const TEST_TIMEOUT = 20_000
+const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
 interface WorkspaceMeta {
   id: string
@@ -68,7 +69,7 @@ async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<st
     let buf = ""
     const onData = (d: Buffer) => {
       buf += d.toString()
-      const m = buf.match(/Local:\s+(http:\/\/(?:127\.0\.0\.1|localhost):\d+)/)
+      const m = buf.replace(ANSI_RE, "").match(/Local:\s+(http:\/\/(?:127\.0\.0\.1|localhost):\d+)/)
       if (m?.[1]) {
         clearTimeout(timeout)
         resolveUrl(m[1])
