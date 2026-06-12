@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { spawn, type ChildProcess } from "node:child_process"
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -10,6 +10,7 @@ const STUDIO = resolve(STUDIO_SRC, "..")
 const LOGOS_TS = resolve(STUDIO, "..")
 
 let projectRoot: string
+let binDir: string
 let server: ChildProcess
 let baseUrl: string
 const TEST_TIMEOUT = 20_000
@@ -33,6 +34,19 @@ function createProject(): string {
   writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }))
   writeFileSync(join(root, "src/index.ts"), "export function answer(): number { return 42 }\n")
   return root
+}
+
+function createFakeClaude(): string {
+  const dir = mkdtempSync(join(tmpdir(), "logos-fake-claude-"))
+  const script = join(dir, "claude")
+  writeFileSync(script, [
+    "#!/usr/bin/env node",
+    "console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fake-session' }))",
+    "setTimeout(() => process.exit(0), 15000)",
+    "",
+  ].join("\n"))
+  chmodSync(script, 0o755)
+  return dir
 }
 
 function api(path: string, opts?: RequestInit): Promise<Response> {
@@ -98,10 +112,11 @@ async function readWorkspace(id: string): Promise<WorkspaceMeta> {
 describe("workspace API mode isolation", () => {
   beforeAll(async () => {
     projectRoot = createProject()
+    binDir = createFakeClaude()
     server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, LOGOS_PROJECT: projectRoot },
+      env: { ...process.env, LOGOS_PROJECT: projectRoot, PATH: `${binDir}:${process.env["PATH"] ?? ""}` },
     })
     baseUrl = await waitForServer(server)
   }, 45_000)
@@ -109,6 +124,7 @@ describe("workspace API mode isolation", () => {
   afterAll(() => {
     server?.kill()
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (binDir) rmSync(binDir, { recursive: true, force: true })
     rmSync(resolve(LOGOS_TS, ".agent-runs"), { recursive: true, force: true })
   })
 
@@ -183,5 +199,24 @@ describe("workspace API mode isolation", () => {
 
     expect(res.status).toBe(409)
     expect(body.error).toBe("code goals cannot be added to architecture workspaces")
+  }, TEST_TIMEOUT)
+
+  it("blocks a second running architecture agent in the same arch workspace", async () => {
+    const arch = await createWorkspace("arch")
+    const first = await addGoal(arch.id, "arch")
+    const second = await addGoal(arch.id, "arch")
+    expect(first.res.ok).toBe(true)
+    expect(second.res.ok).toBe(true)
+
+    const controller = new AbortController()
+    const firstRun = fetch(`${baseUrl}/api/agent/run?workspace=${arch.id}`, { signal: controller.signal })
+    const firstRes = await firstRun
+    expect(firstRes.ok).toBe(true)
+
+    const secondRes = await fetch(`${baseUrl}/api/agent/run?workspace=${arch.id}`)
+    const secondText = await secondRes.text()
+    expect(secondText).toContain("architecture workspace already has a running agent")
+
+    controller.abort()
   }, TEST_TIMEOUT)
 })

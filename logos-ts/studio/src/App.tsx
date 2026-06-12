@@ -38,6 +38,7 @@ function combineDiffStatus(
 export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
+  const [goalError, setGoalError] = useState<string | null>(null)
   const [selection, setSelection] = useState<Selection>({
     file: seed.files[0]?.file ?? "",
     view: "code",
@@ -351,7 +352,10 @@ export function App() {
   const onSelect = useCallback((sel: Selection) => setSelection(sel), [])
 
   const openComment = useCallback(
-    (target: string, label: string, x: number, y: number) => setPopup({ target, label, x, y }),
+    (target: string, label: string, x: number, y: number) => {
+      setGoalError(null)
+      setPopup({ target, label, x, y })
+    },
     []
   )
 
@@ -373,9 +377,10 @@ export function App() {
       })
       const result = await goalRes.json()
       if (!goalRes.ok) {
-        console.error("failed to add goal:", result.error)
+        setGoalError(typeof result.error === "string" ? result.error : "failed to add goal")
         return
       }
+      setGoalError(null)
       const goal = result as Goal & { workspaceId?: string }
       const goalWsId = goal.workspaceId ?? wsId
       await refreshWorkspaces()
@@ -575,7 +580,7 @@ export function App() {
             </span>
           )}
           {"   "}
-          {busy ??
+          {goalError ? `goal error: ${goalError}` : busy ??
             `${view.files.length} files · ${nComps} components · ${totalGoals} goals · ${workspaces.length} workspaces`}
         </span>
       </footer>

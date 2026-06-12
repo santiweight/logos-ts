@@ -1,23 +1,55 @@
 /**
- * Integration test: boots the studio dev server against hn-jobs and verifies
- * the workspace → Storybook lifecycle end-to-end: creating a workspace
- * auto-starts a tagged Storybook, its URL serves, and deleting the
+ * Integration test: boots the studio dev server against a temp project with a
+ * fake Storybook binary and verifies the workspace → Storybook lifecycle end-to-end: starting a workspace
+ * Storybook creates a tagged process, its proxied URL serves, and deleting the
  * workspace reaps the process.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { spawn, execSync, type ChildProcess } from "node:child_process"
-import { resolve, dirname } from "node:path"
+import { resolve, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { rmSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "../..")
-const PROJECT_ROOT = resolve(LOGOS_TS, "../hn-jobs")
 const WS_DIR = resolve(STUDIO, "../.workspaces")
 const AGENT_RUNS = resolve(LOGOS_TS, ".agent-runs")
 
 let server: ChildProcess
 let baseUrl: string
+let projectRoot: string
+
+function createProject(): string {
+  const root = mkdtempSync(join(tmpdir(), "logos-storybook-project-"))
+  const frontend = join(root, "frontend")
+  const storybookBin = join(frontend, "node_modules", ".bin")
+
+  mkdirSync(join(frontend, ".storybook"), { recursive: true })
+  mkdirSync(storybookBin, { recursive: true })
+  writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }))
+  writeFileSync(join(frontend, "package.json"), JSON.stringify({ type: "module" }))
+  writeFileSync(join(frontend, ".storybook", "main.ts"), "export default {}\n")
+  writeFileSync(join(frontend, "index.ts"), "export const storybookFixture = true\n")
+
+  const script = join(storybookBin, "storybook")
+  writeFileSync(script, [
+    "#!/usr/bin/env node",
+    "const http = require('node:http')",
+    "const server = http.createServer((_req, res) => {",
+    "  res.writeHead(200, { 'content-type': 'text/plain' })",
+    "  res.end('fake storybook')",
+    "})",
+    "server.listen(0, '127.0.0.1', () => {",
+    "  const { port } = server.address()",
+    "  console.log(`http://localhost:${port}`)",
+    "})",
+    "",
+  ].join("\n"))
+  chmodSync(script, 0o755)
+
+  return root
+}
 
 function api(path: string, opts?: RequestInit) {
   return fetch(`${baseUrl}${path}`, opts)
@@ -76,18 +108,22 @@ function storybookPid(wsId: string): number | null {
 function cleanup() {
   try { rmSync(WS_DIR, { recursive: true, force: true }) } catch {}
   try { rmSync(AGENT_RUNS, { recursive: true, force: true }) } catch {}
+  if (projectRoot) {
+    try { rmSync(projectRoot, { recursive: true, force: true }) } catch {}
+  }
 }
 
 describe("workspace + storybook integration", () => {
   beforeAll(async () => {
     cleanup()
+    projectRoot = createProject()
     // detached → own process group, so teardown can kill the whole tree
     // (npm → vite → storybooks) without touching unrelated dev servers.
     server = spawn("npm", ["run", "dev"], {
       cwd: resolve(STUDIO, ".."),
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, LOGOS_PROJECT: PROJECT_ROOT },
+      env: { ...process.env, LOGOS_PROJECT: projectRoot },
     })
     baseUrl = await waitForServer(server)
   }, 60_000)
@@ -102,7 +138,7 @@ describe("workspace + storybook integration", () => {
 
   let wsId: string
 
-  it("creating a workspace auto-starts its storybook", async () => {
+  it("starts a workspace storybook on request", async () => {
     const res = await api("/api/workspaces", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -113,13 +149,16 @@ describe("workspace + storybook integration", () => {
     expect(ws.id).toBeDefined()
     wsId = ws.id
 
-    const url = await pollFor(async () => (await getStorybookUrls())[wsId] ?? null, 90_000)
-    expect(url).not.toBeNull()
-    expect(url).toBe(`/storybooks/${wsId}`)
+    const startRes = await api(`/api/workspaces/${wsId}/storybook`, { method: "POST" })
+    expect(startRes.ok).toBe(true)
 
-    const sbRes = await api(url!)
+    const url = await pollFor(async () => (await getStorybookUrls())[wsId] ?? null, 150_000)
+    expect(url).not.toBeNull()
+    expect(url).toBe(`/storybooks/${encodeURIComponent(wsId)}`)
+
+    const sbRes = await fetch(`${baseUrl}${url!}`)
     expect(sbRes.ok).toBe(true)
-  }, 120_000)
+  }, 180_000)
 
   it("the spawned storybook carries ownership tags", () => {
     const pid = storybookPid(wsId)

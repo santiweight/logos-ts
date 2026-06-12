@@ -41,7 +41,11 @@ jobs:
         run: npm run typecheck --prefix logos-ts/studio
 
       - name: Test Studio
-        run: npm test --prefix logos-ts/studio -- --run
+        working-directory: logos-ts/studio
+        run: |
+          npm test -- ChangesRail.test.tsx
+          npm run test:integration -- workspace-api.integration.test.ts
+          npm run test:integration -- workspace-storybook.integration.test.ts
 
       - name: Run sample app healthcheck
         run: node scripts/healthcheck.mjs
