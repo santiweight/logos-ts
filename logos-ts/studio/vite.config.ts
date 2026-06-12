@@ -308,6 +308,17 @@ function autoStorybook(): Plugin {
     name: "auto-storybook",
     configureServer() {
       sbManager.cleanupAll()
+      // Ensure Storybooks are running for all existing workspaces
+      for (const wsMeta of wsMgr.list()) {
+        if (!sbManager.get(wsMeta.id) && caps.storybook) {
+          const ws = wsMgr.get(wsMeta.id)
+          if (!ws) continue
+          const wsFrontend = join(ws.forkDir, "frontend")
+          sbManager.ensure(wsMeta.id, wsFrontend).catch((e: any) =>
+            console.error(`[storybook-mgr] failed to restart ${wsMeta.id}:`, e.message)
+          )
+        }
+      }
       const cleanup = () => sbManager.shutdownAll()
       process.on("exit", cleanup)
       process.on("SIGINT", () => { cleanup(); process.exit() })

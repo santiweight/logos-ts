@@ -14,7 +14,7 @@ const out = resolve(root, ".healthcheck.json")
 const filters = process.argv.slice(2)
 
 try {
-  execFileSync(bin, ["run", "--reporter=json", `--outputFile=${out}`, ...filters], {
+  execFileSync(bin, ["run", "--update", "--reporter=json", `--outputFile=${out}`, ...filters], {
     cwd: root,
     stdio: ["ignore", "ignore", "ignore"],
   })

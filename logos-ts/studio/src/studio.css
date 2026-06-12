@@ -348,6 +348,27 @@ body {
   color: #cfcfe2;
 }
 .code.snap { color: #bfe9cf; white-space: pre-wrap; word-break: break-all; }
+.snap-diff .diff-line { display: block; }
+.snap-diff .diff-add { background: rgba(78, 197, 122, 0.15); color: #7ee2a8; }
+.snap-diff .diff-del { background: rgba(229, 72, 77, 0.15); color: #e5847d; }
+.snap-diff .diff-same { color: #8888a0; }
+.badge.changed { color: #4a9eff; }
+.snap-tabs { display: flex; gap: 2px; padding: 4px 10px; border-bottom: 1px solid var(--border); }
+.snap-tab {
+  font: inherit; font-size: 11px; padding: 2px 10px; cursor: pointer;
+  background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 4px;
+}
+.snap-tab:hover { color: var(--text); }
+.snap-tab.active { color: var(--text); background: rgba(255,255,255,0.06); border-color: var(--border); }
+.snap-rendered { padding: 12px; color: var(--text); font-size: 13px; overflow: auto; }
+.snap-rendered table { border-collapse: collapse; width: 100%; }
+.snap-rendered th, .snap-rendered td { padding: 4px 8px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+.snap-rendered th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+.snap-rendered a { color: #6fb4ff; text-decoration: none; }
+.snap-rendered a:hover { text-decoration: underline; }
+.snap-rendered .tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.snap-rendered .t { padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,0.06); font-size: 12px; }
+.snap-rendered .pill { margin-left: 6px; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,0.08); font-size: 11px; }
 .deps { padding: 4px 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
 
 .pane-path { display: flex; align-items: center; justify-content: space-between; gap: 6px; }

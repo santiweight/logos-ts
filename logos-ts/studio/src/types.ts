@@ -12,6 +12,7 @@ export interface CapturedNode {
   exportName: string
   testFile: string
   snapshot: string | null
+  previousSnapshot: string | null
 }
 export interface BackendMethod {
   name: string

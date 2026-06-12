@@ -375,6 +375,16 @@ export class WorkspaceManager {
         }
       }
 
+      // Collect base snapshots before re-indexing so we can populate previousSnapshot
+      const baseSnapshots = new Map<string, string | null>()
+      const oldIndex = ws.index as { files?: { component?: { captured?: { exportName: string; snapshot: string | null }[] } }[] } | null
+      if (oldIndex?.files) {
+        for (const f of oldIndex.files) {
+          if (!f.component?.captured) continue
+          for (const c of f.component.captured) baseSnapshots.set(c.exportName, c.snapshot)
+        }
+      }
+
       // Re-index workspace
       try {
         const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), dir, "-"]
@@ -383,7 +393,18 @@ export class WorkspaceManager {
         ws.index = JSON.parse(
           execFileSync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
         )
-      } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
+        // Merge previousSnapshot from the base index
+        const newIndex = ws.index as { files?: { component?: { captured?: { exportName: string; snapshot: string | null; previousSnapshot: string | null }[] } }[] }
+        if (newIndex?.files) {
+          for (const f of newIndex.files) {
+            if (!f.component?.captured) continue
+            for (const c of f.component.captured) {
+              const prev = baseSnapshots.get(c.exportName) ?? null
+              c.previousSnapshot = prev !== c.snapshot ? prev : null
+            }
+          }
+        }
+      } catch { /* best effort */ }
 
       goal.status = code === 0 ? "done" : "error"
       this.save(ws)

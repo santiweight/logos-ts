@@ -41,7 +41,7 @@ const file: FileEntry = {
       { id: "jobcard--remote", exportName: "Remote" },
     ],
     captured: [
-      { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: '<article class="job-card"><header><h3>Senior Engineer</h3></header></article>' },
+      { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: '<article class="job-card"><header><h3>Senior Engineer</h3></header></article>', previousSnapshot: null },
     ],
   },
 }

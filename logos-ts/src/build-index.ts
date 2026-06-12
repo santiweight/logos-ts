@@ -15,6 +15,7 @@ export interface CapturedNode {
   exportName: string
   testFile: string
   snapshot: string | null
+  previousSnapshot: string | null
 }
 export interface FileEntry {
   file: string
@@ -69,6 +70,7 @@ function findCaptured(storyEntry: StoryEntry, absRoot: string): CapturedNode[] {
       exportName,
       testFile: relative(absRoot, join(dir, fn)),
       snapshot: existsSync(snapPath) ? readFileSync(snapPath, "utf8") : null,
+      previousSnapshot: null,
     })
   }
   return out

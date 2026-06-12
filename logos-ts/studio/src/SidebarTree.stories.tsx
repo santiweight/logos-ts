@@ -24,7 +24,7 @@ const files: FileEntry[] = [
         { id: "jobcard--remote", exportName: "Remote" },
       ],
       captured: [
-        { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: null },
+        { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: null, previousSnapshot: null },
       ],
     },
   },
