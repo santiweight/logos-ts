@@ -28,30 +28,11 @@ const files: FileEntry[] = [
       ],
     },
   },
-  {
-    file: "src/components/FilterBar.tsx",
-    code: "export const FilterBar = ...",
-    items: [
-      { kind: "function", name: "FilterBar", signature: "FilterBar(props: FilterBarProps)", code: "", deps: [], tests: [] },
-    ],
-    component: {
-      name: "FilterBar",
-      signature: "FilterBar(props: FilterBarProps)",
-      componentCode: "export const FilterBar = ...",
-      propsFields: [
-        { name: "filters", type: "Filter[]" },
-        { name: "onChange", type: "(f: Filter[]) => void" },
-      ],
-      stories: [{ id: "filterbar--default", exportName: "Default" }],
-      captured: [],
-    },
-  },
-  {
+{
     file: "backend/api/jobs.ts",
     code: "...",
     items: [
       { kind: "function", name: "parseJob", signature: "parseJob(raw: RawJob): Job", code: "", deps: [], tests: [] },
-      { kind: "function", name: "filterJobs", signature: "filterJobs(jobs: Job[], q: Query): Job[]", code: "", deps: [], tests: [] },
     ],
   },
   {
@@ -94,7 +75,6 @@ export const WithDiff: Story = {
   args: {
     diff: {
       "fn:parseJob": "changed",
-      "fn:filterJobs": "added",
     },
   },
 }
