@@ -122,6 +122,10 @@ export class StorybookManager {
 
     return new Promise((resolve_, reject) => {
       const npx = resolve(frontendDir, "node_modules/.bin/storybook")
+      // node_modules is symlinked to the shared install, so Vite's default
+      // cacheDir (node_modules/.vite) would be shared by every concurrent
+      // instance — point each instance at its own cache inside the fork.
+      const cacheDir = resolve(frontendDir, ".vite-logos")
       const child = spawn(npx, ["dev", "--ci", "--no-open"], {
         cwd: frontendDir,
         stdio: ["ignore", "pipe", "pipe"],
@@ -129,6 +133,7 @@ export class StorybookManager {
           ...process.env,
           LOGOS_TS_SRC: this.logosSrc,
           LOGOS_PROJECT_ROOT: this.projectRoot,
+          LOGOS_SB_CACHE_DIR: cacheDir,
           // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
           LOGOS_SESSION: basename(this.projectRoot),
           LOGOS_WS: id,
