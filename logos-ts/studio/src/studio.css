@@ -631,6 +631,8 @@ body {
 .tok-string { color: #c3e88d; }
 .tok-number { color: #f78c6c; }
 .tok-symbol { color: #ffcb6b; }
+.tok-function { color: #ffcb6b; }
+.tok-ident { color: #cfcfe2; }
 .tok-punc { color: #89ddff; }
 .capture-review {
   display: grid;

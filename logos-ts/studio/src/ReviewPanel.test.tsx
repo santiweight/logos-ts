@@ -35,7 +35,14 @@ describe("ReviewPanel", () => {
     const base = index([{
       file: "components/JobCard.tsx",
       code: "",
-      items: [],
+      items: [{
+        kind: "function",
+        name: "parseJob",
+        signature: "parseJob(rawText: string): ParsedJob",
+        code: "",
+        deps: [],
+        tests: [],
+      }],
       component: {
         name: "JobCard",
         signature: "JobCard(props: JobCardProps)",
@@ -50,7 +57,14 @@ describe("ReviewPanel", () => {
     const workspace = index([{
       file: "components/JobCard.tsx",
       code: "",
-      items: [],
+      items: [{
+        kind: "function",
+        name: "parseJob",
+        signature: "parseJob(rawText: string, rawHtml: string): ParsedJob",
+        code: "",
+        deps: [],
+        tests: [],
+      }],
       component: {
         name: "JobCard",
         signature: "JobCard(props: JobCardProps)",
@@ -81,6 +95,9 @@ describe("ReviewPanel", () => {
     expect(container.querySelector(".inline-diff-add")).not.toBeNull()
     expect(container.querySelector(".tok-keyword")?.textContent).toBe("declare")
     expect(container.querySelector(".tok-type")?.textContent).toBe("string")
+    expect([...container.querySelectorAll(".tok-function")].map((node) => node.textContent)).toContain("parseJob")
+    expect([...container.querySelectorAll(".tok-ident")].map((node) => node.textContent)).toContain("rawText")
+    expect([...container.querySelectorAll(".tok-symbol")].map((node) => node.textContent)).toContain("ParsedJob")
   })
 
   it("lists changed captures and opens the selected snapshot diff", () => {

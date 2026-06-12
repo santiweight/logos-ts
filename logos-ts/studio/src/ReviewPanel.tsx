@@ -192,7 +192,7 @@ function DiffRow({ line }: { line: DiffLine }) {
   )
 }
 
-const TS_TOKEN_RE = /(".*?"|'.*?'|`.*?`|\b(?:declare|function|class|interface|type|const|let|var|return|extends|implements|readonly|private|public|protected|async|await|new)\b|\b(?:string|number|boolean|void|null|unknown|any|never|Record|Promise|Array|Map|Set)\b|[A-Z][A-Za-z0-9_]*|\b\d+(?:\.\d+)?\b|[{}()[\]:;,<>|&=?.])/g
+const TS_TOKEN_RE = /(".*?"|'.*?'|`.*?`|\b[A-Za-z_$][A-Za-z0-9_$]*\b|\b\d+(?:\.\d+)?\b|[{}()[\]:;,<>|&=?.])/g
 const TS_KEYWORDS = new Set([
   "declare", "function", "class", "interface", "type", "const", "let", "var",
   "return", "extends", "implements", "readonly", "private", "public", "protected",
@@ -206,18 +206,25 @@ function tokenClass(token: string): string {
   if (/^["'`]/.test(token)) return "tok-string"
   if (/^\d/.test(token)) return "tok-number"
   if (/^[A-Z]/.test(token)) return "tok-symbol"
+  if (/^[A-Za-z_$]/.test(token)) return "tok-ident"
   return "tok-punc"
 }
 
 function highlightTypeScript(text: string): ReactNode[] {
   const nodes: ReactNode[] = []
   let last = 0
+  let previousToken: string | null = null
   for (const match of text.matchAll(TS_TOKEN_RE)) {
     const token = match[0]
     const index = match.index
     if (index > last) nodes.push(text.slice(last, index))
-    nodes.push(<span key={`${index}-${token}`} className={tokenClass(token)}>{token}</span>)
+    const cls =
+      previousToken === "function" && /^[A-Za-z_$]/.test(token)
+        ? "tok-function"
+        : tokenClass(token)
+    nodes.push(<span key={`${index}-${token}`} className={cls}>{token}</span>)
     last = index + token.length
+    previousToken = TS_KEYWORDS.has(token) || TS_TYPES.has(token) || /^[A-Za-z_$]/.test(token) ? token : null
   }
   if (last < text.length) nodes.push(text.slice(last))
   return nodes
