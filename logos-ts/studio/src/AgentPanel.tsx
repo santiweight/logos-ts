@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import type { Goal } from "./types"
 
 // Each streamed message from the agent-run SSE.
 export interface AgentMsg {
@@ -63,13 +64,31 @@ function Line({ m }: { m: AgentMsg }) {
   return null
 }
 
+function statusIcon(goal: Goal | null, running: boolean): string {
+  if (running) return ""
+  if (!goal) return "●"
+  switch (goal.status) {
+    case "done": return "✓"
+    case "error": return "✗"
+    case "pending": return "○"
+    default: return "●"
+  }
+}
+
+function statusClass(goal: Goal | null): string {
+  if (!goal) return ""
+  return `goal-${goal.status}`
+}
+
 export function AgentPanel({
   events,
   running,
+  goal,
   onClose,
 }: {
   events: AgentMsg[]
   running: boolean
+  goal: Goal | null
   onClose: () => void
 }) {
   const endRef = useRef<HTMLDivElement>(null)
@@ -77,20 +96,28 @@ export function AgentPanel({
     endRef.current?.scrollIntoView({ block: "end" })
   }, [events])
 
+  const heading = goal
+    ? `${goal.label} — ${goal.text}`
+    : "Agent activity"
+
   return (
     <div className="agent-panel">
       <div className="agent-head">
-        <span>
-          {running ? <span className="ag-spin">⟳</span> : "●"} Agent activity
+        <span className={statusClass(goal)}>
+          {running ? <span className="ag-spin">⟳</span> : statusIcon(goal, running)}{" "}
+          {heading}
+          {goal && <span className={`cmode ${goal.mode}`}>{goal.mode}</span>}
         </span>
         <button className="agent-close" onClick={onClose}>
           ✕
         </button>
       </div>
       <div className="agent-log">
-        {events.length === 0 && (
+        {events.length === 0 && !running && (
           <div className="ag-line ag-dim">
-            no agent activity yet — declare a change (alt-click a node) and an agent starts here.
+            {goal
+              ? `no agent log for this goal yet`
+              : `no agent activity yet — declare a change (alt-click a node) and an agent starts here.`}
           </div>
         )}
         {events.map((m, i) => (
