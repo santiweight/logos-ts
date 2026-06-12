@@ -247,6 +247,7 @@ function StoryView({
   onCapture: (storyId: string) => void
 }) {
   if (!storyId) return <div className="empty">No story selected.</div>
+  if (!storybookUrl) return <div className="empty">Waiting for workspace Storybook to start…</div>
   const src = `${storybookUrl}/iframe.html?id=${storyId}&viewMode=story`
   return (
     <div className="pane">

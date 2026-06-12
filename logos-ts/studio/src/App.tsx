@@ -49,8 +49,8 @@ export function App() {
     } catch {}
   }, [])
   const activeStorybookUrl = activeWorkspaceId
-    ? storybookUrls[activeWorkspaceId] ?? storybookUrls["base"] ?? index.storybookUrl
-    : storybookUrls["base"] ?? index.storybookUrl
+    ? storybookUrls[activeWorkspaceId] ?? ""
+    : index.storybookUrl || ""
 
   const diff = useMemo(
     () => (activeWorkspaceId && workspaceIndex ? diffIndex(index, workspaceIndex) : {}),

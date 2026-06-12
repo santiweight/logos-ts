@@ -84,8 +84,6 @@ function studioApi(): Plugin {
 
       server.middlewares.use("/api/index", (_req, res) => {
         const args = [resolve(LOGOS_TS, "src/build-index.ts"), PROJECT_ROOT, "-"]
-        const baseSbUrl = sbManager.get("base")
-        if (baseSbUrl) args.push(baseSbUrl)
         const json = execFileSync(tsx, args, { cwd: LOGOS_TS, encoding: "utf8" })
         res.setHeader("content-type", "application/json")
         res.end(json)
@@ -205,7 +203,7 @@ function studioApi(): Plugin {
 
         if (req.method === "POST") {
           const body = JSON.parse((await readBody(req)) || "{}")
-          const meta = wsMgr.create({
+          const meta = await wsMgr.create({
             name: body.name,
             fromWorkspaceId: body.fromWorkspaceId,
           })
@@ -272,11 +270,6 @@ function autoStorybook(): Plugin {
     name: "auto-storybook",
     configureServer() {
       sbManager.cleanupAll()
-      if (caps.storybook) {
-        sbManager.ensure("base", caps.storybook.frontendDir).catch((e) =>
-          console.error("[storybook] base failed to start:", e.message)
-        )
-      }
       const cleanup = () => sbManager.shutdownAll()
       process.on("exit", cleanup)
       process.on("SIGINT", () => { cleanup(); process.exit() })

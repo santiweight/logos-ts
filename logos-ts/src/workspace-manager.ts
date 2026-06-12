@@ -108,8 +108,6 @@ export class WorkspaceManager {
 
   private snapshotIndex(): unknown {
     const args = [resolve(this.logosTsRoot, "src/build-index.ts"), this.projectRoot, "-"]
-    const baseSbUrl = this.sbManager.get("base")
-    if (baseSbUrl) args.push(baseSbUrl)
     return JSON.parse(
       execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8" })
     )
@@ -149,7 +147,7 @@ export class WorkspaceManager {
     return this.workspaces.get(id)
   }
 
-  create(opts?: { name?: string; fromWorkspaceId?: string }): WorkspaceMeta {
+  async create(opts?: { name?: string; fromWorkspaceId?: string }): Promise<WorkspaceMeta> {
     const id = `ws-${Date.now()}`
     const parentId = opts?.fromWorkspaceId ?? null
     const parentWs = parentId ? this.workspaces.get(parentId) : null
@@ -167,6 +165,16 @@ export class WorkspaceManager {
     }
     this.workspaces.set(id, ws)
     this.save(ws)
+
+    if (this.caps.storybook) {
+      const wsFrontend = join(forkDir, relative(this.projectRoot, this.caps.storybook.frontendDir))
+      try {
+        await this.sbManager.ensure(id, wsFrontend)
+      } catch (e: any) {
+        console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
+      }
+    }
+
     return { id: ws.id, name: ws.name, parentId: ws.parentId, createdAt: ws.createdAt, goals: ws.goals }
   }
 
@@ -237,17 +245,6 @@ export class WorkspaceManager {
 
   private async runGoalAgent(ws: WorkspaceState, goal: Goal, onEvent: AgentEventCallback): Promise<void> {
     const dir = ws.forkDir
-
-    // Start workspace storybook if applicable
-    if (this.caps.storybook) {
-      onEvent({ type: "status", message: "starting workspace storybook…" })
-      const wsFrontend = join(dir, relative(this.projectRoot, this.caps.storybook.frontendDir))
-      try {
-        await this.sbManager.ensure(ws.id, wsFrontend)
-      } catch (e: any) {
-        onEvent({ type: "stderr", message: "workspace storybook failed: " + e.message })
-      }
-    }
 
     // Architecture mode: strip bodies
     const mode = goal.mode
