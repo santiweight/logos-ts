@@ -19,8 +19,7 @@ const baseProps = {
   onSelectGoal: noop as (id: string) => void,
   onDeleteWorkspace: noop as (id: string) => void,
   onDeleteGoal: noop as (wsId: string, goalId: string) => void,
-  agentRunning: false,
-  agentWorkspace: null,
+  runningGoals: new Set<string>(),
 }
 
 describe("ChangesRail", () => {

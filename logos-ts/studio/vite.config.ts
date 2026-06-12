@@ -8,6 +8,7 @@ import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
 import { WorkspaceManager } from "../src/workspace-manager"
 import type { StudioIndex } from "../src/build-index"
+import { ClaudeSessionManager } from "../src/claude-session-manager"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -64,6 +65,8 @@ const sbManager = new StorybookManager(
   PROJECT_ROOT,
 )
 
+const sessionMgr = new ClaudeSessionManager(resolve(PROJECT_ROOT, ".logos", "sessions.db"))
+
 const wsMgr = new WorkspaceManager({
   wsDir: resolve(PROJECT_ROOT, ".workspaces"),
   runsDir: resolve(LOGOS_TS, ".agent-runs"),
@@ -72,6 +75,7 @@ const wsMgr = new WorkspaceManager({
   projectRoot: PROJECT_ROOT,
   caps,
   sbManager,
+  sessions: sessionMgr,
   tsx,
   getIndex: () => indexReady,
 })
@@ -259,7 +263,7 @@ function studioApi(): Plugin {
         res.end()
       })
 
-      // --- Agent run (SSE) — process next goal in a workspace's queue ---
+      // --- Agent run (SSE) — process next pending goal in a workspace ---
       server.middlewares.use("/api/agent/run", async (req, res) => {
         const wsId = new URL(req.url || "", "http://x").searchParams.get("workspace") || ""
         res.setHeader("content-type", "text/event-stream")
@@ -267,13 +271,39 @@ function studioApi(): Plugin {
         res.setHeader("connection", "keep-alive")
         const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`)
 
-        const started = wsMgr.processNext(wsId, (evt) => {
+        const goalId = wsMgr.processNext(wsId, (evt) => {
           send(evt)
           if (evt.type === "done" || evt.type === "error") res.end()
         })
-        if (!started) return res.end()
+        if (!goalId) return res.end()
 
-        req.on("close", () => wsMgr.abort(wsId))
+        req.on("close", () => wsMgr.abort(goalId))
+      })
+
+      // --- Session log retrieval ---
+      server.middlewares.use("/api/sessions", (req, res) => {
+        res.setHeader("content-type", "application/json")
+        const sub = (req.url || "/").replace(/^\//, "").split("?")[0]
+        const params = new URL(req.url || "", "http://x").searchParams
+
+        if (params.has("goal")) {
+          const session = wsMgr.sessionManager.getByGoalId(params.get("goal")!)
+          if (!session) { res.statusCode = 404; res.end(JSON.stringify({ error: "no session for goal" })); return }
+          const events = wsMgr.sessionManager.getEvents(session.id)
+          res.end(JSON.stringify({ session, events }))
+          return
+        }
+
+        if (sub) {
+          const session = wsMgr.sessionManager.get(sub)
+          if (!session) { res.statusCode = 404; res.end(JSON.stringify({ error: "session not found" })); return }
+          const events = wsMgr.sessionManager.getEvents(session.id)
+          res.end(JSON.stringify({ session, events }))
+          return
+        }
+
+        res.statusCode = 400
+        res.end(JSON.stringify({ error: "provide session id or ?goal= param" }))
       })
 
       server.middlewares.use("/api/capture", async (req, res) => {

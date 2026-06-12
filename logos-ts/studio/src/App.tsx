@@ -218,34 +218,59 @@ export function App() {
 
   const [archDiffOpen, setArchDiffOpen] = useState(false)
 
-  // ---- agent ----
-  const [agentEvents, setAgentEvents] = useState<AgentMsg[]>([])
-  const [agentRunning, setAgentRunning] = useState(false)
-  const [agentWorkspace, setAgentWorkspace] = useState<string | null>(null)
+  // ---- agent (per-goal) ----
+  const [goalEvents, setGoalEvents] = useState<Record<string, AgentMsg[]>>({})
+  const [runningGoals, setRunningGoals] = useState<Set<string>>(new Set())
   const [agentOpen, setAgentOpen] = useState(false)
-  const esRef = useRef<EventSource | null>(null)
+  const [agentGoalId, setAgentGoalId] = useState<string | null>(null)
+  const esRefs = useRef<Map<string, EventSource>>(new Map())
+
+  const agentEvents = agentGoalId ? goalEvents[agentGoalId] ?? [] : []
+  const agentRunning = agentGoalId ? runningGoals.has(agentGoalId) : false
+
+  const loadSessionForGoal = useCallback(async (goalId: string) => {
+    if (goalEvents[goalId]?.length) {
+      setAgentGoalId(goalId)
+      setAgentOpen(true)
+      return
+    }
+    try {
+      const res = await fetch(`/api/sessions?goal=${goalId}`)
+      if (!res.ok) { setAgentGoalId(goalId); setAgentOpen(true); return }
+      const data = await res.json() as { events: { type: string; payload: string }[] }
+      const msgs: AgentMsg[] = data.events.map((e) => JSON.parse(e.payload) as AgentMsg)
+      setGoalEvents((prev) => ({ ...prev, [goalId]: msgs }))
+      setAgentGoalId(goalId)
+      setAgentOpen(true)
+    } catch {
+      setAgentGoalId(goalId)
+      setAgentOpen(true)
+    }
+  }, [goalEvents])
 
   const runAgent = useCallback(
-    (wsId: string) => {
-      esRef.current?.close()
-      setAgentEvents([])
-      setAgentRunning(true)
-      setAgentWorkspace(wsId)
+    (wsId: string, goalId?: string) => {
+      if (!goalId) return
+      setGoalEvents((prev) => ({ ...prev, [goalId]: [] }))
+      setRunningGoals((prev) => new Set(prev).add(goalId))
+      setAgentGoalId(goalId)
       setAgentOpen(true)
       const es = new EventSource(`/api/agent/run?workspace=${wsId}`)
-      esRef.current = es
+      esRefs.current.set(goalId, es)
       es.onmessage = (m) => {
         const msg = JSON.parse(m.data) as AgentMsg
-        setAgentEvents((prev) => [...prev, msg])
+        setGoalEvents((prev) => ({ ...prev, [goalId]: [...(prev[goalId] ?? []), msg] }))
         if (msg.type === "done" || msg.type === "error") {
           es.close()
-          setAgentRunning(false)
+          esRefs.current.delete(goalId)
+          setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
           Promise.all([refreshWorkspaces(), refreshTests()]).then(() => openWorkspace(wsId))
         }
       }
       es.onerror = () => {
         es.close()
-        setAgentRunning(false)
+        esRefs.current.delete(goalId)
+        setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
       }
     },
     [refreshWorkspaces, refreshTests, openWorkspace]
@@ -283,15 +308,16 @@ export function App() {
       if (!wsId) return
 
       // 2. Add goal to workspace queue
-      await fetch(`/api/workspaces/${wsId}/goals`, {
+      const goalRes = await fetch(`/api/workspaces/${wsId}/goals`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ target, label, text, mode, ...extra }),
       })
+      const goal = goalRes.ok ? await goalRes.json() as Goal : null
       await refreshWorkspaces()
 
       // 3. Trigger agent to process the queue
-      runAgent(wsId)
+      runAgent(wsId, goal?.id)
     },
     [activeWorkspaceId, createWorkspace, refreshWorkspaces, runAgent]
   )
@@ -395,11 +421,10 @@ export function App() {
           openWorkspace(id)
         }}
         onFork={onFork}
-        onSelectGoal={(id) => setSelected({ type: "goal", id })}
+        onSelectGoal={(id) => { setSelected({ type: "goal", id }); loadSessionForGoal(id) }}
         onDeleteWorkspace={deleteWorkspace}
         onDeleteGoal={deleteGoal}
-        agentRunning={agentRunning}
-        agentWorkspace={agentWorkspace}
+        runningGoals={runningGoals}
       />
 
       <aside className="sidebar">
@@ -438,7 +463,7 @@ export function App() {
           <div className="empty">No files indexed.</div>
         )}
         {agentOpen && (
-          <AgentPanel events={agentEvents} running={agentRunning} onClose={closeAgent} />
+          <AgentPanel events={agentEvents} running={agentRunning} goal={activeGoals.find(g => g.id === agentGoalId) ?? null} onClose={closeAgent} />
         )}
       </main>
 
