@@ -142,11 +142,21 @@ function studioApi(): Plugin {
 
       if (caps.tests) {
         const [testCmd, ...testArgs] = caps.tests.command
+        const testCacheDir = resolve(PROJECT_ROOT, ".logos_cache", "test-runner")
         const runTests = () => {
           if (testState.status === "running") return
           testState.status = "running"
           testState.runningSince = Date.now()
-          execFile(testCmd, testArgs, { cwd: PROJECT_ROOT, timeout: 120_000 }, (_err, stdout) => {
+          mkdirSync(testCacheDir, { recursive: true })
+          execFile(testCmd, testArgs, {
+            cwd: PROJECT_ROOT,
+            timeout: 120_000,
+            env: {
+              ...process.env,
+              LOGOS_VITEST_CACHE_DIR: testCacheDir,
+              NODE_ENV: "test",
+            },
+          }, (_err, stdout) => {
             try {
               const parsed = JSON.parse(stdout)
               testState.results = parsed
