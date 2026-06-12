@@ -15,6 +15,7 @@
     "lint": "node -e \"console.log('Strict lint is optional. Run npm run lint:strict for a cleanup pass.')\"",
     "lint:strict": "eslint src/",
     "test": "vitest run",
+    "test:integration": "vitest run src/**/*.integration.test.ts",
     "storybook": "storybook dev -p 6007",
     "build-storybook": "storybook build"
   },

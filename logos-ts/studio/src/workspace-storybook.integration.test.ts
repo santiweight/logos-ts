@@ -115,9 +115,9 @@ describe("workspace + storybook integration", () => {
 
     const url = await pollFor(async () => (await getStorybookUrls())[wsId] ?? null, 90_000)
     expect(url).not.toBeNull()
-    expect(url).toMatch(/^http:\/\/localhost:\d+$/)
+    expect(url).toBe(`/storybooks/${wsId}`)
 
-    const sbRes = await fetch(url!)
+    const sbRes = await api(url!)
     expect(sbRes.ok).toBe(true)
   }, 120_000)
 

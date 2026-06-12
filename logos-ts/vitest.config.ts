@@ -17,6 +17,7 @@ function nodeSqlitePlugin(): Plugin {
 export default defineConfig({
   plugins: [nodeSqlitePlugin()],
   test: {
+    include: ["src/**/*.test.ts"],
     exclude: [
       "**/node_modules/**",
       "**/dist/**",
