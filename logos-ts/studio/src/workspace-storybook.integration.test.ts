@@ -19,6 +19,7 @@ const AGENT_RUNS = resolve(LOGOS_TS, ".agent-runs")
 let server: ChildProcess
 let baseUrl: string
 let projectRoot: string
+let sbPid: number | null = null
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
 function createProject(): string {
@@ -106,6 +107,16 @@ function storybookPid(wsId: string): number | null {
   }
 }
 
+function isLiveProcess(pid: number | null): boolean {
+  if (pid == null) return false
+  try {
+    const stat = execSync(`ps -o stat= -p ${pid}`, { encoding: "utf8" }).trim()
+    return stat !== "" && !stat.startsWith("Z")
+  } catch {
+    return false
+  }
+}
+
 function cleanup() {
   try { rmSync(WS_DIR, { recursive: true, force: true }) } catch {}
   try { rmSync(AGENT_RUNS, { recursive: true, force: true }) } catch {}
@@ -162,9 +173,9 @@ describe("workspace + storybook integration", () => {
   }, 180_000)
 
   it("the spawned storybook carries ownership tags", () => {
-    const pid = storybookPid(wsId)
-    expect(pid).not.toBeNull()
-    const env = execSync(`ps eww -p ${pid!}`, { encoding: "utf8" })
+    sbPid = storybookPid(wsId)
+    expect(sbPid).not.toBeNull()
+    const env = execSync(`ps eww -p ${sbPid!}`, { encoding: "utf8" })
     expect(env).toContain(`LOGOS_WS=${wsId}`)
     expect(env).toContain("LOGOS_SESSION=session-")
   })
@@ -175,7 +186,7 @@ describe("workspace + storybook integration", () => {
 
     const gone = await pollFor(async () => {
       const urls = await getStorybookUrls()
-      return urls[wsId] == null && storybookPid(wsId) === null ? true : null
+      return urls[wsId] == null && !isLiveProcess(sbPid) ? true : null
     }, 30_000)
     expect(gone).toBe(true)
   }, 45_000)
