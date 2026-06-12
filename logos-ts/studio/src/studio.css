@@ -505,7 +505,8 @@ body {
   color: var(--muted);
   font-size: 10px;
 }
-.statusbar a { color: var(--accent); }
+.statusbar a { color: var(--accent); cursor: pointer; }
+.refresh-btn { font-size: 12px; }
 
 /* ---- Graph view ---- */
 .graph-view {

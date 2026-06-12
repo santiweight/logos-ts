@@ -410,7 +410,7 @@ export function SidebarTree({
     <SidebarCtx.Provider value={ctx}>
       <div className="sidebar-tree" ref={ref}>
         <Tree<SNode>
-          key={files.length}
+          key={files.map(f => f.file).join("\0")}
           data={data}
           idAccessor="id"
           openByDefault={false}

@@ -147,6 +147,19 @@ export class WorkspaceManager {
     return this.workspaces.get(id)
   }
 
+  reindex(id: string): WorkspaceState | undefined {
+    const ws = this.workspaces.get(id)
+    if (!ws) return undefined
+    const args = [resolve(this.logosTsRoot, "src/build-index.ts"), ws.forkDir, "-"]
+    const wsSbUrl = this.sbManager.get(ws.id)
+    if (wsSbUrl) args.push(wsSbUrl)
+    ws.index = JSON.parse(
+      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8" })
+    )
+    this.save(ws)
+    return ws
+  }
+
   async create(opts?: { name?: string; fromWorkspaceId?: string }): Promise<WorkspaceMeta> {
     const id = `ws-${Date.now()}`
     const parentId = opts?.fromWorkspaceId ?? null
@@ -351,7 +364,7 @@ export class WorkspaceManager {
         ws.index = JSON.parse(
           execFileSync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
         )
-      } catch { /* best effort */ }
+      } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
 
       goal.status = code === 0 ? "done" : "error"
       this.save(ws)

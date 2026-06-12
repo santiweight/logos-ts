@@ -100,6 +100,19 @@ export function App() {
     } catch {}
   }, [])
 
+  const reindexWorkspace = useCallback(async (id?: string | null) => {
+    const wsId = id ?? activeWorkspaceId
+    if (!wsId) return
+    try {
+      const res = await fetch(`/api/workspaces/${wsId}/reindex`, { method: "POST" })
+      if (res.ok) {
+        const ws = (await res.json()) as Workspace
+        setWorkspaceIndex(ws.index)
+        await refreshWorkspaces()
+      }
+    } catch {}
+  }, [activeWorkspaceId, refreshWorkspaces])
+
   const createWorkspace = useCallback(
     async (fromWorkspaceId?: string | null): Promise<string | null> => {
       try {
@@ -220,6 +233,13 @@ export function App() {
     [refreshWorkspaces, refreshTests, openWorkspace]
   )
   const closeAgent = useCallback(() => setAgentOpen(false), [])
+
+  // Poll workspace index while agent is running
+  useEffect(() => {
+    if (!agentRunning || !agentWorkspace) return
+    const iv = setInterval(() => openWorkspace(agentWorkspace), 3_000)
+    return () => clearInterval(iv)
+  }, [agentRunning, agentWorkspace, openWorkspace])
 
   // ---- actions ----
   const onFork = useCallback(async () => {
@@ -400,6 +420,7 @@ export function App() {
         <span>
           {svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 11)}{" "}
           {activeWs?.name ?? "workspace"}{" "}
+          <a className="refresh-btn" onClick={() => reindexWorkspace()} title="Re-index workspace from disk">↻</a>{" "}
           <a className="arch-diff-toggle" onClick={() => setArchDiffOpen((o) => !o)}>
             {archDiffOpen ? "close diff" : "arch diff"}
           </a>

@@ -182,6 +182,20 @@ function studioApi(): Plugin {
           return
         }
 
+        // POST /api/workspaces/:id/reindex — rebuild workspace index from disk
+        if (req.method === "POST" && sub.endsWith("/reindex")) {
+          const wsId = sub.replace(/\/reindex$/, "")
+          try {
+            const ws = wsMgr.reindex(wsId)
+            if (!ws) { res.statusCode = 404; res.end(JSON.stringify({ error: "workspace not found" })); return }
+            res.end(JSON.stringify(ws))
+          } catch (e) {
+            res.statusCode = 500
+            res.end(JSON.stringify({ error: String(e) }))
+          }
+          return
+        }
+
         // DELETE /api/workspaces/:id/goals/:goalId
         if (req.method === "DELETE" && sub.includes("/goals/")) {
           const [wsId, , goalId] = sub.split("/")
