@@ -62,6 +62,21 @@ export type AddGoalResult =
   | { goal: Goal; workspaceId: string }
   | { error: string; status: number }
 
+export type WorkspacePolicyEventType =
+  | "arch_goal_redirected"
+  | "goal_rejected"
+  | "arch_agent_blocked"
+
+export interface WorkspacePolicyEvent {
+  seq: number
+  type: WorkspacePolicyEventType
+  createdAt: number
+  workspaceId: string
+  goalId?: string
+  message: string
+  details?: Record<string, unknown>
+}
+
 export interface AgentEvent {
   type: string
   [key: string]: unknown
@@ -90,6 +105,8 @@ export class WorkspaceManager {
   private sessions: ClaudeSessionManager
   private tsx: string
   private getIndex: (() => Promise<unknown>) | null
+  private policyEvents: WorkspacePolicyEvent[] = []
+  private policyEventSeq = 0
 
   constructor(opts: {
     wsDir: string
@@ -179,6 +196,28 @@ export class WorkspaceManager {
 
   get(id: string): WorkspaceState | undefined {
     return this.workspaces.get(id)
+  }
+
+  listPolicyEvents(opts?: { workspaceId?: string; limit?: number }): WorkspacePolicyEvent[] {
+    const limit = opts?.limit ?? 200
+    const events = opts?.workspaceId
+      ? this.policyEvents.filter((event) => (
+          event.workspaceId === opts.workspaceId ||
+          event.details?.["sourceWorkspaceId"] === opts.workspaceId ||
+          event.details?.["targetWorkspaceId"] === opts.workspaceId
+        ))
+      : this.policyEvents
+    return events.slice(-limit)
+  }
+
+  private recordPolicyEvent(event: Omit<WorkspacePolicyEvent, "seq" | "createdAt">): void {
+    this.policyEvents.push({
+      ...event,
+      seq: this.policyEventSeq,
+      createdAt: Date.now(),
+    })
+    this.policyEventSeq += 1
+    if (this.policyEvents.length > 500) this.policyEvents = this.policyEvents.slice(-500)
   }
 
   reindex(id: string): WorkspaceState | undefined {
@@ -277,6 +316,8 @@ export class WorkspaceManager {
     rmSync(this.wsDir, { recursive: true, force: true })
     mkdirSync(this.wsDir, { recursive: true })
     this.workspaces.clear()
+    this.policyEvents = []
+    this.policyEventSeq = 0
   }
 
   async addGoal(wsId: string, goal: Omit<Goal, "status">, opts?: { fork?: boolean }): Promise<AddGoalResult> {
@@ -284,10 +325,21 @@ export class WorkspaceManager {
     if (!ws) return { error: "workspace not found", status: 404 }
 
     if (goal.mode === "code" && ws.kind === "arch") {
+      this.recordPolicyEvent({
+        type: "goal_rejected",
+        workspaceId: ws.id,
+        goalId: goal.id,
+        message: "code goals cannot be added to architecture workspaces",
+        details: {
+          workspaceKind: ws.kind,
+          goalMode: goal.mode,
+        },
+      })
       return { error: "code goals cannot be added to architecture workspaces", status: 409 }
     }
 
     if (goal.mode === "arch" && (ws.kind !== "arch" || opts?.fork === true)) {
+      const sourceWs = ws
       const meta = await this.create({
         name: `arch: ${goal.label || goal.target}`,
         fromWorkspaceId: wsId,
@@ -295,6 +347,19 @@ export class WorkspaceManager {
       })
       ws = this.workspaces.get(meta.id)
       if (!ws) return { error: "created architecture workspace could not be loaded", status: 500 }
+      this.recordPolicyEvent({
+        type: "arch_goal_redirected",
+        workspaceId: sourceWs.id,
+        goalId: goal.id,
+        message: "architecture goal placed in a dedicated architecture workspace",
+        details: {
+          sourceWorkspaceId: sourceWs.id,
+          sourceWorkspaceKind: sourceWs.kind,
+          targetWorkspaceId: ws.id,
+          targetWorkspaceKind: ws.kind,
+          forkRequested: opts?.fork === true,
+        },
+      })
     }
 
     const g: Goal = { ...goal, status: "pending" }
@@ -336,6 +401,16 @@ export class WorkspaceManager {
     const ws = this.workspaces.get(wsId)
     if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return null }
     if (ws.kind === "arch" && ws.goals.some((g) => g.status === "running" || this.runningAgents.has(g.id))) {
+      const runningGoal = ws.goals.find((g) => g.status === "running" || this.runningAgents.has(g.id))
+      const runningDetails: Record<string, unknown> = { workspaceKind: ws.kind }
+      if (runningGoal) runningDetails["runningGoalId"] = runningGoal.id
+      this.recordPolicyEvent({
+        type: "arch_agent_blocked",
+        workspaceId: ws.id,
+        message: "architecture workspace already has a running agent",
+        ...(runningGoal ? { goalId: runningGoal.id } : {}),
+        details: runningDetails,
+      })
       onEvent({ type: "error", message: "architecture workspace already has a running agent" })
       return null
     }

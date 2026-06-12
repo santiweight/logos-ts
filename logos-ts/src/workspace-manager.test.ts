@@ -202,6 +202,30 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.get(archResult.workspaceId)?.parentId).toBe(code.id)
   })
 
+  it("records a policy event when an architecture goal is redirected", async () => {
+    const mgr = createManager()
+    const code = await mgr.create({ kind: "code" })
+
+    const archResult = expectGoal(await mgr.addGoal(code.id, goal("arch-goal", "arch")))
+    const events = mgr.listPolicyEvents({ workspaceId: code.id })
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      seq: 0,
+      type: "arch_goal_redirected",
+      workspaceId: code.id,
+      goalId: "arch-goal",
+      message: "architecture goal placed in a dedicated architecture workspace",
+      details: {
+        sourceWorkspaceId: code.id,
+        sourceWorkspaceKind: "code",
+        targetWorkspaceId: archResult.workspaceId,
+        targetWorkspaceKind: "arch",
+        forkRequested: false,
+      },
+    })
+  })
+
   it("keeps arch goals in an existing arch workspace unless fork is requested", async () => {
     const mgr = createManager()
     const arch = await mgr.create({ kind: "arch" })
@@ -235,6 +259,27 @@ describe("WorkspaceManager workspace kinds", () => {
     })
   })
 
+  it("records a policy event when a goal is rejected", async () => {
+    const mgr = createManager()
+    const arch = await mgr.create({ kind: "arch" })
+
+    await mgr.addGoal(arch.id, goal("code-in-arch", "code"))
+
+    expect(mgr.listPolicyEvents()).toEqual([
+      expect.objectContaining({
+        seq: 0,
+        type: "goal_rejected",
+        workspaceId: arch.id,
+        goalId: "code-in-arch",
+        message: "code goals cannot be added to architecture workspaces",
+        details: {
+          workspaceKind: "arch",
+          goalMode: "code",
+        },
+      }),
+    ])
+  })
+
   it("allows multiple architecture goals to queue in an architecture workspace", async () => {
     const mgr = createManager()
     const arch = await mgr.create({ kind: "arch" })
@@ -257,6 +302,19 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(result).toBeNull()
     expect(events).toEqual([
       { type: "error", message: "architecture workspace already has a running agent" },
+    ])
+    expect(mgr.listPolicyEvents({ workspaceId: arch.id })).toEqual([
+      expect.objectContaining({
+        seq: 0,
+        type: "arch_agent_blocked",
+        workspaceId: arch.id,
+        goalId: "running",
+        message: "architecture workspace already has a running agent",
+        details: {
+          workspaceKind: "arch",
+          runningGoalId: "running",
+        },
+      }),
     ])
   })
 

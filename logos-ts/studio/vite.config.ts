@@ -202,6 +202,20 @@ function studioApi(): Plugin {
         res.end(JSON.stringify({ urls, states }))
       })
 
+      server.middlewares.use("/api/workspace-policy-events", (req, res) => {
+        res.setHeader("content-type", "application/json")
+        if (req.method !== "GET") {
+          res.statusCode = 405
+          res.end(JSON.stringify({ error: "method not allowed" }))
+          return
+        }
+        const params = new URL(req.url || "", "http://x").searchParams
+        const workspaceId = params.get("workspace") ?? undefined
+        const rawLimit = Number(params.get("limit") ?? "200")
+        const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 200
+        res.end(JSON.stringify({ events: wsMgr.listPolicyEvents({ workspaceId, limit }) }))
+      })
+
       server.middlewares.use("/api/reset", async (req, res) => {
         res.setHeader("content-type", "application/json")
         if (req.method !== "POST") {

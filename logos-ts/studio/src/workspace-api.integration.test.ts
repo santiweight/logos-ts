@@ -30,6 +30,15 @@ interface Goal {
   workspaceId?: string
 }
 
+interface WorkspacePolicyEvent {
+  seq: number
+  type: "arch_goal_redirected" | "goal_rejected" | "arch_agent_blocked"
+  workspaceId: string
+  goalId?: string
+  message: string
+  details?: Record<string, unknown>
+}
+
 function createProject(): string {
   const root = mkdtempSync(join(tmpdir(), "logos-api-project-"))
   mkdirSync(join(root, "src"), { recursive: true })
@@ -111,6 +120,14 @@ async function readWorkspace(id: string): Promise<WorkspaceMeta> {
   return await res.json() as WorkspaceMeta
 }
 
+async function readPolicyEvents(workspaceId?: string): Promise<WorkspacePolicyEvent[]> {
+  const query = workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ""
+  const res = await api(`/api/workspace-policy-events${query}`)
+  expect(res.ok).toBe(true)
+  const body = await res.json() as { events: WorkspacePolicyEvent[] }
+  return body.events
+}
+
 describe("workspace API mode isolation", () => {
   beforeAll(async () => {
     projectRoot = createProject()
@@ -169,6 +186,21 @@ describe("workspace API mode isolation", () => {
 
     const original = await readWorkspace(code.id)
     expect(original.goals.map((g) => g.id)).not.toContain(body.id)
+
+    const events = await readPolicyEvents(code.id)
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "arch_goal_redirected",
+      workspaceId: code.id,
+      goalId: body.id,
+      message: "architecture goal placed in a dedicated architecture workspace",
+      details: expect.objectContaining({
+        sourceWorkspaceId: code.id,
+        sourceWorkspaceKind: "code",
+        targetWorkspaceId: body.workspaceId,
+        targetWorkspaceKind: "arch",
+        forkRequested: false,
+      }),
+    }))
   }, TEST_TIMEOUT)
 
   it("keeps multiple arch goals in the same arch workspace by default", async () => {
@@ -205,6 +237,17 @@ describe("workspace API mode isolation", () => {
 
     expect(res.status).toBe(409)
     expect(body.error).toBe("code goals cannot be added to architecture workspaces")
+
+    const events = await readPolicyEvents(arch.id)
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "goal_rejected",
+      workspaceId: arch.id,
+      message: "code goals cannot be added to architecture workspaces",
+      details: {
+        workspaceKind: "arch",
+        goalMode: "code",
+      },
+    }))
   }, TEST_TIMEOUT)
 
   it("blocks a second running architecture agent in the same arch workspace", async () => {
@@ -222,6 +265,18 @@ describe("workspace API mode isolation", () => {
     const secondRes = await fetch(`${baseUrl}/api/agent/run?workspace=${arch.id}`)
     const secondText = await secondRes.text()
     expect(secondText).toContain("architecture workspace already has a running agent")
+
+    const events = await readPolicyEvents(arch.id)
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "arch_agent_blocked",
+      workspaceId: arch.id,
+      goalId: first.body.id,
+      message: "architecture workspace already has a running agent",
+      details: {
+        workspaceKind: "arch",
+        runningGoalId: first.body.id,
+      },
+    }))
 
     controller.abort()
   }, TEST_TIMEOUT)
