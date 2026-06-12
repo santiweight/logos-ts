@@ -67,6 +67,7 @@ export class WorkspaceManager {
   private caps: ProjectCaps
   private sbManager: StorybookManager
   private tsx: string
+  private getIndex: (() => Promise<unknown>) | null
 
   constructor(opts: {
     wsDir: string
@@ -77,6 +78,7 @@ export class WorkspaceManager {
     caps: ProjectCaps
     sbManager: StorybookManager
     tsx: string
+    getIndex?: () => Promise<unknown>
   }) {
     this.wsDir = opts.wsDir
     this.runsDir = opts.runsDir
@@ -86,6 +88,7 @@ export class WorkspaceManager {
     this.caps = opts.caps
     this.sbManager = opts.sbManager
     this.tsx = opts.tsx
+    this.getIndex = opts.getIndex ?? null
 
     mkdirSync(this.wsDir, { recursive: true })
     this.loadAll()
@@ -106,7 +109,8 @@ export class WorkspaceManager {
     writeFileSync(resolve(this.wsDir, `${ws.id}.json`), JSON.stringify(ws))
   }
 
-  private snapshotIndex(): unknown {
+  private async snapshotIndex(): Promise<unknown> {
+    if (this.getIndex) return this.getIndex()
     const args = [resolve(this.logosTsRoot, "src/build-index.ts"), this.projectRoot, "-"]
     return JSON.parse(
       execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8" })
@@ -164,7 +168,7 @@ export class WorkspaceManager {
     const id = `ws-${Date.now()}`
     const parentId = opts?.fromWorkspaceId ?? null
     const parentWs = parentId ? this.workspaces.get(parentId) : null
-    const index = parentWs ? parentWs.index : this.snapshotIndex()
+    const index = parentWs ? parentWs.index : await this.snapshotIndex()
     const forkDir = this.createFork(id)
 
     const ws: WorkspaceState = {
@@ -181,11 +185,9 @@ export class WorkspaceManager {
 
     if (this.caps.storybook) {
       const wsFrontend = join(forkDir, relative(this.projectRoot, this.caps.storybook.frontendDir))
-      try {
-        await this.sbManager.ensure(id, wsFrontend)
-      } catch (e: any) {
+      this.sbManager.ensure(id, wsFrontend).catch((e: any) => {
         console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
-      }
+      })
     }
 
     return { id: ws.id, name: ws.name, parentId: ws.parentId, createdAt: ws.createdAt, goals: ws.goals }

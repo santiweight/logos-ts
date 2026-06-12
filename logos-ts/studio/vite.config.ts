@@ -7,6 +7,7 @@ import { dirname, resolve, join } from "node:path"
 import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
 import { WorkspaceManager } from "../src/workspace-manager"
+import type { StudioIndex } from "../src/build-index"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -45,6 +46,18 @@ console.log(`[logos] tests: ${caps.tests ? caps.tests.command.join(" ") : "not f
 const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
 const STUDIO_PORT_FILE = resolve(PROJECT_ROOT, ".logos", "studio-port")
 
+const indexReady: Promise<StudioIndex> = new Promise((res, rej) => {
+  const t0 = Date.now()
+  console.log(`[logos] building index (background)…`)
+  execFile(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), PROJECT_ROOT, "-"], {
+    cwd: LOGOS_TS, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+  }, (err, stdout) => {
+    if (err) { rej(err); return }
+    console.log(`[logos] index ready in ${Date.now() - t0}ms`)
+    res(JSON.parse(stdout) as StudioIndex)
+  })
+})
+
 const sbManager = new StorybookManager(
   resolve(PROJECT_ROOT, ".logos", "storybooks.json"),
   resolve(LOGOS_TS, "src"),
@@ -60,6 +73,7 @@ const wsMgr = new WorkspaceManager({
   caps,
   sbManager,
   tsx,
+  getIndex: () => indexReady,
 })
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
@@ -82,11 +96,9 @@ function studioApi(): Plugin {
         }
       })
 
-      server.middlewares.use("/api/index", (_req, res) => {
-        const args = [resolve(LOGOS_TS, "src/build-index.ts"), PROJECT_ROOT, "-"]
-        const json = execFileSync(tsx, args, { cwd: LOGOS_TS, encoding: "utf8" })
+      server.middlewares.use("/api/index", async (_req, res) => {
         res.setHeader("content-type", "application/json")
-        res.end(json)
+        res.end(JSON.stringify(await indexReady))
       })
 
       server.middlewares.use("/api/capabilities", (_req, res) => {

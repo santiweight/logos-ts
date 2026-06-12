@@ -73,9 +73,9 @@ function findCaptured(storyEntry: StoryEntry, absRoot: string): CapturedNode[] {
   return out
 }
 
-export function buildStudioIndex(root: string, storybookUrl = ""): StudioIndex {
+export function buildStudioIndex(root: string, storybookUrl = "", existingProject?: ReturnType<typeof loadProject>): StudioIndex {
   const absRoot = resolve(root)
-  const project = loadProject(root)
+  const project = existingProject ?? loadProject(root)
   const sfs = project.getSourceFiles().filter((s) => !s.getFilePath().includes("/node_modules/"))
   const storyEntries = indexStories(sfs)
   const tree = buildDependencyTree(sfs, root)
@@ -179,13 +179,15 @@ export function buildStudioIndex(root: string, storybookUrl = ""): StudioIndex {
 }
 
 // CLI: tsx src/build-index.ts <root> <outFile>
-const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json"] = process.argv
-const index = buildStudioIndex(root, process.env.STORYBOOK_URL)
-if (outFile === "-") {
-  process.stdout.write(JSON.stringify(index))
-} else {
-  mkdirSync(dirname(resolve(outFile)), { recursive: true })
-  writeFileSync(resolve(outFile), JSON.stringify(index, null, 2))
-  const nComps = index.files.filter((f) => f.component).length
-  console.log(`wrote ${outFile}: ${index.files.length} files, ${nComps} components`)
+if (process.argv[1]?.match(/build-index\.[tj]s$/)) {
+  const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json"] = process.argv
+  const index = buildStudioIndex(root, process.env.STORYBOOK_URL)
+  if (outFile === "-") {
+    process.stdout.write(JSON.stringify(index))
+  } else {
+    mkdirSync(dirname(resolve(outFile)), { recursive: true })
+    writeFileSync(resolve(outFile), JSON.stringify(index, null, 2))
+    const nComps = index.files.filter((f) => f.component).length
+    console.log(`wrote ${outFile}: ${index.files.length} files, ${nComps} components`)
+  }
 }
