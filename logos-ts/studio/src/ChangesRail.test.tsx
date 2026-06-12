@@ -52,4 +52,83 @@ describe("ChangesRail", () => {
     render(<ChangesRail {...baseProps} open={false} workspacesLoading={true} workspaces={[]} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
   })
+
+  it("shows spinner when a goal is in runningGoals", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "feature",
+        parentId: null,
+        createdAt: 1000,
+        goals: [
+          { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "running" as const },
+        ],
+      },
+    ]
+    render(
+      <ChangesRail
+        {...baseProps}
+        workspaces={workspaces}
+        activeWorkspaceId="ws-1"
+        runningGoals={new Set(["g-1"])}
+      />,
+    )
+    expect(screen.getByTitle("Agent running")).toBeInTheDocument()
+  })
+
+  it("does not show spinner when no goals are running", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "feature",
+        parentId: null,
+        createdAt: 1000,
+        goals: [
+          { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "done" as const },
+        ],
+      },
+    ]
+    render(
+      <ChangesRail
+        {...baseProps}
+        workspaces={workspaces}
+        activeWorkspaceId="ws-1"
+        runningGoals={new Set<string>()}
+      />,
+    )
+    expect(screen.queryByTitle("Agent running")).not.toBeInTheDocument()
+  })
+
+  it("shows spinner only for workspace with running goal, not others", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "active-ws",
+        parentId: null,
+        createdAt: 2000,
+        goals: [
+          { id: "g-1", text: "running goal", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "running" as const },
+        ],
+      },
+      {
+        id: "ws-2",
+        name: "idle-ws",
+        parentId: null,
+        createdAt: 1000,
+        goals: [
+          { id: "g-2", text: "done goal", label: "span", target: "component:Y", mode: "code" as const, createdAt: 1000, status: "done" as const },
+        ],
+      },
+    ]
+    render(
+      <ChangesRail
+        {...baseProps}
+        workspaces={workspaces}
+        activeWorkspaceId="ws-1"
+        runningGoals={new Set(["g-1"])}
+      />,
+    )
+    const spinners = screen.getAllByTitle("Agent running")
+    expect(spinners).toHaveLength(1)
+  })
 })
