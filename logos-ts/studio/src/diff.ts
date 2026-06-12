@@ -4,6 +4,7 @@ function collectNodes(index: StudioIndex): Map<string, string> {
   const m = new Map<string, string>()
   const SEP = " "
   for (const f of index.files) {
+    m.set(`file:${f.file}`, f.code)
     if (f.component) {
       m.set(`component:${f.component.name}`, f.component.signature + SEP + f.component.componentCode)
       if (f.component.propsName) m.set(`props:${f.component.propsName}`, f.component.propsCode ?? "")

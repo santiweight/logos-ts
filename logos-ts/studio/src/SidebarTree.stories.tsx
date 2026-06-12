@@ -117,6 +117,8 @@ export const Default: Story = {}
 export const WithDiff: Story = {
   args: {
     diff: {
+      "file:src/components/JobCard.tsx": "changed",
+      "capture:src/components/JobCard.Default.captured.test.tsx::Default": "changed",
       "fn:parseJob": "changed",
     },
   },

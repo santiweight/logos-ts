@@ -12,6 +12,7 @@ import { capturedTestChanges } from "./review"
 import { indexToArchText } from "./arch-text"
 import type {
   Goal,
+  DiffStatus,
   SbState,
   Selection,
   StudioIndex,
@@ -23,6 +24,15 @@ import type {
 import seedData from "./studio-index.json"
 
 const seed = seedData as unknown as StudioIndex
+
+function combineDiffStatus(
+  current: DiffStatus | undefined,
+  next: DiffStatus | undefined
+): DiffStatus | undefined {
+  if (!current) return next
+  if (!next || current === next) return current
+  return "changed"
+}
 
 export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
@@ -71,10 +81,21 @@ export function App() {
     refreshStorybooks()
   }, [activeWorkspaceId, refreshStorybooks])
 
-  const diff = useMemo(
-    () => (activeWorkspaceId && workspaceIndex ? diffIndex(index, workspaceIndex) : {}),
-    [activeWorkspaceId, workspaceIndex, index]
+  const captureChanges = useMemo(
+    () => workspaceIndex ? capturedTestChanges(index, workspaceIndex) : [],
+    [index, workspaceIndex]
   )
+
+  const diff = useMemo(() => {
+    if (!activeWorkspaceId || !workspaceIndex) return {}
+    const next: Record<string, DiffStatus> = { ...diffIndex(index, workspaceIndex) }
+    for (const change of captureChanges) {
+      next[`capture:${change.testFile}::${change.exportName}`] = change.status
+      const componentTarget = `component:${change.component}`
+      next[componentTarget] = combineDiffStatus(next[componentTarget], change.status) ?? change.status
+    }
+    return next
+  }, [activeWorkspaceId, captureChanges, workspaceIndex, index])
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
   const activeGoals = activeWs?.goals ?? []
@@ -437,10 +458,7 @@ export function App() {
 
   const nComps = view.files.filter((f) => f.component).length
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
-  const captureReviewCount = useMemo(
-    () => workspaceIndex ? capturedTestChanges(index, workspaceIndex).length : 0,
-    [index, workspaceIndex]
-  )
+  const captureReviewCount = captureChanges.length
   const reviewCount = captureReviewCount + (
     workspaceIndex && indexToArchText(index) !== indexToArchText(workspaceIndex) ? 1 : 0
   )

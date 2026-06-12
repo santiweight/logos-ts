@@ -68,6 +68,22 @@ function rollUpTestStatus(children: SNode[] | undefined): "pass" | "fail" | unde
   return hasTested ? "pass" : undefined
 }
 
+function combineDiffStatus(
+  current: DiffStatus | undefined,
+  next: DiffStatus | undefined
+): DiffStatus | undefined {
+  if (!current) return next
+  if (!next || current === next) return current
+  return "changed"
+}
+
+function rollUpDiffStatus(children: SNode[] | undefined): DiffStatus | undefined {
+  if (!children) return undefined
+  let status: DiffStatus | undefined
+  for (const child of children) status = combineDiffStatus(status, child.status)
+  return status
+}
+
 function buildData(
   files: FileEntry[],
   diff: Record<string, DiffStatus>,
@@ -134,7 +150,7 @@ function buildData(
     if (f.component) {
       const comp = f.component
       const compTarget = `component:${comp.name}`
-      const status = diff[compTarget] ?? (comp.propsName ? diff[`props:${comp.propsName}`] : undefined)
+      const componentStatus = diff[compTarget] ?? (comp.propsName ? diff[`props:${comp.propsName}`] : undefined)
       const storyNodes: SNode[] = comp.stories.map((s) => ({
         id: `story:${s.id}`,
         name: s.exportName,
@@ -145,14 +161,17 @@ function buildData(
         const capStatus: "pass" | "fail" | undefined = failingFiles
           ? failingFiles.has(cap.testFile) ? "fail" : "pass"
           : undefined
+        const status = diff[`capture:${cap.testFile}::${cap.exportName}`]
         return {
           id: `cap:${comp.name}:${cap.exportName}`,
           name: cap.exportName,
           kind: "captured" as Kind,
+          ...(status ? { status } : {}),
           ...(capStatus ? { testStatus: capStatus } : {}),
           sel: { file: f.file, view: "captured" as View, exportName: cap.exportName },
         }
       })
+      const status = combineDiffStatus(componentStatus, rollUpDiffStatus(capturedNodes))
 
       const otherItems = f.items.filter((it) => it.name !== comp.name)
       const canInline = otherItems.length === 0
@@ -195,12 +214,14 @@ function buildData(
       for (const it of items) children.push(symNode(it, f.file))
 
       const fileTestStatus = rollUpTestStatus(children)
+      const fileStatus = combineDiffStatus(diff[target], rollUpDiffStatus(children))
       return {
         id: `file:${f.file}`,
         name: baseName,
         kind: "file",
         target,
         label: baseName,
+        ...(fileStatus ? { status: fileStatus } : {}),
         comments: cCount(target),
         fns: f.items.length + 1,
         tests: f.items.reduce((n, it) => n + testsOf(it), 0),
@@ -214,6 +235,8 @@ function buildData(
     if (f.items.length === 1 && f.items[0]?.name === baseName) {
       const it = f.items[0]!
       const sym = symNode(it, f.file)
+      const status = combineDiffStatus(sym.status, diff[target])
+      if (status) sym.status = status
       sym.comments = (sym.comments ?? 0) + cCount(target)
       return sym
     }
@@ -223,12 +246,14 @@ function buildData(
     for (const it of items) children.push(symNode(it, f.file))
 
     const noCompTestStatus = rollUpTestStatus(children)
+    const fileStatus = combineDiffStatus(diff[target], rollUpDiffStatus(children))
     return {
       id: `file:${f.file}`,
       name: baseName,
       kind: "file",
       target,
       label: baseName,
+      ...(fileStatus ? { status: fileStatus } : {}),
       comments: cCount(target),
       fns: f.items.length,
       tests: f.items.reduce((n, it) => n + testsOf(it), 0),
@@ -264,12 +289,14 @@ function buildData(
       openIds[id] = true
       const children = dirNodes(d, p)
       const testStatus = rollUpTestStatus(children)
+      const status = rollUpDiffStatus(children)
       out.push({
         id,
         name: n,
         kind: "dir",
         target,
         label: n,
+        ...(status ? { status } : {}),
         comments: cCount(target),
         ...(testStatus ? { testStatus } : {}),
         children,
