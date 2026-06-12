@@ -19,6 +19,10 @@ export function buildGoalLine(goal: GoalFields): string {
   return `- (${goal.label}${elementContext ? ` [${elementContext}]` : ""}) ${goal.text}`
 }
 
+/**
+ * The architecture-mode agent prompt. Shared by workspace-manager and the eval
+ * harness so evals exercise exactly the production prompt.
+ */
 export function buildArchPrompt(context: string, sandbox: string, goalLine: string): string {
   return `${context}\n\n${sandbox}` +
     `You are in ARCHITECTURE MODE. The code is shown as pure SIGNATURES using \`declare\` — no bodies, no \`=\`, no values. The real implementations are filled back in automatically after you finish.\n\n` +

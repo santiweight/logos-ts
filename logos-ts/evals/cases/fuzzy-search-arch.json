@@ -1,0 +1,16 @@
+{
+  "name": "fuzzy-search-arch",
+  "codebase": "../../../hn-jobs",
+  "comment": {
+    "target": "component:DirectoryView",
+    "label": "DirectoryView",
+    "component": "DirectoryView",
+    "text": "Make search into a fuzzy search"
+  },
+  "agent": "architecture",
+  "checks": {
+    "typecheck-frontend": { "cwd": "frontend", "cmd": ["npx", "tsc", "--noEmit"] },
+    "typecheck-backend": { "cwd": "frontend", "cmd": ["npx", "tsc", "-p", "../tsconfig.backend.json", "--noEmit"] },
+    "behavior-unchanged": { "cwd": "", "cmd": ["node", "scripts/healthcheck.mjs"] }
+  }
+}

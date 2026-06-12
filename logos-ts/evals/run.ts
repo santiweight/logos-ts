@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process"
 import { cpSync, rmSync, mkdirSync, existsSync, readFileSync, symlinkSync, copyFileSync } from "node:fs"
 import { resolve, dirname, basename, join } from "node:path"
-import { buildGoalLine } from "../src/prompt.js"
+import { buildArchPrompt, buildGoalLine } from "../src/prompt.js"
 
 interface Check {
   cwd: string
@@ -48,9 +48,7 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
   const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
 
   if (c.agent === "architecture" || c.agent === "testing") {
-    return `${context}\n\n${sandbox}` +
-      `You are in ARCHITECTURE MODE. The code is shown as pure SIGNATURES using \`declare\` — no bodies, no \`=\`, no values.\n\n` +
-      `Change requests:\n${goalLine}\n`
+    return buildArchPrompt(context, sandbox, goalLine)
   }
 
   return `${context}\n\n${sandbox}` +
@@ -74,27 +72,44 @@ function runCase(casePath: string) {
     recursive: true,
     filter: (s) => !/node_modules|\.workspaces|\.logos_cache|dist|__snapshots__/.test(s),
   })
-  const deps = join(codebase, "frontend/node_modules")
-  if (existsSync(deps)) {
-    symlinkSync(deps, join(work, "frontend/node_modules"))
-    symlinkSync(deps, join(work, "node_modules"))
+  for (const rel of ["node_modules", "frontend/node_modules"]) {
+    const src = join(codebase, rel)
+    if (existsSync(src) && !existsSync(join(work, rel))) symlinkSync(src, join(work, rel))
   }
 
-  // 2. Build architecture context (same as workspace-manager)
+  // 2. Architecture mode runs the production pipeline: strip → agent → splice.
+  const archMode = c.agent === "architecture" || c.agent === "testing"
+  const bodiesFile = resolve(caseDir, "runs", `${c.name}.bodies.json`)
+  if (archMode) {
+    console.log(`[${c.name}] stripping to architecture view…`)
+    execFileSync(tsx, [resolve(logosTsRoot, "src/archmode.ts"), "strip", work, bodiesFile], {
+      cwd: logosTsRoot, encoding: "utf8",
+    })
+  }
+
+  // 3. Build architecture context (same as workspace-manager)
   console.log(`[${c.name}] building context…`)
   const targets = [c.comment.component ? `component:${c.comment.component}` : c.comment.target]
   const context = buildContext(work, targets)
   console.log(`[${c.name}] context: ${context.length} chars`)
 
-  // 3. Run agent
+  // 4. Run agent
   const prompt = buildPrompt(c, work, context)
   console.log(`[${c.name}] running agent (${c.agent} mode)…`)
   try {
-    execFileSync("claude", ["-p", prompt, "--dangerously-skip-permissions"], {
-      cwd: work, stdio: "inherit", timeout: 120_000,
+    execFileSync("claude", ["-p", prompt, "--model", "sonnet", "--dangerously-skip-permissions"], {
+      cwd: work, stdio: "inherit", timeout: 300_000,
     })
   } catch (e: any) {
     console.error(`[${c.name}] agent failed:`, e.message)
+  }
+
+  // 5. Splice implementations back + infer imports
+  if (archMode) {
+    console.log(`[${c.name}] splicing implementations + inferring imports…`)
+    execFileSync(tsx, [resolve(logosTsRoot, "src/archmode.ts"), "splice", work, bodiesFile], {
+      cwd: logosTsRoot, encoding: "utf8",
+    })
   }
 
   // 4. Run checks
