@@ -39,6 +39,7 @@ export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
   const [goalError, setGoalError] = useState<string | null>(null)
+  const [captureError, setCaptureError] = useState<string | null>(null)
   const [selection, setSelection] = useState<Selection>({
     file: seed.files[0]?.file ?? "",
     view: "code",
@@ -280,23 +281,44 @@ export function App() {
       setRunningGoals((prev) => new Set(prev).add(goalId))
       setAgentGoalId(goalId)
       setAgentOpen(true)
-      const es = new EventSource(`/api/agent/run?workspace=${wsId}`)
-      esRefs.current.set(goalId, es)
-      es.onmessage = (m) => {
-        const msg = JSON.parse(m.data) as AgentMsg
-        setGoalEvents((prev) => ({ ...prev, [goalId]: [...(prev[goalId] ?? []), msg] }))
-        if (msg.type === "done" || msg.type === "error") {
+      const openStream = (attempt: number) => {
+        let receivedMessage = false
+        let terminal = false
+        const es = new EventSource(`/api/agent/run?workspace=${encodeURIComponent(wsId)}&goal=${encodeURIComponent(goalId)}`)
+        esRefs.current.set(goalId, es)
+        es.onmessage = (m) => {
+          receivedMessage = true
+          const msg = JSON.parse(m.data) as AgentMsg
+          setGoalEvents((prev) => ({ ...prev, [goalId]: [...(prev[goalId] ?? []), msg] }))
+          if (msg.type === "done" || msg.type === "error") {
+            terminal = true
+            es.close()
+            esRefs.current.delete(goalId)
+            setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
+            Promise.all([refreshWorkspaces(), refreshTests()]).then(() => openWorkspace(wsId))
+          }
+        }
+        es.onerror = () => {
+          if (terminal) return
           es.close()
           esRefs.current.delete(goalId)
+          if (!receivedMessage && attempt < 1) {
+            setGoalEvents((prev) => ({
+              ...prev,
+              [goalId]: [...(prev[goalId] ?? []), { type: "status", message: "agent stream disconnected; retrying…" }],
+            }))
+            window.setTimeout(() => openStream(attempt + 1), 750)
+            return
+          }
+          setGoalEvents((prev) => ({
+            ...prev,
+            [goalId]: [...(prev[goalId] ?? []), { type: "error", message: "agent stream disconnected" }],
+          }))
           setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
           Promise.all([refreshWorkspaces(), refreshTests()]).then(() => openWorkspace(wsId))
         }
       }
-      es.onerror = () => {
-        es.close()
-        esRefs.current.delete(goalId)
-        setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-      }
+      openStream(0)
     },
     [refreshWorkspaces, refreshTests, openWorkspace]
   )
@@ -451,6 +473,7 @@ export function App() {
       const story = fe?.component?.stories.find((s) => s.id === storyId)
       if (!fe || !story) return
       setBusy(`capturing ${fe.component!.name}/${story.exportName}…`)
+      setCaptureError(null)
       try {
         const res = await fetch("/api/capture", {
           method: "POST",
@@ -460,7 +483,12 @@ export function App() {
         if (res.ok) {
           await reindexWorkspace(activeWorkspaceId)
           setSelection({ file: fe.file, view: "captured", exportName: story.exportName })
+        } else {
+          const data = await res.json().catch(() => null) as { error?: string } | null
+          setCaptureError(data?.error ? `Capture failed: ${data.error}` : `Capture failed (${res.status})`)
         }
+      } catch (e) {
+        setCaptureError(`Capture failed: ${String(e)}`)
       } finally {
         setBusy(null)
       }
@@ -580,7 +608,8 @@ export function App() {
             </span>
           )}
           {"   "}
-          {goalError ? `goal error: ${goalError}` : busy ??
+          {goalError ? <span className="status-error">goal error: {goalError}</span> :
+            captureError ? <span className="status-error">{captureError}</span> : busy ??
             `${view.files.length} files · ${nComps} components · ${totalGoals} goals · ${workspaces.length} workspaces`}
         </span>
       </footer>

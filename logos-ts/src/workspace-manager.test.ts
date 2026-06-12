@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, it, expect } from "vitest"
@@ -168,6 +168,20 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.get(arch.id)?.kind).toBe("arch")
   })
 
+  it("forks from the parent workspace files, not the original project snapshot", async () => {
+    const mgr = createManager()
+    const parent = await mgr.create({ kind: "code" })
+    const parentState = mgr.get(parent.id)
+    if (!parentState) throw new Error("missing parent workspace")
+    writeFileSync(join(parentState.forkDir, "parent-only.txt"), "from parent")
+
+    const child = await mgr.create({ fromWorkspaceId: parent.id, kind: "code" })
+    const childState = mgr.get(child.id)
+    if (!childState) throw new Error("missing child workspace")
+
+    expect(readFileSync(join(childState.forkDir, "parent-only.txt"), "utf8")).toBe("from parent")
+  })
+
   function expectGoal(result: AddGoalResult): { goal: Goal; workspaceId: string } {
     if ("error" in result) throw new Error(result.error)
     return result
@@ -244,6 +258,32 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(events).toEqual([
       { type: "error", message: "architecture workspace already has a running agent" },
     ])
+  })
+
+  it("reports a missing requested goal without starting another queued goal", async () => {
+    const mgr = createManager()
+    const code = await mgr.create({ kind: "code" })
+    expect(expectGoal(await mgr.addGoal(code.id, goal("queued", "code"))).goal.id).toBe("queued")
+
+    const events: { type: string; message?: unknown }[] = []
+    const result = mgr.processById(code.id, "missing", (event) => events.push(event))
+
+    expect(result).toBeNull()
+    expect(mgr.goalsForWorkspace(code.id).map((g) => [g.id, g.status])).toEqual([["queued", "pending"]])
+    expect(events).toEqual([{ type: "error", message: "goal not found" }])
+  })
+
+  it("does not process a requested goal that is already finished", async () => {
+    const mgr = createManager()
+    const code = await mgr.create({ kind: "code" })
+    const finished = expectGoal(await mgr.addGoal(code.id, goal("finished", "code"))).goal
+    finished.status = "done"
+
+    const events: { type: string; message?: unknown }[] = []
+    const result = mgr.processById(code.id, "finished", (event) => events.push(event))
+
+    expect(result).toBeNull()
+    expect(events).toEqual([{ type: "error", message: "goal is done" }])
   })
 
   it("allows architecture agents to run in different architecture workspaces", async () => {

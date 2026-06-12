@@ -141,13 +141,13 @@ export class WorkspaceManager {
     )
   }
 
-  private createFork(wsId: string): string {
+  private createFork(wsId: string, sourceRoot = this.projectRoot): string {
     mkdirSync(this.runsDir, { recursive: true })
     const dir = resolve(this.runsDir, wsId)
     if (!existsSync(dir)) {
-      cpSync(this.projectRoot, dir, {
+      cpSync(sourceRoot, dir, {
         recursive: true,
-        filter: (s) => !/node_modules|\.workspaces|\.logos_cache|\.vite-logos|dist/.test(s),
+        filter: (s) => !/node_modules|\.workspaces|\.logos$|\.logos_cache|\.vite-logos|dist/.test(s),
       })
       for (const nmDir of this.caps.nodeModulesDirs) {
         const rel = relative(this.projectRoot, nmDir)
@@ -199,7 +199,7 @@ export class WorkspaceManager {
     const parentId = opts?.fromWorkspaceId ?? null
     const parentWs = parentId ? this.workspaces.get(parentId) : null
     const kind = opts?.kind ?? "code"
-    const forkDir = this.createFork(id)
+    const forkDir = this.createFork(id, parentWs?.forkDir ?? this.projectRoot)
 
     // Start Storybook before awaiting the index — it only needs the fork dir,
     // and on a cold server the index build would otherwise delay it by ~15s.
@@ -324,6 +324,15 @@ export class WorkspaceManager {
 
   /** Process the next pending goal in the workspace's queue. Returns the goal ID, or null if nothing to do. */
   processNext(wsId: string, onEvent: AgentEventCallback): string | null {
+    return this.processGoal(wsId, null, onEvent)
+  }
+
+  /** Process a specific pending goal. Returns the goal ID, or null if it cannot run. */
+  processById(wsId: string, goalId: string, onEvent: AgentEventCallback): string | null {
+    return this.processGoal(wsId, goalId, onEvent)
+  }
+
+  private processGoal(wsId: string, goalId: string | null, onEvent: AgentEventCallback): string | null {
     const ws = this.workspaces.get(wsId)
     if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return null }
     if (ws.kind === "arch" && ws.goals.some((g) => g.status === "running" || this.runningAgents.has(g.id))) {
@@ -331,8 +340,21 @@ export class WorkspaceManager {
       return null
     }
 
-    const goal = selectNextGoal(ws.goals, this.runningAgents)
-    if (!goal) { onEvent({ type: "error", message: "no pending goals" }); return null }
+    const goal = goalId
+      ? ws.goals.find((g) => g.id === goalId)
+      : selectNextGoal(ws.goals, this.runningAgents)
+    if (!goal) {
+      onEvent({ type: "error", message: goalId ? "goal not found" : "no pending goals" })
+      return null
+    }
+    if (goal.status !== "pending") {
+      onEvent({ type: "error", message: `goal is ${goal.status}` })
+      return null
+    }
+    if (this.runningAgents.has(goal.id)) {
+      onEvent({ type: "error", message: "goal is already running" })
+      return null
+    }
     if (goal.mode !== ws.kind) {
       onEvent({ type: "error", message: `${goal.mode} goal cannot run in ${ws.kind} workspace` })
       return null

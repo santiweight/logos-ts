@@ -224,6 +224,7 @@ body {
 .test-status.pass { color: var(--ok); }
 .test-status.fail { color: #e05555; }
 .test-status.running { color: var(--accent); }
+.status-error { color: #e5847d; }
 
 /* section headers — quiet, uppercase */
 .anode.section {

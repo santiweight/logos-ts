@@ -316,16 +316,23 @@ function studioApi(): Plugin {
 
       // --- Agent run (SSE) — process next pending goal in a workspace ---
       server.middlewares.use("/api/agent/run", async (req, res) => {
-        const wsId = new URL(req.url || "", "http://x").searchParams.get("workspace") || ""
+        const params = new URL(req.url || "", "http://x").searchParams
+        const wsId = params.get("workspace") || ""
+        const requestedGoalId = params.get("goal")
         res.setHeader("content-type", "text/event-stream")
         res.setHeader("cache-control", "no-cache")
         res.setHeader("connection", "keep-alive")
         const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`)
 
-        const goalId = wsMgr.processNext(wsId, (evt) => {
-          send(evt)
-          if (evt.type === "done" || evt.type === "error") res.end()
-        })
+        const goalId = requestedGoalId
+          ? wsMgr.processById(wsId, requestedGoalId, (evt) => {
+              send(evt)
+              if (evt.type === "done" || evt.type === "error") res.end()
+            })
+          : wsMgr.processNext(wsId, (evt) => {
+              send(evt)
+              if (evt.type === "done" || evt.type === "error") res.end()
+            })
         if (!goalId) return res.end()
 
         req.on("close", () => wsMgr.abort(goalId))
