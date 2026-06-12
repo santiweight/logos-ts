@@ -15,6 +15,13 @@ import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-pro
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
 const SOURCE_PROJECT = resolve(process.env.LOGOS_PROJECT || resolve(STUDIO, "../../hn-jobs"))
+const ALLOWED_HOSTS = [
+  "logos-ts-santiweight.fly.dev",
+  ...(process.env.LOGOS_ALLOWED_HOSTS || "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter(Boolean),
+]
 
 function copyProject(src: string): string {
   const sessionsDir = resolve(LOGOS_TS, ".dev-sessions")
@@ -370,6 +377,7 @@ export default defineConfig({
     // Bind a concrete address: the default "localhost" can end up IPv6-only,
     // and the page hangs whenever the browser resolves localhost to 127.0.0.1.
     host: process.env.LOGOS_HOST || "127.0.0.1",
+    allowedHosts: ALLOWED_HOSTS,
     port: Number(process.env.PORT) || 0,
     strictPort: Boolean(process.env.PORT),
     hmr: process.env.LOGOS_DISABLE_HMR === "1" ? false : undefined,
