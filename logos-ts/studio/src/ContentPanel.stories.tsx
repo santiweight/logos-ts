@@ -61,6 +61,7 @@ const meta: Meta<typeof ContentPanel> = {
     file,
     selection: { file: "src/components/JobCard.tsx", view: "code" },
     storybookUrl: "",
+    storybookState: null,
     onView: noop,
     onCapture: noop,
     comments: {},
@@ -84,6 +85,42 @@ export const StoryView: Story = {
   args: {
     selection: { file: "src/components/JobCard.tsx", view: "story", storyId: "jobcard--default" },
     storybookUrl: "http://localhost:6006",
+  },
+}
+
+export const StoryViewStarting: Story = {
+  args: {
+    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: "jobcard--default" },
+    storybookUrl: "",
+    storybookState: {
+      status: "starting",
+      startedAt: Date.now() - 5000,
+      logs: [
+        "@storybook/react-vite v8.6.14",
+        "",
+        "info Compiling preview...",
+        "info Writing static files...",
+        "info => Loading presets",
+      ],
+    },
+  },
+}
+
+export const StoryViewFailed: Story = {
+  args: {
+    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: "jobcard--default" },
+    storybookUrl: "",
+    storybookState: {
+      status: "failed",
+      startedAt: Date.now() - 12000,
+      logs: [
+        "@storybook/react-vite v8.6.14",
+        "ERR! Cannot find module '@storybook/react-vite/preset'",
+        "ERR! Require stack:",
+        "ERR!   - /project/node_modules/@storybook/core/dist/index.js",
+      ],
+      error: "exited with code 1",
+    },
   },
 }
 
