@@ -52,6 +52,23 @@ npm run dev              # auto-assigns a free port, prints the URL
 Leaving a comment in the studio (alt-click a node) declares a change and
 auto-runs an agent on a forked workspace; pick `code` or `arch` mode per comment.
 
+## Git workflow
+
+This repo uses **worktrees** — feature branches live under
+`/Users/santiagoweight/projects/worktrees/logos-ts/<branch>/logos-ts` while
+`main` is checked out at `/Users/santiagoweight/projects/logos-ts`. Because of
+this, `git checkout main` will fail inside a worktree.
+
+**Pushing a branch to main from a worktree:**
+
+```bash
+git fetch origin main
+git rebase origin/main          # get on top of latest main
+git push origin <branch>:main   # push directly to remote main
+```
+
+No PRs required — push directly to `origin/main` after rebasing.
+
 ## Tests / health check
 
 `hn-jobs` has a single unified suite (backend + frontend) via Vitest:
