@@ -279,10 +279,10 @@ export function App() {
 
   // Poll workspace index while agent is running
   useEffect(() => {
-    if (!agentRunning || !agentWorkspace) return
-    const iv = setInterval(() => openWorkspace(agentWorkspace), 3_000)
+    if (!agentRunning || !activeWorkspaceId) return
+    const iv = setInterval(() => openWorkspace(activeWorkspaceId), 3_000)
     return () => clearInterval(iv)
-  }, [agentRunning, agentWorkspace, openWorkspace])
+  }, [agentRunning, activeWorkspaceId, openWorkspace])
 
   // ---- actions ----
   const onFork = useCallback(async () => {
