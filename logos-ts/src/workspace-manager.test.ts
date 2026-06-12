@@ -33,7 +33,7 @@ describe("element context prompt construction", () => {
       label: "div",
       text: "change color",
       component: null,
-      storyId: undefined,
+      storyId: null,
       selector: ":scope > div",
     })
     expect(line).toBe("- (div [element: :scope > div]) change color")

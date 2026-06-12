@@ -118,19 +118,19 @@ export class ClaudeSessionManager {
 
 function mapSession(row: Record<string, unknown>): ClaudeSession {
   return {
-    id: row.id as string,
-    goalId: row.goal_id as string,
-    workspaceId: row.workspace_id as string,
-    createdAt: row.created_at as number,
+    id: row["id"] as string,
+    goalId: row["goal_id"] as string,
+    workspaceId: row["workspace_id"] as string,
+    createdAt: row["created_at"] as number,
   }
 }
 
 function mapEvent(row: Record<string, unknown>): SessionEvent {
   return {
-    id: row.id as number,
-    sessionId: row.session_id as string,
-    seq: row.seq as number,
-    type: row.type as string,
-    payload: row.payload as string,
+    id: row["id"] as number,
+    sessionId: row["session_id"] as string,
+    seq: row["seq"] as number,
+    type: row["type"] as string,
+    payload: row["payload"] as string,
   }
 }

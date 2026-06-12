@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { GraphView } from "./GraphView"
 import type { GoalApi, DiffStatus, FileEntry, FileItem, SbState, Selection, View } from "./types"
@@ -8,6 +8,7 @@ interface Props {
   selection: Selection
   storybookUrl: string
   storybookState: SbState | null
+  onRetryStorybook: (() => void) | null
   onView: (view: View) => void
   onCapture: (storyId: string) => void
   comments: GoalApi["comments"]
@@ -20,6 +21,7 @@ export function ContentPanel({
   selection,
   storybookUrl,
   storybookState,
+  onRetryStorybook,
   onView,
   onCapture,
   comments,
@@ -73,11 +75,12 @@ export function ContentPanel({
               {...(selection.storyId != null ? { storyId: selection.storyId } : {})}
               storybookUrl={storybookUrl}
               storybookState={storybookState}
+              onRetryStorybook={onRetryStorybook}
               onCapture={onCapture}
             />
           )}
           {selection.view === "captured" && comp && (
-            <CapturedView component={comp} {...(selection.exportName != null ? { exportName: selection.exportName } : {})} />
+            <CapturedView component={comp} {...(selection.exportName != null ? { exportName: selection.exportName } : {})} storybookUrl={storybookUrl} />
           )}
           {selection.view === "code" && symbol && <SymbolView item={symbol} />}
           {selection.view === "code" && !symbol && comp && <ComponentCodeView component={comp} />}
@@ -255,17 +258,26 @@ function StoryView({
   storyId,
   storybookUrl,
   storybookState,
+  onRetryStorybook,
   onCapture,
 }: {
   storyId?: string
   storybookUrl: string
   storybookState: SbState | null
+  onRetryStorybook: (() => void) | null
   onCapture: (storyId: string) => void
 }) {
   const logsEndRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [storybookState?.logs.length])
+
+  // No server and no startup in flight (e.g. studio restarted, or the entry
+  // was pruned): kick off a start instead of showing a spinner forever.
+  const shouldAutoStart = !!onRetryStorybook && !storybookUrl && !storybookState
+  useEffect(() => {
+    if (shouldAutoStart) onRetryStorybook()
+  }, [shouldAutoStart, onRetryStorybook])
 
   if (!storyId) return <div className="empty">No story selected.</div>
 
@@ -275,6 +287,9 @@ function StoryView({
         <div className="sb-startup">
           <div className="sb-startup-header sb-failed">Storybook failed to start</div>
           {storybookState.error && <div className="sb-startup-error">{storybookState.error}</div>}
+          {onRetryStorybook && (
+            <button className="sb-retry-btn" onClick={onRetryStorybook}>↻ Retry</button>
+          )}
           {storybookState.logs.length > 0 && (
             <pre className="sb-startup-logs">
               {storybookState.logs.join("\n")}
@@ -320,21 +335,144 @@ function StoryView({
   )
 }
 
+function extractSnapHtml(raw: string): string | null {
+  const m = raw.match(/exports\[.*?\]\s*=\s*`"?([\s\S]*?)"?`;\s*$/m)
+  if (!m?.[1]) return null
+  return m[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\\\/g, "\\")
+}
+
+function formatHtml(html: string): string {
+  let out = ""
+  let indent = 0
+  const tokens = html.split(/(<[^>]+>)/g).filter(Boolean)
+  for (const tok of tokens) {
+    if (tok.startsWith("</")) {
+      indent = Math.max(0, indent - 1)
+      out += "  ".repeat(indent) + tok + "\n"
+    } else if (tok.startsWith("<") && !tok.endsWith("/>") && !tok.startsWith("<!")) {
+      out += "  ".repeat(indent) + tok + "\n"
+      indent++
+    } else if (tok.startsWith("<")) {
+      out += "  ".repeat(indent) + tok + "\n"
+    } else if (tok.trim()) {
+      out += "  ".repeat(indent) + tok + "\n"
+    }
+  }
+  return out.trimEnd()
+}
+
+function diffLines(a: string, b: string): { type: "same" | "add" | "del"; text: string }[] {
+  const aLines = a.split("\n")
+  const bLines = b.split("\n")
+  const out: { type: "same" | "add" | "del"; text: string }[] = []
+  let ai = 0, bi = 0
+  while (ai < aLines.length || bi < bLines.length) {
+    if (ai < aLines.length && bi < bLines.length && aLines[ai] === bLines[bi]) {
+      out.push({ type: "same", text: aLines[ai]! })
+      ai++; bi++
+    } else if (bi < bLines.length && (ai >= aLines.length || !aLines.slice(ai).includes(bLines[bi]!))) {
+      out.push({ type: "add", text: bLines[bi]! })
+      bi++
+    } else if (ai < aLines.length && (bi >= bLines.length || !bLines.slice(bi).includes(aLines[ai]!))) {
+      out.push({ type: "del", text: aLines[ai]! })
+      ai++
+    } else {
+      out.push({ type: "del", text: aLines[ai]! })
+      ai++
+    }
+  }
+  return out
+}
+
+type SnapTab = "rendered" | "source" | "diff"
+
+function SnapshotIframe({ html, storybookUrl, storyId }: { html: string; storybookUrl: string; storyId?: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const htmlRef = useRef(html)
+  htmlRef.current = html
+
+  const inject = useCallback(() => {
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+    const send = () => win.postMessage({ type: "logos:render-snapshot", html: htmlRef.current }, "*")
+    send()
+    setTimeout(send, 500)
+    setTimeout(send, 1500)
+  }, [])
+
+  useEffect(() => {
+    inject()
+  }, [html, inject])
+
+  const id = storyId ?? ""
+  const src = `${storybookUrl}/iframe.html?id=${encodeURIComponent(id)}&viewMode=story`
+  return (
+    <iframe
+      ref={iframeRef}
+      className="story-frame"
+      src={src}
+      title="snapshot-render"
+      onLoad={inject}
+    />
+  )
+}
+
 function CapturedView({
   component,
   exportName,
+  storybookUrl,
 }: {
   component: NonNullable<FileEntry["component"]>
   exportName?: string
+  storybookUrl: string
 }) {
+  const [tab, setTab] = useState<SnapTab>("rendered")
   const cap = component.captured.find((c) => c.exportName === exportName) ?? component.captured[0]
   if (!cap) return <div className="empty">No captured tests for {component.name}.</div>
+
+  const html = extractSnapHtml(cap.snapshot ?? "") ?? cap.snapshot ?? ""
+  const formatted = formatHtml(html)
+  const hasDiff = cap.previousSnapshot != null && cap.previousSnapshot !== cap.snapshot
+  const prevHtml = hasDiff ? extractSnapHtml(cap.previousSnapshot!) ?? "" : null
+  const diffResult = hasDiff ? diffLines(formatHtml(prevHtml!), formatted) : null
+
+  const tabs: { id: SnapTab; label: string }[] = [
+    { id: "rendered", label: "Rendered" },
+    { id: "source", label: "Source" },
+    ...(hasDiff ? [{ id: "diff" as const, label: "Diff" }] : []),
+  ]
+
   return (
     <div className="pane">
       <div className="pane-path">
-        <span className="badge ok">✓ captured</span> {cap.testFile}
+        <span className={`badge ${hasDiff ? "changed" : "ok"}`}>
+          {hasDiff ? "~ changed" : "✓ captured"}
+        </span>{" "}
+        {cap.testFile}
       </div>
-      <pre className="code snap">{cap.snapshot ?? "(snapshot not yet written — run vitest)"}</pre>
+      <div className="snap-tabs">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            className={`snap-tab ${tab === t.id ? "active" : ""}`}
+            onClick={() => setTab(t.id)}
+          >{t.label}</button>
+        ))}
+      </div>
+      {tab === "rendered" && storybookUrl && (
+        <SnapshotIframe html={html} storybookUrl={storybookUrl} {...(component.stories[0]?.id != null ? { storyId: component.stories[0].id } : {})} />
+      )}
+      {tab === "rendered" && !storybookUrl && (
+        <div className="empty">Waiting for Storybook to start…</div>
+      )}
+      {tab === "source" && (
+        <pre className="code snap">{formatted}</pre>
+      )}
+      {tab === "diff" && diffResult && (
+        <pre className="code snap snap-diff">{diffResult.map((l, i) => (
+          <span key={i} className={`diff-line diff-${l.type}`}>{l.type === "add" ? "+" : l.type === "del" ? "-" : " "} {l.text}{"\n"}</span>
+        ))}</pre>
+      )}
     </div>
   )
 }

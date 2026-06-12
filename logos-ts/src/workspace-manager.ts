@@ -364,10 +364,10 @@ export class WorkspaceManager {
       this.sessions.addEvent(sessionId, evt.type, evt)
 
       if (evt.type === "event") {
-        const e = evt.event as Record<string, unknown> | undefined
-        if (e?.type === "system" && e?.subtype === "init" && typeof e?.session_id === "string") {
-          this.sessions.setClaudeId(sessionId, e.session_id)
-          sessionId = e.session_id
+        const e = evt["event"] as Record<string, unknown> | undefined
+        if (e?.["type"] === "system" && e?.["subtype"] === "init" && typeof e?.["session_id"] === "string") {
+          this.sessions.setClaudeId(sessionId, e["session_id"] as string)
+          sessionId = e["session_id"] as string
           goal.sessionId = sessionId
           this.save(ws)
         }

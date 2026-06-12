@@ -68,8 +68,8 @@ describe("ClaudeSessionManager", () => {
 
       const events = mgr.getEvents("claude-real-456")
       expect(events).toHaveLength(2)
-      expect(events[0].type).toBe("status")
-      expect(events[1].type).toBe("event")
+      expect(events[0]!.type).toBe("status")
+      expect(events[1]!.type).toBe("event")
     })
   })
 
@@ -92,9 +92,9 @@ describe("ClaudeSessionManager", () => {
 
       const events = mgr.getEvents(session.id)
       expect(events).toHaveLength(2)
-      expect(events[0].seq).toBe(0)
-      expect(events[1].seq).toBe(1)
-      expect(JSON.parse(events[0].payload)).toEqual({ msg: "first" })
+      expect(events[0]!.seq).toBe(0)
+      expect(events[1]!.seq).toBe(1)
+      expect(JSON.parse(events[0]!.payload)).toEqual({ msg: "first" })
     })
 
     it("getEventsByGoalId returns events via goal lookup", () => {
