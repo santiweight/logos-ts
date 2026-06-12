@@ -18,7 +18,7 @@ import {
   popoverPos,
   popoverShell,
   type SubmitPayload,
-} from "../../../logos-ts/studio/src/comment-ui"
+} from "@logos-studio/comment-ui"
 
 interface HoverTarget {
   rect: DOMRect

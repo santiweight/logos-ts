@@ -7,9 +7,9 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import path from "node:path"
 
 const LOGOS_SRC = process.env.LOGOS_TS_SRC!
-const commentDb: typeof import("../../../logos-ts/src/comment-db") = require(path.join(LOGOS_SRC, "comment-db"))
+const commentDb: typeof import("@logos-src/comment-db") = require(path.join(LOGOS_SRC, "comment-db"))
 
-export type { CommentRow } from "../../../logos-ts/src/comment-db"
+export type { CommentRow } from "@logos-src/comment-db"
 
 const PROJECT_ROOT = process.env.LOGOS_PROJECT_ROOT!
 const OUT_DIR = path.join(PROJECT_ROOT, ".logos")
