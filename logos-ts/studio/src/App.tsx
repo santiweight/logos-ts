@@ -279,6 +279,40 @@ export function App() {
   )
   const closeAgent = useCallback(() => setAgentOpen(false), [])
 
+  const resetWorkspaces = useCallback(async () => {
+    if (!window.confirm("Delete all workspaces, goals, sessions, and generated forks, then start fresh?")) return
+    setBusy("resetting workspace state…")
+    for (const es of esRefs.current.values()) es.close()
+    esRefs.current.clear()
+    setRunningGoals(new Set())
+    setGoalEvents({})
+    setAgentGoalId(null)
+    setAgentOpen(false)
+    setSelected(null)
+    setReviewOpen(false)
+    setWorkspaceIndex(null)
+    setActiveWorkspaceId(null)
+
+    try {
+      const resetRes = await fetch("/api/reset", { method: "POST" })
+      if (!resetRes.ok) return
+      const data = await resetRes.json() as { workspace: WorkspaceMeta }
+      setWorkspaces([data.workspace])
+      setSelected({ type: "workspace", id: data.workspace.id })
+
+      const wsRes = await fetch(`/api/workspaces/${data.workspace.id}`)
+      if (wsRes.ok) {
+        const ws = await wsRes.json() as Workspace
+        setWorkspaceIndex(ws.index)
+        setActiveWorkspaceId(ws.id)
+        setSelection({ file: ws.index.files[0]?.file ?? "", view: "code" })
+      }
+      await Promise.all([refreshTests(), refreshStorybooks()])
+    } finally {
+      setBusy(null)
+    }
+  }, [refreshTests, refreshStorybooks])
+
   // Poll workspace index while agent is running
   useEffect(() => {
     if (!agentRunning || !activeWorkspaceId) return
@@ -425,6 +459,7 @@ export function App() {
         activeWorkspaceId={activeWorkspaceId}
         selected={selected}
         onNewWorkspace={() => createWorkspace()}
+        onResetWorkspaces={resetWorkspaces}
         onOpenWorkspace={(id) => {
           setSelected({ type: "workspace", id })
           openWorkspace(id)

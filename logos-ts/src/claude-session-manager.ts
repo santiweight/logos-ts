@@ -111,6 +111,11 @@ export class ClaudeSessionManager {
     this.db.prepare(`DELETE FROM sessions WHERE workspace_id = ?`).run(workspaceId)
   }
 
+  deleteAll(): void {
+    this.db.prepare(`DELETE FROM session_events`).run()
+    this.db.prepare(`DELETE FROM sessions`).run()
+  }
+
   close(): void {
     this.db.close()
   }

@@ -192,6 +192,23 @@ function studioApi(): Plugin {
         res.end(JSON.stringify({ urls, states }))
       })
 
+      server.middlewares.use("/api/reset", async (req, res) => {
+        res.setHeader("content-type", "application/json")
+        if (req.method !== "POST") {
+          res.statusCode = 405
+          res.end(JSON.stringify({ error: "method not allowed" }))
+          return
+        }
+        try {
+          wsMgr.resetAll()
+          const workspace = await wsMgr.create({ name: "workspace" })
+          res.end(JSON.stringify({ ok: true, workspace }))
+        } catch (e) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ ok: false, error: String(e) }))
+        }
+      })
+
       // --- Workspace CRUD ---
       server.middlewares.use("/api/workspaces", async (req, res) => {
         res.setHeader("content-type", "application/json")

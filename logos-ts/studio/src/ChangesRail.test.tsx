@@ -14,6 +14,7 @@ const baseProps = {
   activeWorkspaceId: null,
   selected: null,
   onNewWorkspace: noop,
+  onResetWorkspaces: noop,
   onOpenWorkspace: noop as (id: string) => void,
   onFork: noop,
   onSelectGoal: noop as (id: string) => void,

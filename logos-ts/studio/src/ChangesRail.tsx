@@ -5,6 +5,7 @@ import { svgIcon } from "./icons"
 const branchIcon = svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 12)
 const plusIcon = svgIcon("M12 5v14M5 12h14", 12)
 const collapseIcon = svgIcon("M15 18l-6-6 6-6", 12)
+const resetIcon = svgIcon("M4 4v6h6M20 20v-6h-6M6.5 17.5a7.5 7.5 0 0 0 11-10.2L20 10M17.5 6.5a7.5 7.5 0 0 0-11 10.2L4 14", 12)
 
 interface Props {
   open: boolean
@@ -14,6 +15,7 @@ interface Props {
   activeWorkspaceId: string | null
   selected: { type: "workspace" | "goal"; id: string } | null
   onNewWorkspace: () => void
+  onResetWorkspaces: () => void
   onOpenWorkspace: (id: string) => void
   onFork: () => void
   onSelectGoal: (id: string) => void
@@ -30,6 +32,7 @@ export function ChangesRail({
   activeWorkspaceId,
   selected,
   onNewWorkspace,
+  onResetWorkspaces,
   onOpenWorkspace,
   onFork,
   onSelectGoal,
@@ -55,6 +58,9 @@ export function ChangesRail({
         <span>
           <button className="rail-toggle" onClick={onNewWorkspace} title="New workspace">
             {plusIcon}
+          </button>
+          <button className="rail-toggle" onClick={onResetWorkspaces} title="Reset all workspaces">
+            {resetIcon}
           </button>
           <button className="rail-toggle" onClick={onToggle} title="Collapse">
             {collapseIcon}

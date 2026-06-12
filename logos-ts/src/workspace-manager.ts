@@ -242,6 +242,20 @@ export class WorkspaceManager {
     this.workspaces.delete(id)
   }
 
+  resetAll(): void {
+    this.abortAll()
+    for (const id of [...this.workspaces.keys()]) {
+      this.delete(id)
+    }
+    this.sbManager.shutdownAll()
+    this.sessions.deleteAll()
+    rmSync(this.runsDir, { recursive: true, force: true })
+    mkdirSync(this.runsDir, { recursive: true })
+    rmSync(this.wsDir, { recursive: true, force: true })
+    mkdirSync(this.wsDir, { recursive: true })
+    this.workspaces.clear()
+  }
+
   addGoal(wsId: string, goal: Omit<Goal, "status">): Goal | null {
     const ws = this.workspaces.get(wsId)
     if (!ws) return null
