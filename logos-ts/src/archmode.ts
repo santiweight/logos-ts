@@ -24,6 +24,22 @@ interface ArchRecords {
 
 const isTest = (p: string) => /\.test\.[cm]?tsx?$/.test(p)
 
+/**
+ * A declaration that renders JSX is a component, and on the frontend the
+ * render tree IS the architecture — so components keep their full text in the
+ * architecture view (never stripped, never spliced; agent edits stick).
+ */
+function rendersJsx(node: Node): boolean {
+  let found = false
+  node.forEachDescendant((d, traversal) => {
+    if (Node.isJsxElement(d) || Node.isJsxSelfClosingElement(d) || Node.isJsxFragment(d)) {
+      found = true
+      traversal.stop()
+    }
+  })
+  return found
+}
+
 const allSources = (project: ReturnType<typeof loadProject>) =>
   project.getSourceFiles().filter(s => !s.getFilePath().includes("/node_modules/"))
 
@@ -200,7 +216,7 @@ function strip(dir: string, recFile: string) {
   const recs: Rec[] = []
   for (const sf of srcFiles) {
     for (const fd of sf.getFunctions()) {
-      if (!uniq(fd.getName()) || !fd.hasBody()) continue
+      if (!uniq(fd.getName()) || !fd.hasBody() || rendersJsx(fd)) continue
       recs.push({ name: fd.getName()!, text: fd.getText() })
       fd.removeBody()
       fd.setHasDeclareKeyword(true)
@@ -209,13 +225,13 @@ function strip(dir: string, recFile: string) {
       const decls = vs.getDeclarations()
       const name = decls[0]?.getName()
       if (decls.length !== 1 || !decls[0] || !Node.isIdentifier(decls[0].getNameNode())) continue
-      if (!uniq(name) || !decls[0].getInitializer()) continue
+      if (!uniq(name) || !decls[0].getInitializer() || rendersJsx(vs)) continue
       recs.push({ name: name!, text: vs.getText() })
       for (const d of decls) if (d.getInitializer()) d.removeInitializer()
       vs.setHasDeclareKeyword(true)
     }
     for (const cd of sf.getClasses()) {
-      if (!uniq(cd.getName())) continue
+      if (!uniq(cd.getName()) || rendersJsx(cd)) continue
       recs.push({ name: cd.getName()!, text: cd.getText() })
       for (const m of cd.getMethods()) if (m.hasBody()) m.removeBody()
       for (const c of cd.getConstructors()) if (c.hasBody()) c.removeBody()
