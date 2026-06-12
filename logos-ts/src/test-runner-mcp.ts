@@ -12,7 +12,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { execFile } from "node:child_process"
-import { watch } from "node:fs"
+import { mkdirSync, watch } from "node:fs"
 import { resolve } from "node:path"
 import { z } from "zod"
 
@@ -35,6 +35,15 @@ if (cmdValue == null) {
 }
 
 const cmd: string = cmdValue
+const testCacheDir = resolve(cwd, ".logos_cache", "test-runner-mcp")
+
+mkdirSync(testCacheDir, { recursive: true })
+
+const testEnv = {
+  ...process.env,
+  LOGOS_VITEST_CACHE_DIR: testCacheDir,
+  NODE_ENV: "test",
+}
 
 // --- state ---
 
@@ -65,7 +74,7 @@ function startRun() {
   }
   currentRun = run
 
-  execFile(cmd, cmdArgs, { cwd, timeout: 120_000 }, (err: Error | null, stdout: string, stderr: string) => {
+  execFile(cmd, cmdArgs, { cwd, env: testEnv, timeout: 120_000 }, (err: Error | null, stdout: string, stderr: string) => {
     run.finishedAt = Date.now()
     run.output = stdout || null
     if (err && !stdout) {
