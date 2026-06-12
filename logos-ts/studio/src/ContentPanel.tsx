@@ -9,6 +9,7 @@ interface Props {
   selection: Selection
   storybookUrl: string
   storybookState: SbState | null
+  onRetryStorybook: (() => void) | null
   onView: (view: View) => void
   onCapture: (storyId: string) => void
   comments: GoalApi["comments"]
@@ -21,6 +22,7 @@ export function ContentPanel({
   selection,
   storybookUrl,
   storybookState,
+  onRetryStorybook,
   onView,
   onCapture,
   comments,
@@ -74,6 +76,7 @@ export function ContentPanel({
               {...(selection.storyId != null ? { storyId: selection.storyId } : {})}
               storybookUrl={storybookUrl}
               storybookState={storybookState}
+              onRetryStorybook={onRetryStorybook}
               onCapture={onCapture}
             />
           )}
@@ -256,17 +259,26 @@ function StoryView({
   storyId,
   storybookUrl,
   storybookState,
+  onRetryStorybook,
   onCapture,
 }: {
   storyId?: string
   storybookUrl: string
   storybookState: SbState | null
+  onRetryStorybook: (() => void) | null
   onCapture: (storyId: string) => void
 }) {
   const logsEndRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [storybookState?.logs.length])
+
+  // No server and no startup in flight (e.g. studio restarted, or the entry
+  // was pruned): kick off a start instead of showing a spinner forever.
+  const shouldAutoStart = !!onRetryStorybook && !storybookUrl && !storybookState
+  useEffect(() => {
+    if (shouldAutoStart) onRetryStorybook()
+  }, [shouldAutoStart, onRetryStorybook])
 
   if (!storyId) return <div className="empty">No story selected.</div>
 
@@ -276,6 +288,9 @@ function StoryView({
         <div className="sb-startup">
           <div className="sb-startup-header sb-failed">Storybook failed to start</div>
           {storybookState.error && <div className="sb-startup-error">{storybookState.error}</div>}
+          {onRetryStorybook && (
+            <button className="sb-retry-btn" onClick={onRetryStorybook}>↻ Retry</button>
+          )}
           {storybookState.logs.length > 0 && (
             <pre className="sb-startup-logs">
               {storybookState.logs.join("\n")}

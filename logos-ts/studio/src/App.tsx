@@ -61,6 +61,13 @@ export function App() {
   const activeStorybookState = activeWorkspaceId
     ? storybookStates[activeWorkspaceId] ?? null
     : null
+  const retryStorybook = useCallback(async () => {
+    if (!activeWorkspaceId) return
+    try {
+      await fetch(`/api/workspaces/${activeWorkspaceId}/storybook`, { method: "POST" })
+    } catch {}
+    refreshStorybooks()
+  }, [activeWorkspaceId, refreshStorybooks])
 
   const diff = useMemo(
     () => (activeWorkspaceId && workspaceIndex ? diffIndex(index, workspaceIndex) : {}),
@@ -416,6 +423,7 @@ export function App() {
             selection={selection}
             storybookUrl={activeStorybookUrl}
             storybookState={activeStorybookState}
+            onRetryStorybook={activeWorkspaceId ? retryStorybook : null}
             onView={setView}
             onCapture={onCapture}
             comments={goalsByTarget}

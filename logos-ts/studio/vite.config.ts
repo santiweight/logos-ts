@@ -20,7 +20,7 @@ function copyProject(src: string): string {
   const ephDir = resolve(sessionsDir, sessionId)
   cpSync(src, ephDir, {
     recursive: true,
-    filter: (s) => !/node_modules|\.logos_cache|\.logos$|dist$|__snapshots__/.test(s),
+    filter: (s) => !/node_modules|\.logos_cache|\.logos$|\.vite-logos|dist$|__snapshots__/.test(s),
   })
   for (const entry of readdirSync(src)) {
     const full = join(src, entry)
@@ -195,6 +195,17 @@ function studioApi(): Plugin {
           return
         }
 
+        // POST /api/workspaces/:id/storybook — start (or restart after failure) its Storybook
+        if (req.method === "POST" && sub.endsWith("/storybook")) {
+          const wsId = sub.replace(/\/storybook$/, "")
+          if (!wsMgr.get(wsId)) { res.statusCode = 404; res.end(JSON.stringify({ error: "workspace not found" })); return }
+          wsMgr.ensureStorybook(wsId).catch((e: any) => {
+            console.error(`[logos] storybook for ${wsId} failed to start:`, e.message)
+          })
+          res.end(JSON.stringify({ ok: true, state: sbManager.state(wsId) }))
+          return
+        }
+
         // POST /api/workspaces/:id/reindex — rebuild workspace index from disk
         if (req.method === "POST" && sub.endsWith("/reindex")) {
           const wsId = sub.replace(/\/reindex$/, "")
@@ -308,6 +319,9 @@ function autoStorybook(): Plugin {
 export default defineConfig({
   plugins: [react(), studioApi(), autoStorybook()],
   server: {
+    // Bind a concrete address: the default "localhost" can end up IPv6-only,
+    // and the page hangs whenever the browser resolves localhost to 127.0.0.1.
+    host: "127.0.0.1",
     port: 0,
     watch: { ignored: ["**/.workspaces/**", "**/.agent-runs/**"] },
   },

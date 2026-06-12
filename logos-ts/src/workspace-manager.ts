@@ -124,7 +124,7 @@ export class WorkspaceManager {
     if (!existsSync(dir)) {
       cpSync(this.projectRoot, dir, {
         recursive: true,
-        filter: (s) => !/node_modules|\.workspaces|\.logos_cache|dist|__snapshots__/.test(s),
+        filter: (s) => !/node_modules|\.workspaces|\.logos_cache|\.vite-logos|dist|__snapshots__/.test(s),
       })
       for (const nmDir of this.caps.nodeModulesDirs) {
         const rel = relative(this.projectRoot, nmDir)
@@ -174,8 +174,7 @@ export class WorkspaceManager {
     // Start Storybook before awaiting the index — it only needs the fork dir,
     // and on a cold server the index build would otherwise delay it by ~15s.
     if (this.caps.storybook) {
-      const wsFrontend = join(forkDir, relative(this.projectRoot, this.caps.storybook.frontendDir))
-      this.sbManager.ensure(id, wsFrontend).catch((e: any) => {
+      this.startStorybook(id, forkDir).catch((e: any) => {
         console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
       })
     }
@@ -195,6 +194,19 @@ export class WorkspaceManager {
     this.save(ws)
 
     return { id: ws.id, name: ws.name, parentId: ws.parentId, createdAt: ws.createdAt, goals: ws.goals }
+  }
+
+  private startStorybook(id: string, forkDir: string): Promise<string> {
+    if (!this.caps.storybook) return Promise.reject(new Error("storybook is not configured for this project"))
+    const wsFrontend = join(forkDir, relative(this.projectRoot, this.caps.storybook.frontendDir))
+    return this.sbManager.ensure(id, wsFrontend)
+  }
+
+  /** Start (or restart after a failure) the Storybook for a workspace. Idempotent. */
+  ensureStorybook(wsId: string): Promise<string> {
+    const ws = this.workspaces.get(wsId)
+    if (!ws) return Promise.reject(new Error("no such workspace"))
+    return this.startStorybook(wsId, ws.forkDir)
   }
 
   delete(id: string): void {
