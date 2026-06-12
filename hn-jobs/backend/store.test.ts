@@ -13,5 +13,5 @@ test("upsertJob preserves raw text on re-ingest", () => {
 test("listJobs and getJob round-trip", () => {
   const store = new JobStore(":memory:")
   store.getJob(1)
-  store.listJobs({ remote: false, visa: false, intern: false, sort: "company" })
+  store.listJobs()
 })

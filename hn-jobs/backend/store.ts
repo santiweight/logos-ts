@@ -1,5 +1,4 @@
-import type { Job, Thread, JobFilters } from "../shared/types"
-import { jobMatchesFilters } from "./job-filters"
+import type { Job, Thread } from "../shared/types"
 
 /**
  * Persistent store for threads and postings.
@@ -92,23 +91,12 @@ export class JobStore {
     return this.jobs.get(id) ?? null
   }
 
-  /** Visible postings for the directory; month filter applied in SQL. */
-  listJobs(filters: JobFilters): Job[] {
+  /** Visible postings for the directory. */
+  listJobs(): Job[] {
     const results: Job[] = []
 
     for (const job of this.jobs.values()) {
-      // Skip hidden jobs
       if (job.hidden) continue
-
-      // Apply month filter if specified
-      if (filters.month != null) {
-        const thread = this.threads.get(job.threadId)
-        if (!thread || thread.month !== filters.month) continue
-      }
-
-      // Apply other filters
-      if (!jobMatchesFilters(job, filters)) continue
-
       results.push(job)
     }
 
