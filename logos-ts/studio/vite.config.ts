@@ -250,9 +250,6 @@ function studioApi(): Plugin {
             try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
             try { symlinkSync(nmDir, target) } catch { /* exists */ }
           }
-          // Symlink logos-ts into .agent-runs/ so .storybook relative imports
-          // (e.g. ../../../logos-ts/studio/src/comment-ui) resolve correctly.
-          try { symlinkSync(LOGOS_TS, resolve(RUNS, "logos-ts")) } catch { /* exists */ }
         }
 
         if (caps.storybook) {
