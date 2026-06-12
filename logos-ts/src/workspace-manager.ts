@@ -378,7 +378,7 @@ export class WorkspaceManager {
 
     const child = spawn(
       "claude",
-      ["-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
+      ["-p", prompt, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
       { cwd: dir, stdio: ["ignore", "pipe", "pipe"] },
     )
     this.runningAgents.set(goal.id, child)
