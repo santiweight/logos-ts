@@ -1,0 +1,12 @@
+.git
+.github
+**/node_modules
+**/dist
+**/.vite
+**/.logos
+**/.logos_cache
+**/.agent-runs
+**/.dev-sessions
+**/.workspaces
+*.log
+.DS_Store

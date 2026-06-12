@@ -131,8 +131,10 @@ export class StorybookManager {
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
+          CACHE_DIR: resolve(this.projectRoot, ".logos_cache", id),
           LOGOS_TS_SRC: this.logosSrc,
           LOGOS_PROJECT_ROOT: this.projectRoot,
+          LOGOS_STORYBOOK_BASE: `/storybooks/${encodeURIComponent(id)}/`,
           LOGOS_SB_CACHE_DIR: cacheDir,
           // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
           LOGOS_SESSION: basename(this.projectRoot),

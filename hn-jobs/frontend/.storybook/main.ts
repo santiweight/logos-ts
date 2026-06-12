@@ -9,6 +9,23 @@ const config: StorybookConfig = {
   addons: [],
   framework: { name: "@storybook/react-vite", options: {} },
   viteFinal(viteConfig) {
+    const storybookBase = process.env.LOGOS_STORYBOOK_BASE
+    if (storybookBase) {
+      viteConfig.base = storybookBase
+      viteConfig.plugins = [
+        ...(viteConfig.plugins ?? []),
+        {
+          name: "logos-storybook-base",
+          enforce: "post",
+          transformIndexHtml: {
+            order: "post",
+            handler(html) {
+              return html.replace('src="/@id/', `src="${storybookBase}@id/`)
+            },
+          },
+        },
+      ]
+    }
     // node_modules is shared (symlinked) across workspace forks; the default
     // cacheDir (node_modules/.vite) would be racy across concurrent instances.
     if (process.env.LOGOS_SB_CACHE_DIR) viteConfig.cacheDir = process.env.LOGOS_SB_CACHE_DIR
@@ -21,6 +38,15 @@ const config: StorybookConfig = {
     // Agent file writes can trigger HMR mid-write, causing transient
     // "does not provide an export named X" errors — wait for writes to settle.
     viteConfig.server = viteConfig.server ?? {}
+    const publicPort = Number(process.env.LOGOS_PUBLIC_PORT)
+    if (Number.isInteger(publicPort) && publicPort > 0) {
+      const hmr = typeof viteConfig.server.hmr === "object" ? viteConfig.server.hmr : {}
+      viteConfig.server.hmr = {
+        ...hmr,
+        clientPort: publicPort,
+        protocol: process.env.LOGOS_PUBLIC_PROTOCOL === "wss" ? "wss" : "ws",
+      }
+    }
     viteConfig.server.watch = {
       ...viteConfig.server.watch,
       awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },

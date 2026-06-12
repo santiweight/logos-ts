@@ -9,6 +9,8 @@ import { StorybookManager } from "../src/storybook-manager"
 import { WorkspaceManager } from "../src/workspace-manager"
 import type { StudioIndex } from "../src/build-index"
 import { ClaudeSessionManager } from "../src/claude-session-manager"
+import { authPlugin } from "./server/auth"
+import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -170,7 +172,7 @@ function studioApi(): Plugin {
         const entries = sbManager.all()
         const states = sbManager.allStates()
         const urls: Record<string, string> = {}
-        for (const [id, entry] of Object.entries(entries)) urls[id] = entry.url
+        for (const id of Object.keys(entries)) urls[id] = publicStorybookUrl(id)
         res.end(JSON.stringify({ urls, states }))
       })
 
@@ -358,12 +360,15 @@ function autoStorybook(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), studioApi(), autoStorybook()],
+  cacheDir: process.env.LOGOS_VITE_CACHE_DIR || undefined,
+  plugins: [authPlugin(), react(), studioApi(), storybookProxyPlugin(sbManager), autoStorybook()],
   server: {
     // Bind a concrete address: the default "localhost" can end up IPv6-only,
     // and the page hangs whenever the browser resolves localhost to 127.0.0.1.
-    host: "127.0.0.1",
-    port: 0,
+    host: process.env.LOGOS_HOST || "127.0.0.1",
+    port: Number(process.env.PORT) || 0,
+    strictPort: Boolean(process.env.PORT),
+    hmr: process.env.LOGOS_DISABLE_HMR === "1" ? false : undefined,
     watch: { ignored: ["**/.workspaces/**", "**/.agent-runs/**"] },
   },
 })

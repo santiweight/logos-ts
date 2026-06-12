@@ -9,6 +9,7 @@
   "scripts": {
     "index": "tsx ../src/build-index.ts ${LOGOS_PROJECT:-../../hn-jobs} src/studio-index.json",
     "dev": "vite",
+    "start": "node bin/serve.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "lint": "node -e \"console.log('Strict lint is optional. Run npm run lint:strict for a cleanup pass.')\"",
