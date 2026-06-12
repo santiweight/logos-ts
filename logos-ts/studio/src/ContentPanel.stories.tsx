@@ -62,7 +62,6 @@ const meta: Meta<typeof ContentPanel> = {
     selection: { file: "src/components/JobCard.tsx", view: "code" },
     storybookUrl: "",
     storybookState: null,
-    onRetryStorybook: null,
     onView: noop,
     onCapture: noop,
     comments: {},
@@ -122,7 +121,6 @@ export const StoryViewFailed: Story = {
       ],
       error: "exited with code 1",
     },
-    onRetryStorybook: noop,
   },
 }
 

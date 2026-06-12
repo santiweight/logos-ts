@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react"
 import { execFile, execFileSync } from "node:child_process"
 import { writeFileSync, mkdirSync, watch, cpSync, existsSync, symlinkSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { dirname, resolve, join } from "node:path"
+import { dirname, resolve, join, relative } from "node:path"
 import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
 import { WorkspaceManager } from "../src/workspace-manager"
@@ -23,7 +23,7 @@ function copyProject(src: string): string {
   const ephDir = resolve(sessionsDir, sessionId)
   cpSync(src, ephDir, {
     recursive: true,
-    filter: (s) => !/node_modules|\.logos_cache|\.logos$|\.vite-logos|dist$|__snapshots__/.test(s),
+    filter: (s) => !/node_modules|\.logos_cache|\.logos$|\.vite-logos|dist$/.test(s),
   })
   for (const entry of readdirSync(src)) {
     const full = join(src, entry)
@@ -316,15 +316,19 @@ function studioApi(): Plugin {
           return res.end(JSON.stringify({ ok: false, error: "Storybook is not configured for this project" }))
         }
         try {
-          const { storyRef } = JSON.parse((await readBody(req)) || "{}")
-          const out = execFileSync(tsx, [resolve(LOGOS_TS, "src/capture.ts"), PROJECT_ROOT, storyRef], {
+          const { storyRef, workspaceId } = JSON.parse((await readBody(req)) || "{}")
+          const workspace = typeof workspaceId === "string" ? wsMgr.get(workspaceId) : null
+          const captureRoot = workspace?.forkDir ?? PROJECT_ROOT
+          const out = execFileSync(tsx, [resolve(LOGOS_TS, "src/capture.ts"), captureRoot, storyRef], {
             cwd: LOGOS_TS, encoding: "utf8",
           })
           const testFile = (out.match(/captured -> (.+)/)?.[1] ?? "").trim()
-          const frontendVitest = resolve(caps.storybook.frontendDir, "node_modules/.bin/vitest")
-          execFileSync(frontendVitest, ["run", resolve(caps.storybook.frontendDir, testFile)], {
-            cwd: caps.storybook.frontendDir, encoding: "utf8",
+          const frontendDir = resolve(captureRoot, relative(PROJECT_ROOT, caps.storybook.frontendDir))
+          const frontendVitest = resolve(frontendDir, "node_modules/.bin/vitest")
+          execFileSync(frontendVitest, ["run", "--update", resolve(frontendDir, testFile)], {
+            cwd: frontendDir, encoding: "utf8",
           })
+          if (workspace) wsMgr.reindex(workspace.id)
           res.end(JSON.stringify({ ok: true, testFile }))
         } catch (e) {
           res.statusCode = 500

@@ -6,8 +6,10 @@ import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
 import { svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
-import { ArchDiffPanel } from "./ArchDiffPanel"
+import { ReviewPanel } from "./ReviewPanel"
 import { diffIndex } from "./diff"
+import { capturedTestChanges } from "./review"
+import { indexToArchText } from "./arch-text"
 import type {
   Goal,
   SbState,
@@ -216,7 +218,7 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey)
   }, [selected, activeWorkspaceId, deleteWorkspace, deleteGoal])
 
-  const [archDiffOpen, setArchDiffOpen] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
 
   // ---- agent (per-goal) ----
   const [goalEvents, setGoalEvents] = useState<Record<string, AgentMsg[]>>({})
@@ -386,21 +388,28 @@ export function App() {
         const res = await fetch("/api/capture", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ storyRef: storyId }),
+          body: JSON.stringify({ storyRef: storyId, workspaceId: activeWorkspaceId }),
         })
         if (res.ok) {
-          await refresh()
+          await reindexWorkspace(activeWorkspaceId)
           setSelection({ file: fe.file, view: "captured", exportName: story.exportName })
         }
       } finally {
         setBusy(null)
       }
     },
-    [view.files, refresh]
+    [view.files, activeWorkspaceId, reindexWorkspace]
   )
 
   const nComps = view.files.filter((f) => f.component).length
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
+  const captureReviewCount = useMemo(
+    () => workspaceIndex ? capturedTestChanges(index, workspaceIndex).length : 0,
+    [index, workspaceIndex]
+  )
+  const reviewCount = captureReviewCount + (
+    workspaceIndex && indexToArchText(index) !== indexToArchText(workspaceIndex) ? 1 : 0
+  )
 
   if (!activeWorkspaceId || !workspaceIndex) {
     return <div className="studio"><div className="empty">Opening workspace…</div></div>
@@ -440,28 +449,40 @@ export function App() {
       </aside>
 
       <main className="main">
-        {archDiffOpen ? (
-          <ArchDiffPanel
-            base={index}
-            workspace={workspaceIndex}
-            onClose={() => setArchDiffOpen(false)}
-          />
-        ) : currentFile ? (
-          <ContentPanel
-            file={currentFile}
-            selection={selection}
-            storybookUrl={activeStorybookUrl}
-            storybookState={activeStorybookState}
-            onRetryStorybook={retryStorybook}
-            onView={setView}
-            onCapture={onCapture}
-            comments={goalsByTarget}
-            onComment={openComment}
-            diff={diff}
-          />
-        ) : (
-          <div className="empty">No files indexed.</div>
-        )}
+        <nav className="main-nav">
+          <button className={!reviewOpen ? "active" : ""} onClick={() => setReviewOpen(false)}>
+            Workspace
+          </button>
+          <button className={reviewOpen ? "active" : ""} onClick={() => setReviewOpen(true)}>
+            Review{reviewCount > 0 ? ` ${reviewCount}` : ""}
+          </button>
+        </nav>
+        <div className="main-view">
+          {reviewOpen ? (
+            <ReviewPanel
+              base={index}
+              workspace={workspaceIndex}
+              storybookUrl={activeStorybookUrl}
+              storybookState={activeStorybookState}
+              onRetryStorybook={retryStorybook}
+            />
+          ) : currentFile ? (
+            <ContentPanel
+              file={currentFile}
+              selection={selection}
+              storybookUrl={activeStorybookUrl}
+              storybookState={activeStorybookState}
+              onRetryStorybook={retryStorybook}
+              onView={setView}
+              onCapture={onCapture}
+              comments={goalsByTarget}
+              onComment={openComment}
+              diff={diff}
+            />
+          ) : (
+            <div className="empty">No files indexed.</div>
+          )}
+        </div>
         {agentOpen && (
           <AgentPanel events={agentEvents} running={agentRunning} goal={activeGoals.find(g => g.id === agentGoalId) ?? null} onClose={closeAgent} />
         )}
@@ -471,10 +492,7 @@ export function App() {
         <span>
           {svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 11)}{" "}
           {activeWs?.name ?? "workspace"}{" "}
-          <a className="refresh-btn" onClick={() => reindexWorkspace()} title="Re-index workspace from disk">↻</a>{" "}
-          <a className="arch-diff-toggle" onClick={() => setArchDiffOpen((o) => !o)}>
-            {archDiffOpen ? "close diff" : "arch diff"}
-          </a>
+          <a className="refresh-btn" onClick={() => reindexWorkspace()} title="Re-index workspace from disk">↻</a>
         </span>
         <span>
           <span className="agent-toggle" onClick={() => setAgentOpen((o) => !o)}>

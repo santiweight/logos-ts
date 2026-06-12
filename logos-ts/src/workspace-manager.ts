@@ -132,7 +132,7 @@ export class WorkspaceManager {
     if (!existsSync(dir)) {
       cpSync(this.projectRoot, dir, {
         recursive: true,
-        filter: (s) => !/node_modules|\.workspaces|\.logos_cache|\.vite-logos|dist|__snapshots__/.test(s),
+        filter: (s) => !/node_modules|\.workspaces|\.logos_cache|\.vite-logos|dist/.test(s),
       })
       for (const nmDir of this.caps.nodeModulesDirs) {
         const rel = relative(this.projectRoot, nmDir)
@@ -418,11 +418,13 @@ export class WorkspaceManager {
 
       // Collect base snapshots before re-indexing so we can populate previousSnapshot
       const baseSnapshots = new Map<string, string | null>()
-      const oldIndex = ws.index as { files?: { component?: { captured?: { exportName: string; snapshot: string | null }[] } }[] } | null
+      const oldIndex = ws.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null }[] } }[] } | null
       if (oldIndex?.files) {
         for (const f of oldIndex.files) {
           if (!f.component?.captured) continue
-          for (const c of f.component.captured) baseSnapshots.set(c.exportName, c.snapshot)
+          for (const c of f.component.captured) {
+            baseSnapshots.set(`${c.testFile}::${c.exportName}`, c.snapshot)
+          }
         }
       }
 
@@ -434,12 +436,12 @@ export class WorkspaceManager {
         const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
         ws.index = JSON.parse(stdout)
         // Merge previousSnapshot from the base index
-        const newIndex = ws.index as { files?: { component?: { captured?: { exportName: string; snapshot: string | null; previousSnapshot: string | null }[] } }[] }
+        const newIndex = ws.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] } }[] }
         if (newIndex.files) {
           for (const f of newIndex.files) {
             if (!f.component?.captured) continue
             for (const c of f.component.captured) {
-              const prev = baseSnapshots.get(c.exportName) ?? null
+              const prev = baseSnapshots.get(`${c.testFile}::${c.exportName}`) ?? null
               c.previousSnapshot = prev !== c.snapshot ? prev : null
             }
           }
