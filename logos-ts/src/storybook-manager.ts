@@ -23,11 +23,14 @@ export interface SbState {
 type Registry = Record<string, SbEntry>
 
 const MAX_LOG_LINES = 50
+const MAX_RESTARTS = 3
 
 export class StorybookManager {
   private registry: Registry = {}
   private live = new Map<string, ChildProcess>()
   private states = new Map<string, SbState>()
+  private expectedExits = new Set<string>()
+  private restartAttempts = new Map<string, number>()
   private mapFile: string
   private logosSrc: string
   private projectRoot: string
@@ -118,6 +121,7 @@ export class StorybookManager {
 
     const state: SbState = { status: "starting", startedAt: Date.now(), logs: [] }
     this.states.set(id, state)
+    this.expectedExits.delete(id)
 
     return new Promise((resolve_, reject) => {
       const npx = resolve(frontendDir, "node_modules/.bin/storybook")
@@ -191,18 +195,42 @@ export class StorybookManager {
         }
       })
       child.stderr?.on("data", bufferLines)
-      child.on("close", (code) => {
-        console.log(`[storybook-mgr] ${id} exited (code ${code})`)
+      child.on("close", (code, signal) => {
+        console.log(`[storybook-mgr] ${id} exited (code ${code}, signal ${signal})`)
         delete this.registry[id]
         this.live.delete(id)
         this.save()
-        fail(`storybook for ${id} exited with code ${code}`)
+
+        if (!resolved || state.status !== "ready") {
+          fail(`storybook for ${id} exited with code ${code}`)
+          return
+        }
+
+        // It was up and serving, then died without us shutting it down —
+        // something external killed it. Restart so the workspace stays usable.
+        if (this.expectedExits.delete(id)) {
+          this.states.delete(id)
+          return
+        }
+        // A healthy stretch of uptime resets the budget — only rapid
+        // ready→die cycles count toward giving up.
+        if (Date.now() - state.startedAt > 60_000) this.restartAttempts.delete(id)
+        const attempts = (this.restartAttempts.get(id) ?? 0) + 1
+        this.restartAttempts.set(id, attempts)
+        if (attempts > MAX_RESTARTS) {
+          state.status = "failed"
+          state.error = `exited unexpectedly (code ${code}, signal ${signal}); gave up after ${MAX_RESTARTS} restarts`
+          return
+        }
+        console.log(`[storybook-mgr] ${id} died unexpectedly — restarting (attempt ${attempts}/${MAX_RESTARTS})`)
+        this.ensure(id, frontendDir).catch(() => {})
       })
     })
   }
 
   /** Kill a specific workspace's Storybook. */
   shutdown(id: string): void {
+    this.expectedExits.add(id)
     const entry = this.registry[id]
     if (entry) {
       try { process.kill(entry.pid, "SIGTERM") } catch {}
