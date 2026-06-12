@@ -15,6 +15,7 @@ import { promisify } from "node:util"
 const execFileAsync = promisify(execFile)
 import type { StorybookManager } from "./storybook-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
+import { buildGoalLine, selectNextGoal } from "./prompt.js"
 
 export interface Goal {
   id: string
@@ -275,7 +276,7 @@ export class WorkspaceManager {
     const ws = this.workspaces.get(wsId)
     if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return null }
 
-    const goal = ws.goals.find((g) => g.status === "pending" && !this.runningAgents.has(g.id))
+    const goal = selectNextGoal(ws.goals, this.runningAgents)
     if (!goal) { onEvent({ type: "error", message: "no pending goals" }); return null }
 
     goal.status = "running"
@@ -316,12 +317,7 @@ export class WorkspaceManager {
     }
 
     const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
-    const elementContext = [
-      goal.component && `component: ${goal.component}`,
-      goal.storyId && `story: ${goal.storyId}`,
-      goal.selector && `element: ${goal.selector}`,
-    ].filter(Boolean).join(", ")
-    const goalLine = `- (${goal.label}${elementContext ? ` [${elementContext}]` : ""}) ${goal.text}`
+    const goalLine = buildGoalLine(goal)
     const prompt =
       mode === "arch"
         ? `${context}\n\n${sandbox}` +

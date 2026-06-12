@@ -7,6 +7,7 @@
 import { execFileSync } from "node:child_process"
 import { cpSync, rmSync, mkdirSync, existsSync, readFileSync, symlinkSync, copyFileSync } from "node:fs"
 import { resolve, dirname, basename, join } from "node:path"
+import { buildGoalLine } from "../src/prompt.js"
 
 interface Check {
   cwd: string
@@ -36,13 +37,13 @@ function buildContext(work: string, targets: string[]): string {
 }
 
 function buildPrompt(c: EvalCase, work: string, context: string): string {
-  const elementContext = [
-    c.comment.component && `component: ${c.comment.component}`,
-    c.comment.storyId && `story: ${c.comment.storyId}`,
-    c.comment.selector && `element: ${c.comment.selector}`,
-  ].filter(Boolean).join(", ")
-  const labelPart = c.comment.label ?? c.comment.target
-  const goalLine = `- (${labelPart}${elementContext ? ` [${elementContext}]` : ""}) ${c.comment.text}`
+  const goalLine = buildGoalLine({
+    label: c.comment.label ?? c.comment.target,
+    text: c.comment.text,
+    component: c.comment.component,
+    storyId: c.comment.storyId,
+    selector: c.comment.selector,
+  })
 
   const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
 

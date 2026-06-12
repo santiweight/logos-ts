@@ -1,22 +1,5 @@
 import { describe, it, expect } from "vitest"
-
-// The element-context and goal-line construction is embedded in WorkspaceManager.runGoalAgent
-// and duplicated in evals/run.ts buildPrompt. We test the logic here to guard against
-// regressions in prompt construction — especially the selector/storyId/component enrichment
-// that tells the agent which DOM element the user clicked.
-
-function buildElementContext(goal: { component?: string | null; storyId?: string | null; selector?: string | null }): string {
-  return [
-    goal.component && `component: ${goal.component}`,
-    goal.storyId && `story: ${goal.storyId}`,
-    goal.selector && `element: ${goal.selector}`,
-  ].filter(Boolean).join(", ")
-}
-
-function buildGoalLine(goal: { label: string; text: string; component?: string | null; storyId?: string | null; selector?: string | null }): string {
-  const elementContext = buildElementContext(goal)
-  return `- (${goal.label}${elementContext ? ` [${elementContext}]` : ""}) ${goal.text}`
-}
+import { buildElementContext, buildGoalLine, selectNextGoal } from "./prompt.js"
 
 describe("element context prompt construction", () => {
   it("includes all three fields when present", () => {
@@ -69,17 +52,10 @@ describe("element context prompt construction", () => {
   })
 })
 
-describe("processNext goal selection logic", () => {
-  // The real processNext finds the first goal with status "pending" that isn't
-  // already in runningAgents. We test the selection predicate in isolation.
-
+describe("selectNextGoal", () => {
   interface MinGoal {
     id: string
     status: "pending" | "running" | "done" | "error"
-  }
-
-  function selectNext(goals: MinGoal[], running: Set<string>): MinGoal | undefined {
-    return goals.find((g) => g.status === "pending" && !running.has(g.id))
   }
 
   it("picks the first pending goal", () => {
@@ -88,7 +64,7 @@ describe("processNext goal selection logic", () => {
       { id: "g-2", status: "pending" },
       { id: "g-3", status: "pending" },
     ]
-    expect(selectNext(goals, new Set())?.id).toBe("g-2")
+    expect(selectNextGoal(goals, new Set())?.id).toBe("g-2")
   })
 
   it("skips goals already running", () => {
@@ -96,7 +72,7 @@ describe("processNext goal selection logic", () => {
       { id: "g-1", status: "pending" },
       { id: "g-2", status: "pending" },
     ]
-    expect(selectNext(goals, new Set(["g-1"]))?.id).toBe("g-2")
+    expect(selectNextGoal(goals, new Set(["g-1"]))?.id).toBe("g-2")
   })
 
   it("returns undefined when all pending goals are running", () => {
@@ -104,7 +80,7 @@ describe("processNext goal selection logic", () => {
       { id: "g-1", status: "pending" },
       { id: "g-2", status: "done" },
     ]
-    expect(selectNext(goals, new Set(["g-1"]))).toBeUndefined()
+    expect(selectNextGoal(goals, new Set(["g-1"]))).toBeUndefined()
   })
 
   it("returns undefined when no pending goals exist", () => {
@@ -112,7 +88,7 @@ describe("processNext goal selection logic", () => {
       { id: "g-1", status: "done" },
       { id: "g-2", status: "error" },
     ]
-    expect(selectNext(goals, new Set())).toBeUndefined()
+    expect(selectNextGoal(goals, new Set())).toBeUndefined()
   })
 
   it("allows concurrent goals — multiple pending goals can each be selected", () => {
@@ -123,15 +99,15 @@ describe("processNext goal selection logic", () => {
     ]
     const running = new Set<string>()
 
-    const first = selectNext(goals, running)!
+    const first = selectNextGoal(goals, running)!
     expect(first.id).toBe("g-1")
     running.add(first.id)
 
-    const second = selectNext(goals, running)!
+    const second = selectNextGoal(goals, running)!
     expect(second.id).toBe("g-2")
     running.add(second.id)
 
-    const third = selectNext(goals, running)!
+    const third = selectNextGoal(goals, running)!
     expect(third.id).toBe("g-3")
   })
 })
