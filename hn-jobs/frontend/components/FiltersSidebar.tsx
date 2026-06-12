@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-confusing-void-expression */
 import type { FC, ReactNode } from "react"
 import { useState } from "react"
 

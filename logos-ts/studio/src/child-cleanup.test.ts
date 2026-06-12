@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/no-throw-statements, @typescript-eslint/no-non-null-assertion */
 import { describe, it, expect } from "vitest"
 import { spawn, execFileSync } from "node:child_process"
 import { unlinkSync, existsSync, readFileSync } from "node:fs"

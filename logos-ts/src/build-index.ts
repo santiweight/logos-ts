@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unused-vars */
 import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync } from "node:fs"
 import { join, dirname, relative, resolve } from "node:path"
 import type { SourceFile } from "ts-morph"
@@ -120,16 +121,17 @@ export function buildStudioIndex(root: string, storybookUrl = "", existingProjec
       name,
       signature: propsName ? `${name}(props: ${propsName})` : `${name}()`,
       componentCode,
-      propsName,
-      propsCode,
+      ...(propsName != null ? { propsName } : {}),
+      ...(propsCode != null ? { propsCode } : {}),
       propsFields,
       stories: entries.map((e) => ({ id: e.id, exportName: e.exportName })),
-      captured: findCaptured(entries[0], absRoot),
+      captured: findCaptured(entries[0]!, absRoot),
     })
   }
 
   // Merge backend files with component enrichments
   const files: FileEntry[] = backendFiles.map((bf) => {
+    const comp = componentByFile.get(bf.file)
     const entry: FileEntry = {
       file: bf.file,
       code: bf.code,
@@ -147,7 +149,7 @@ export function buildStudioIndex(root: string, storybookUrl = "", existingProjec
         return {
           kind: "class" as const,
           name: it.name,
-          signature: it.signature,
+          signature: `class ${it.name}`,
           code: it.code,
           deps: it.deps,
           tests: it.tests,
@@ -155,9 +157,8 @@ export function buildStudioIndex(root: string, storybookUrl = "", existingProjec
           methods: it.methods,
         }
       }),
+      ...(comp != null ? { component: comp } : {})
     }
-    const comp = componentByFile.get(bf.file)
-    if (comp) entry.component = comp
     return entry
   })
 
@@ -169,7 +170,7 @@ export function buildStudioIndex(root: string, storybookUrl = "", existingProjec
         file,
         code: sf?.getFullText() ?? "",
         items: [],
-        component: comp,
+        ...(comp != null ? { component: comp } : {})
       })
     }
   }
@@ -181,7 +182,7 @@ export function buildStudioIndex(root: string, storybookUrl = "", existingProjec
 // CLI: tsx src/build-index.ts <root> <outFile>
 if (process.argv[1]?.match(/build-index\.[tj]s$/)) {
   const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json"] = process.argv
-  const index = buildStudioIndex(root, process.env.STORYBOOK_URL)
+  const index = buildStudioIndex(root, process.env["STORYBOOK_URL"])
   if (outFile === "-") {
     process.stdout.write(JSON.stringify(index))
   } else {

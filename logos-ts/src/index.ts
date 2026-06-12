@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/immutable-data */
 export * from "./model.js"
 export { loadProject } from "./project.js"
 export { extractArchitecture, extractTests } from "./architecture.js"

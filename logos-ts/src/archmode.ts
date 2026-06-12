@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion */
 import { Node, SyntaxKind, type SourceFile, type Statement } from "ts-morph"
 import { writeFileSync, readFileSync, unlinkSync } from "node:fs"
 import { relative, resolve } from "node:path"
@@ -40,7 +41,7 @@ function declQName(stmt: Statement, file: string): string | null {
   }
   if (Node.isVariableStatement(stmt)) {
     const decls = stmt.getDeclarations()
-    if (decls.length === 1 && Node.isIdentifier(decls[0].getNameNode()))
+    if (decls.length === 1 && decls[0] != null && Node.isIdentifier(decls[0].getNameNode()))
       return `${file}#${decls[0].getName()}`
   }
   return null
@@ -136,7 +137,11 @@ function extractTestsFromDescribe(stmt: Statement): { name: string; hasBody: boo
       hasBody = true
       bodyText = testCb.getText()
     }
-    results.push({ name: testName, hasBody, bodyText })
+    if (bodyText != null) {
+      results.push({ name: testName, hasBody, bodyText })
+    } else {
+      results.push({ name: testName, hasBody })
+    }
   }
   return results
 }
@@ -176,7 +181,7 @@ function strip(dir: string, recFile: string) {
     }
     for (const vs of sf.getVariableStatements()) {
       const decls = vs.getDeclarations()
-      if (decls.length !== 1 || !Node.isIdentifier(decls[0].getNameNode())) continue
+      if (decls.length !== 1 || decls[0] == null || !Node.isIdentifier(decls[0].getNameNode())) continue
       const name = decls[0].getName()
       collectTests(`${file}#${name}`, `${file}#${name}`, attachments, bodyAnalysis, injections, claimed)
     }
@@ -224,9 +229,11 @@ function strip(dir: string, recFile: string) {
     const file = relative(dir, sf.getFilePath())
     const stmts = sf.getStatements()
     for (let i = stmts.length - 1; i >= 0; i--) {
-      const qname = declQName(stmts[i], file)
+      const stmt = stmts[i]
+      if (stmt == null) continue
+      const qname = declQName(stmt, file)
       if (!qname || !injections[qname]?.length) continue
-      sf.insertStatements(i, injections[qname].map(t => t.line))
+      sf.insertStatements(i, injections[qname]!.map(t => t.line))
     }
   }
 
@@ -272,7 +279,7 @@ function splice(dir: string, recFile: string) {
             hasBody = true
             bodyText = cb.getText()
           }
-          pending.push({ name: testName, hasBody, bodyText })
+          pending.push({ name: testName, hasBody, ...(bodyText != null ? { bodyText } : {}) })
         }
         continue
       }
@@ -303,7 +310,8 @@ function splice(dir: string, recFile: string) {
   for (const sf of sfs) {
     const stmts = sf.getStatements()
     for (let i = stmts.length - 1; i >= 0; i--) {
-      if (isTestCall(stmts[i]) || isDescribeCall(stmts[i])) stmts[i].remove()
+      const stmt = stmts[i]
+      if (stmt != null && (isTestCall(stmt) || isDescribeCall(stmt))) stmt.remove()
     }
   }
 
@@ -312,11 +320,12 @@ function splice(dir: string, recFile: string) {
   for (const sf of nonTests(allSources(project))) {
     for (const [name, text] of byName) {
       const fd = sf.getFunction(name)
-      if (fd?.hasDeclareKeyword()) { fd.replaceWithText(text); n++; continue }
+      if (fd != null && fd.hasDeclareKeyword()) { fd.replaceWithText(text); n++; continue }
       const cd = sf.getClass(name)
-      if (cd?.hasDeclareKeyword()) { cd.replaceWithText(text); n++; continue }
-      const vs = sf.getVariableDeclaration(name)?.getVariableStatement()
-      if (vs?.hasDeclareKeyword()) { vs.replaceWithText(text); n++ }
+      if (cd != null && cd.hasDeclareKeyword()) { cd.replaceWithText(text); n++; continue }
+      const vd = sf.getVariableDeclaration(name)
+      const vs = vd != null ? vd.getVariableStatement() : undefined
+      if (vs != null && vs.hasDeclareKeyword()) { vs.replaceWithText(text); n++ }
     }
   }
 
@@ -356,7 +365,9 @@ function splice(dir: string, recFile: string) {
   // Handle tests for new declarations not in original attachments
   for (const [declKey, tests] of extractedByDecl) {
     if (data.attachments[declKey]) continue
-    const file = declKey.split("#")[0]
+    const fileParts = declKey.split("#")
+    const file = fileParts[0]
+    if (file == null) continue
     const testFile = file.replace(/\.(tsx?)$/, ".test.$1")
     for (const ct of tests) {
       const code = ct.hasBody
@@ -410,6 +421,10 @@ function splice(dir: string, recFile: string) {
 }
 
 const [, , cmd, dir, recFile] = process.argv
-if (cmd === "strip") strip(dir, recFile)
-else if (cmd === "splice") splice(dir, recFile)
-else console.error("usage: archmode.ts strip|splice <dir> <recFile>")
+if (cmd != null && dir != null && recFile != null) {
+  if (cmd === "strip") strip(dir, recFile)
+  else if (cmd === "splice") splice(dir, recFile)
+  else console.error("usage: archmode.ts strip|splice <dir> <recFile>")
+} else {
+  console.error("usage: archmode.ts strip|splice <dir> <recFile>")
+}

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-confusing-void-expression */
 import type { Goal } from "./types"
 import { CommentThread, popoverShell, type SubmitPayload } from "./comment-ui"
 

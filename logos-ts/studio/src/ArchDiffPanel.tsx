@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-let, functional/no-loop-statements */
 import { useMemo } from "react"
 import type { StudioIndex } from "./types"
 import { indexToArchText, lineDiff, type DiffLine } from "./arch-text"

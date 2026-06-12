@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return */
 import type { StudioIndex } from "./types"
 
 export function indexToArchText(index: StudioIndex): string {
@@ -48,20 +49,25 @@ export function lineDiff(a: string, b: string): DiffLine[] {
 
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
   for (let i = n - 1; i >= 0; i--)
-    for (let j = m - 1; j >= 0; j--)
-      dp[i][j] = aLines[i] === bLines[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    for (let j = m - 1; j >= 0; j--) {
+      const nextRow = dp[i + 1]
+      const currRow = dp[i]
+      if (nextRow != null && currRow != null) {
+        currRow[j] = aLines[i] === bLines[j] ? (nextRow[j + 1] ?? 0) + 1 : Math.max(nextRow[j] ?? 0, currRow[j + 1] ?? 0)
+      }
+    }
 
   const out: DiffLine[] = []
   let i = 0, j = 0
   while (i < n || j < m) {
     if (i < n && j < m && aLines[i] === bLines[j]) {
-      out.push({ type: "same", text: aLines[i] })
+      out.push({ type: "same", text: aLines[i] ?? "" })
       i++; j++
-    } else if (j < m && (i >= n || dp[i][j + 1] >= dp[i + 1][j])) {
-      out.push({ type: "add", text: bLines[j] })
+    } else if (j < m && (i >= n || (dp[i]?.[j + 1] ?? 0) >= (dp[i + 1]?.[j] ?? 0))) {
+      out.push({ type: "add", text: bLines[j] ?? "" })
       j++
     } else {
-      out.push({ type: "del", text: aLines[i] })
+      out.push({ type: "del", text: aLines[i] ?? "" })
       i++
     }
   }

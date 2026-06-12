@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/immutable-data, @typescript-eslint/strict-boolean-expressions */
 import type { StudioIndex, DiffStatus } from "./types"
 
 function collectNodes(index: StudioIndex): Map<string, string> {

@@ -39,9 +39,10 @@ export const WithActiveItem: Story = {
   args: {
     title: "Tech",
     items: [
-      ...baseItems.slice(0, 1),
-      { ...baseItems[1], active: true },
-      ...baseItems.slice(2),
+      { label: "TypeScript", href: "/?tag=TypeScript", count: 142, active: false },
+      { label: "React", href: "/?tag=React", count: 98, active: true },
+      { label: "Python", href: "/?tag=Python", count: 67, active: false },
+      { label: "Go", href: "/?tag=Go", count: 54, active: false },
     ],
     searchable: true,
     clearHref: "/",

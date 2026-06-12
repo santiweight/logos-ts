@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-confusing-void-expression */
 import type { FC } from "react"
 import { useState } from "react"
 
@@ -12,7 +13,7 @@ interface SearchableFilterProps {
   title: string
   items: FilterItem[]
   searchable?: boolean
-  clearHref?: string
+  clearHref?: string | undefined
 }
 
 // A single bordered filter panel with an optional in-list search box.

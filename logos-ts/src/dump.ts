@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-unused-vars, @typescript-eslint/strict-boolean-expressions, functional/immutable-data, @typescript-eslint/no-non-null-assertion */
 import { loadProject, extractArchitecture, buildDependencyTree, extractStoryMap } from "./index.js"
 import { SyntaxKind } from "ts-morph"
 

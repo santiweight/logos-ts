@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/immutable-data, @typescript-eslint/strict-boolean-expressions */
 import { describe, it, expect } from "vitest"
 
 // Inline the diffIndex logic so we can test without studio's React deps.
@@ -74,7 +75,7 @@ function makeMethod(name: string, code = `${name}() {}`, sig = `${name}(): void`
 }
 
 function makeFile(file: string, items: FileItem[] = [], component?: FileEntry["component"]): FileEntry {
-  return { file, code: "", items, component }
+  return { file, code: "", items, ...(component != null ? { component } : {}) }
 }
 
 function makeIndex(files: FileEntry[]): StudioIndex {

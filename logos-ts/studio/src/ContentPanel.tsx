@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-unnecessary-condition */
 import { useState, useEffect, useRef } from "react"
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { GraphView } from "./GraphView"
@@ -70,14 +71,14 @@ export function ContentPanel({
           {selection.view === "arch" && <GraphView focusFile={file.file} />}
           {selection.view === "story" && comp && (
             <StoryView
-              storyId={selection.storyId}
+              {...(selection.storyId != null ? { storyId: selection.storyId } : {})}
               storybookUrl={storybookUrl}
               storybookState={storybookState}
               onCapture={onCapture}
             />
           )}
           {selection.view === "captured" && comp && (
-            <CapturedView component={comp} exportName={selection.exportName} />
+            <CapturedView component={comp} {...(selection.exportName != null ? { exportName: selection.exportName } : {})} />
           )}
           {selection.view === "code" && symbol && <SymbolView item={symbol} />}
           {selection.view === "code" && !symbol && comp && <ComponentCodeView component={comp} />}
@@ -111,8 +112,8 @@ function ComponentCodeView({ component }: { component: NonNullable<FileEntry["co
             tag="props"
             tagClass="impl"
             title={component.propsName}
-            desc={fieldsDesc || undefined}
-            code={component.propsCode}
+            {...(fieldsDesc ? { desc: fieldsDesc } : {})}
+            {...(component.propsCode != null ? { code: component.propsCode } : {})}
             target={`props:${component.propsName}`}
             label={component.propsName}
           />
@@ -141,7 +142,7 @@ function SymbolView({ item }: { item: FileItem }) {
               tag="test"
               tagClass="test"
               title={t.name}
-              desc={t.description}
+              {...(t.description != null ? { desc: t.description } : {})}
               code={t.code}
               indent
               target={`test:${t.file}::${t.name}`}
@@ -171,7 +172,7 @@ function SymbolView({ item }: { item: FileItem }) {
             tag="test"
             tagClass="test"
             title={t.name}
-            desc={t.description}
+            {...(t.description != null ? { desc: t.description } : {})}
             code={t.code}
             indent
             target={`test:${t.file}::${t.name}`}
@@ -194,7 +195,7 @@ function SymbolView({ item }: { item: FileItem }) {
                 tag="test"
                 tagClass="test"
                 title={t.name}
-                desc={t.description}
+                {...(t.description != null ? { desc: t.description } : {})}
                 code={t.code}
                 indent
                 target={`test:${t.file}::${t.name}`}

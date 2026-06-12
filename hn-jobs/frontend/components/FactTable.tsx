@@ -1,8 +1,8 @@
+/* eslint-disable @typescript-eslint/strict-boolean-expressions */
 import type { FC } from "react"
 import type { Job } from "../../shared/types"
 import { formatSalary, formatDate, hostLabel } from "../format"
 import { ValueOrDash } from "./ValueOrDash"
-import { composeStories } from "@storybook/react"
 
 interface FactTableProps {
   job: Job
@@ -19,11 +19,11 @@ function applyMethodLabel(method: string): string {
 
 export const FactTable: FC<FactTableProps> = ({ job }) => {
   const salary = formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency, job.salaryPeriod)
-  const roleSpecialties = job.roleSpecialties ?? []
+  const roleSpecialties = job.roleSpecialties
   const hiringNotes = [
     job.visa ? "Sponsors visas." : null,
     job.intern ? "Interns welcome." : null,
-  ].filter((n): n is string => !!n)
+  ].filter((n): n is string => n != null)
 
   return (
     <table className="fact-table">

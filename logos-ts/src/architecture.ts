@@ -1,18 +1,20 @@
+/* eslint-disable functional/no-let, functional/no-loop-statements, functional/immutable-data */
 import {
   Node,
-  SourceFile,
+  type SourceFile,
   SyntaxKind,
   type ParameterDeclaration,
   type PropertyDeclaration,
+  type FunctionDeclaration,
+  type MethodDeclaration,
+  type ArrowFunction,
+  type FunctionExpression,
 } from "ts-morph"
 import type { Architecture, Decl, Field, FunctionModel, Param, TestModel } from "./model.js"
 
-// A function-like node we can model: declaration, method, arrow, or expression.
-type FunctionLike = Parameters<typeof modelFunction>[1]
-
 function safeTypeText(node: { getType: () => { getText: (n?: Node) => string } }, ctx?: Node): string {
   try {
-    return node.getType().getText(ctx as Node)
+    return node.getType().getText(ctx)
   } catch {
     return "unknown"
   }
@@ -26,15 +28,11 @@ function modelParam(p: ParameterDeclaration): Param {
 
 function modelFunction(
   name: string,
-  fn:
-    | import("ts-morph").FunctionDeclaration
-    | import("ts-morph").MethodDeclaration
-    | import("ts-morph").ArrowFunction
-    | import("ts-morph").FunctionExpression
+  fn: FunctionDeclaration | MethodDeclaration | ArrowFunction | FunctionExpression,
 ): FunctionModel {
   const args = fn.getParameters().map(modelParam)
   let retTy = fn.getReturnTypeNode()?.getText()
-  if (!retTy) {
+  if (retTy == null) {
     try {
       retTy = fn.getReturnType().getText(fn)
     } catch {

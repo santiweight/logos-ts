@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/immutable-data, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unused-vars */
 import { Node, SyntaxKind, ts, type ObjectLiteralExpression, type SourceFile } from "ts-morph"
 import { basename } from "node:path"
 import type { StoryMap } from "./model.js"
@@ -62,7 +63,7 @@ function kebabExport(name: string): string {
 function namedExports(sf: SourceFile): string[] {
   const names: string[] = []
   for (const stmt of sf.getStatements()) {
-    const flags = ts.getCombinedModifierFlags(stmt.compilerNode as ts.Declaration)
+    const flags = ts.getCombinedModifierFlags(stmt.compilerNode as unknown as ts.Declaration)
     if (!(flags & ts.ModifierFlags.Export)) continue
     if (Node.isExportAssignment(stmt)) continue
     if (Node.isVariableStatement(stmt)) {

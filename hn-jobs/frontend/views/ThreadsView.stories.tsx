@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from "@storybook/react"
-import type { Thread } from "../../shared/types"
 import { ThreadsView } from "./ThreadsView"
 
 const meta: Meta<typeof ThreadsView> = {

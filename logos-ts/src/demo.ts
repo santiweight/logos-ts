@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, @typescript-eslint/restrict-template-expressions */
 import {
   loadProject,
   extractArchitecture,

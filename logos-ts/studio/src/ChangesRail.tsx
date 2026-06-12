@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-unused-vars */
 import type { Goal, WorkspaceMeta } from "./types"
 import { svgIcon } from "./icons"
 

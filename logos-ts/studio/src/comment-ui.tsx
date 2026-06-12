@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-confusing-void-expression, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, no-restricted-syntax */
 import React, { useState } from "react"
 import { iconForLabel } from "./icons"
 

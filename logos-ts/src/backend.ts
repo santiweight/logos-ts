@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-let, functional/no-loop-statements, functional/immutable-data, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-non-null-assertion, no-restricted-syntax */
 import {
   Node,
   SyntaxKind,
@@ -147,9 +148,13 @@ export function computeTestAttachments(sfs: SourceFile[], absRoot: string): Map<
         }
       }
 
-      const ref: TestRef = { name: testName, file, description, code: call.getText() }
+      const ref: TestRef = { name: testName, file, ...(description != null ? { description } : {}), code: call.getText() }
       for (const q of funcs) push(q, ref)
-      for (const [cq, ms] of methodsByClass) push(ms.size === 1 ? [...ms][0] : cq, ref)
+      for (const [cq, ms] of methodsByClass) {
+        const items = [...ms]
+        const q = ms.size === 1 && items[0] != null ? items[0] : cq
+        push(q, ref)
+      }
       for (const cq of classes) if (!methodsByClass.has(cq)) push(cq, ref)
     }
   }

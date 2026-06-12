@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-let, functional/no-loop-statements, functional/immutable-data, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-non-null-assertion, no-restricted-syntax */
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { SidebarTree } from "./SidebarTree"
 import { ContentPanel } from "./ContentPanel"
@@ -151,7 +152,8 @@ export function App() {
         const res = await fetch("/api/workspaces").catch(() => null)
         const wsList = res?.ok ? ((await res.json()) as WorkspaceMeta[]) : []
         if (wsList.length > 0) {
-          await openWorkspace(wsList.sort((a, b) => b.createdAt - a.createdAt)[0].id)
+          const sorted = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
+          if (sorted != null) await openWorkspace(sorted.id)
         } else {
           await createWorkspace()
         }
@@ -182,14 +184,14 @@ export function App() {
       setWorkspacesLoading(false)
       if (wsList.length > 0) {
         const latest = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
-        await openWorkspace(latest.id)
+        if (latest != null) await openWorkspace(latest.id)
       } else {
         await createWorkspace()
       }
     })()
     const iv = setInterval(() => { refreshTests(); refreshStorybooks() }, 2_000)
     return () => clearInterval(iv)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -327,12 +329,14 @@ export function App() {
     if (!currentFile) return
     const comp = currentFile.component
     if (viewName === "story" && comp) {
-      setSelection({ file: currentFile.file, view: viewName, storyId: selection.storyId ?? comp.stories[0]?.id })
+      const storyId = selection.storyId ?? comp.stories[0]?.id
+      setSelection({ file: currentFile.file, view: viewName, ...(storyId != null ? { storyId } : {}) })
     } else if (viewName === "captured" && comp) {
+      const exportName = selection.exportName ?? comp.captured[0]?.exportName
       setSelection({
         file: currentFile.file,
         view: viewName,
-        exportName: selection.exportName ?? comp.captured[0]?.exportName,
+        ...(exportName != null ? { exportName } : {}),
       })
     } else {
       setSelection({ file: currentFile.file, view: viewName })

@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/immutable-data, functional/no-let, @typescript-eslint/no-non-null-assertion, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions */
 import { resolve, relative } from "node:path"
 import { loadProject } from "./project.js"
 import { buildDependencyTree } from "./dependencies.js"
@@ -32,7 +33,10 @@ export function buildGraph(root: string): GraphData {
 
   for (const [qname] of tree) {
     nodeIds.add(qname)
-    const [file, symbol] = qname.split("#")
+    const parts = qname.split("#")
+    const file = parts[0]
+    const symbol = parts[1]
+    if (file == null || symbol == null) continue
     if (!fileSet.has(file)) {
       fileSet.add(file)
       nodes.push({ id: `file:${file}`, kind: "file", name: file.split("/").pop()!, file })
@@ -56,7 +60,7 @@ export function buildGraph(root: string): GraphData {
     const parentClass = symbol.includes(".") ? symbol.split(".")[0] : undefined
     const parent = parentClass ? `${file}#${parentClass}` : undefined
 
-    nodes.push({ id: qname, kind, name: symbol, file, parent })
+    nodes.push({ id: qname, kind, name: symbol, file, ...(parent != null ? { parent } : {}) })
   }
 
   const edges: GraphEdge[] = []

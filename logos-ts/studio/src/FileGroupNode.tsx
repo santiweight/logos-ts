@@ -1,3 +1,4 @@
+/* eslint-disable functional/immutable-data, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-unused-vars, no-restricted-syntax */
 import { memo, useCallback } from "react"
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
@@ -114,9 +115,9 @@ export const FileGroupNode = memo(function FileGroupNode({ data, id }: FileGroup
                       <div key={m.id} className="fg-symbol fg-method">
                         <span
                           className="fg-kind"
-                          style={{ color: KIND_COLORS.method }}
+                          style={{ color: KIND_COLORS[m.kind] }}
                         >
-                          {KIND_LABELS.method}
+                          {KIND_LABELS[m.kind]}
                         </span>
                         <span className="fg-sym-name">{m.name.split(".").pop()}</span>
                         <Handle

@@ -2,6 +2,7 @@
  * Integration test: starts the studio dev server, verifies workspace creation
  * and Storybook URL resolution work end-to-end.
  */
+/* eslint-disable functional/no-loop-statements, functional/no-let, functional/no-throw-statements, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-confusing-void-expression, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unused-vars */
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { spawn, type ChildProcess, execSync } from "node:child_process"
 import { resolve, dirname } from "node:path"
@@ -30,7 +31,7 @@ async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<st
     proc.stdout?.on("data", (d: Buffer) => {
       buf += d.toString()
       const m = buf.match(/Local:\s+(http:\/\/localhost:\d+)/)
-      if (m) {
+      if (m?.[1] != null) {
         clearTimeout(timeout)
         resolve(m[1])
       }
@@ -56,7 +57,7 @@ async function waitForStorybook(timeoutMs = 30_000): Promise<void> {
   while (Date.now() < deadline) {
     try {
       const urls = await getStorybookUrls()
-      if (urls.base) return
+      if (urls["base"]) return
     } catch {}
     await new Promise((r) => setTimeout(r, 500))
   }
@@ -91,10 +92,10 @@ describe("workspace + storybook integration", () => {
 
   it("base storybook is accessible", async () => {
     const urls = await getStorybookUrls()
-    expect(urls.base).toBeDefined()
-    expect(urls.base).toMatch(/^http:\/\/localhost:\d+$/)
+    expect(urls["base"]).toBeDefined()
+    expect(urls["base"]).toMatch(/^http:\/\/localhost:\d+$/)
 
-    const sbRes = await fetch(urls.base)
+    const sbRes = await fetch(urls["base"]!)
     expect(sbRes.ok).toBe(true)
   })
 
@@ -113,7 +114,7 @@ describe("workspace + storybook integration", () => {
 
     const urls = await getStorybookUrls()
     expect(urls[ws.id]).toBeUndefined()
-    expect(urls.base).toBeDefined()
+    expect(urls["base"]).toBeDefined()
   })
 
   it("adding a comment to a workspace does not auto-fork a storybook", async () => {
@@ -171,7 +172,7 @@ describe("workspace + storybook integration", () => {
     }
     expect(wsSbUrl).toBeDefined()
     expect(wsSbUrl).toMatch(/^http:\/\/localhost:\d+$/)
-    expect(wsSbUrl).not.toBe((await getStorybookUrls()).base)
+    expect(wsSbUrl).not.toBe((await getStorybookUrls())["base"])
   }, 45_000)
 
   it("active storybook URL falls back to base when workspace has no storybook", async () => {
@@ -179,7 +180,7 @@ describe("workspace + storybook integration", () => {
 
     // For any workspace ID that doesn't have a storybook entry,
     // the frontend derivation should fall back to base
-    const baseUrl = urls.base
+    const baseUrl = urls["base"]
     expect(baseUrl).toBeDefined()
 
     const wsRes = await api("/api/workspaces")

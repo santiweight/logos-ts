@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { SidebarTree } from "./SidebarTree"
-import type { FileEntry, Goal, TestState } from "./types"
+import type { FileEntry, TestState } from "./types"
 
 const files: FileEntry[] = [
   {
@@ -38,8 +38,6 @@ const files: FileEntry[] = [
       name: "FiltersSidebar",
       signature: "FiltersSidebar()",
       componentCode: "export const FiltersSidebar = ...",
-      propsName: null,
-      propsCode: null,
       propsFields: [],
       stories: [
         { id: "filterssidebar--default", exportName: "Default" },
@@ -58,8 +56,6 @@ const files: FileEntry[] = [
       name: "HeaderNav",
       signature: "HeaderNav()",
       componentCode: "export const HeaderNav = ...",
-      propsName: null,
-      propsCode: null,
       propsFields: [],
       stories: [
         { id: "headernav--default", exportName: "Default" },
@@ -86,7 +82,7 @@ const files: FileEntry[] = [
     file: "backend/utils/slug.ts",
     code: "...",
     items: [
-      { kind: "function", name: "slugify", signature: "slugify(s: string): string", code: "", deps: [], tests: [{ name: "slugifies", file: "backend/utils/slug.test.ts" }] },
+      { kind: "function", name: "slugify", signature: "slugify(s: string): string", code: "", deps: [], tests: [{ name: "slugifies", file: "backend/utils/slug.test.ts", code: "" }] },
     ],
   },
 ]

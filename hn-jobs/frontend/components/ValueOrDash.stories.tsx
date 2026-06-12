@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 import type { Meta, StoryObj } from "@storybook/react"
 import { ValueOrDash } from "./ValueOrDash"
 

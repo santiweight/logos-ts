@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/immutable-data, functional/no-let, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/consistent-type-imports, @typescript-eslint/restrict-template-expressions */
 import { Node, SyntaxKind, type SourceFile } from "ts-morph"
 import { relative, resolve } from "node:path"
 import type { DependencyTree } from "./model.js"

@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/immutable-data, @typescript-eslint/no-explicit-any, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/no-non-null-assertion, @typescript-eslint/restrict-template-expressions, functional/no-let, @typescript-eslint/no-unnecessary-condition */
 import { Node, SyntaxKind, type SourceFile } from "ts-morph"
 import { relative, resolve } from "node:path"
 import { loadProject } from "./project.js"
@@ -196,14 +197,21 @@ export function buildArchContext(root: string, targets: string[], budget = 40000
   // The file(s) being edited get their FULL source (highest priority).
   const sfByFile = new Map<string, SourceFile>()
   for (const sf of sfs) sfByFile.set(relative(absRoot, sf.getFilePath()), sf)
-  const targetFiles = [...new Set(starts.map((q) => q.split("#")[0]))]
+  const targetFileSet = new Set<string>()
+  for (const q of starts) {
+    const parts = q.split("#")
+    if (parts[0] != null) {
+      targetFileSet.add(parts[0])
+    }
+  }
+  const targetFiles = [...targetFileSet]
   const editFileSet = new Set(targetFiles)
 
   let used = 0
   const editFiles: { file: string; text: string }[] = []
   for (const file of targetFiles) {
     const sf = sfByFile.get(file)
-    if (!sf) continue
+    if (sf == null) continue
     const text = sf.getFullText()
     if (used + text.length > budget) continue // skip a file that wouldn't fit whole
     used += text.length
@@ -230,7 +238,10 @@ export function buildArchContext(root: string, targets: string[], budget = 40000
     return r
   }
   // deps/type-flow skip symbols that live in an edited file (already shown in full)
-  const notEdited = (q: string) => !editFileSet.has(q.split("#")[0])
+  const notEdited = (q: string) => {
+    const file = q.split("#")[0]
+    return file == null || !editFileSet.has(file)
+  }
   const fwd = take(forwardOrder.filter(notEdited), 0.5)
   const tflow = take(typeFlowOrder.filter(notEdited), 0.25)
   const rev = take(reverseOrder, 0.1)

@@ -84,6 +84,5 @@ export const RawOnly: Story = {
 export const NoThreadMonth: Story = {
   args: {
     job: base,
-    threadMonth: undefined,
   },
 }

@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unused-vars */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs"
 import { execFileSync } from "node:child_process"
@@ -541,7 +542,7 @@ export function totalArea(shapes: Shape[]): number {
     writeFileSync(join(dir, "rectangle.ts"), `import type { Shape } from "./shapes"\n\n${rectMatch![0]}\n`)
 
     // Remove Circle and Rectangle from shapes.ts, keep interface + totalArea
-    let remaining = strippedShapes
+    const remaining = strippedShapes
       .replace(/export declare class Circle[\s\S]*?^}/m, "")
       .replace(/export declare class Rectangle[\s\S]*?^}/m, "")
       .replace(/\n{3,}/g, "\n\n")

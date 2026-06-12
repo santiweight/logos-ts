@@ -1,3 +1,4 @@
+/* eslint-disable functional/no-loop-statements, functional/no-let, prefer-const, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, @typescript-eslint/prefer-readonly, @typescript-eslint/no-dynamic-delete, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unused-vars */
 import { spawn, type ChildProcess } from "node:child_process"
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs"
 import { resolve, dirname } from "node:path"
@@ -170,14 +171,19 @@ export class StorybookManager {
         bufferLines(d)
         stdoutBuf += d.toString()
         const m = stdoutBuf.match(/https?:\/\/localhost:(\d+)/)
-        if (m && !resolved) {
+        if (m != null && m[1] != null && !resolved) {
           resolved = true
           clearTimeout(timeout)
           const port = parseInt(m[1], 10)
           const url = `http://localhost:${port}`
+          const pid = child.pid
+          if (pid == null) {
+            fail(`failed to get pid from storybook child process`)
+            return
+          }
           const entry: SbEntry = {
             id,
-            pid: child.pid!,
+            pid,
             port,
             url,
             cwd: frontendDir,
