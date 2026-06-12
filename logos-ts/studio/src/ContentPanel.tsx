@@ -256,7 +256,7 @@ function StoryView({
           📸 Capture as test
         </button>
       </div>
-      <iframe className="story-frame" src={src} title={storyId} />
+      <iframe className="story-frame" key={src} src={src} title={storyId} />
       <div className="hint">
         Requires a Storybook dev server running for this project.
       </div>

@@ -5,13 +5,13 @@
 import type { Plugin } from "vite"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import path from "node:path"
-import * as commentDb from "../../../logos-ts/src/comment-db"
+
+const LOGOS_SRC = process.env.LOGOS_TS_SRC!
+const commentDb: typeof import("../../../logos-ts/src/comment-db") = require(path.join(LOGOS_SRC, "comment-db"))
 
 export type { CommentRow } from "../../../logos-ts/src/comment-db"
 
-// process.cwd() is hn-jobs/frontend under `npm run storybook`; the project
-// root (where .logos/ lives) is one level up.
-const PROJECT_ROOT = path.resolve(process.cwd(), "..")
+const PROJECT_ROOT = process.env.LOGOS_PROJECT_ROOT!
 const OUT_DIR = path.join(PROJECT_ROOT, ".logos")
 
 type SqliteDb = Awaited<ReturnType<typeof commentDb.open>>

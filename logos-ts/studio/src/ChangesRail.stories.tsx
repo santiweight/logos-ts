@@ -60,7 +60,6 @@ export const Empty: Story = {
     workspacesLoading: false,
     activeWorkspaceId: null,
     selected: null,
-    onBase: noop,
     onNewWorkspace: noop,
     onOpenWorkspace: noop,
     onFork: noop,

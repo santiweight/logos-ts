@@ -1,13 +1,12 @@
 import { defineConfig, type Plugin, type Connect } from "vite"
 import react from "@vitejs/plugin-react"
 import { execFile, execFileSync, spawn } from "node:child_process"
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, symlinkSync, unlinkSync, watch } from "node:fs"
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, symlinkSync, watch } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve, relative, join } from "node:path"
-import { createServer } from "node:net"
 import * as commentDb from "../src/comment-db"
-import { cleanupStalePid, writePid } from "../src/child-cleanup"
 import { detectProject } from "../src/detect-project"
+import { StorybookManager } from "../src/storybook-manager"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -40,10 +39,17 @@ const loadWorkspaceMetas = () => {
     })
 }
 
+const sbManager = new StorybookManager(
+  resolve(PROJECT_ROOT, ".logos", "storybooks.json"),
+  resolve(LOGOS_TS, "src"),
+  PROJECT_ROOT,
+)
+
 // Snapshot the current architecture/index — the "fork".
 const snapshotIndex = () => {
   const args = [resolve(LOGOS_TS, "src/build-index.ts"), PROJECT_ROOT, "-"]
-  if (storybookUrl) args.push(storybookUrl)
+  const baseSbUrl = sbManager.get("base")
+  if (baseSbUrl) args.push(baseSbUrl)
   return JSON.parse(
     execFileSync(tsx, args, {
       cwd: LOGOS_TS,
@@ -75,11 +81,11 @@ function studioApi(): Plugin {
 
       server.middlewares.use("/api/index", (_req, res) => {
         const args = [resolve(LOGOS_TS, "src/build-index.ts"), PROJECT_ROOT, "-"]
-        if (storybookUrl) args.push(storybookUrl)
+        const baseSbUrl = sbManager.get("base")
+        if (baseSbUrl) args.push(baseSbUrl)
         const json = execFileSync(tsx, args, {
           cwd: LOGOS_TS,
           encoding: "utf8",
-          env: { ...process.env, ...(storybookUrl ? { STORYBOOK_URL: storybookUrl } : {}) },
         })
         res.setHeader("content-type", "application/json")
         res.end(json)
@@ -147,6 +153,14 @@ function studioApi(): Plugin {
         res.end(json)
       })
 
+      server.middlewares.use("/api/storybooks", (_req, res) => {
+        res.setHeader("content-type", "application/json")
+        const entries = sbManager.all()
+        const urls: Record<string, string> = {}
+        for (const [id, entry] of Object.entries(entries)) urls[id] = entry.url
+        res.end(JSON.stringify(urls))
+      })
+
       server.middlewares.use("/api/workspaces", async (req, res) => {
         res.setHeader("content-type", "application/json")
         const sub = (req.url || "/").replace(/^\//, "").split("?")[0] // "" or "ws-123"
@@ -186,6 +200,7 @@ function studioApi(): Plugin {
           return
         }
         if (req.method === "DELETE" && sub) {
+          sbManager.shutdown(sub)
           rmSync(resolve(WS_DIR, `${sub}.json`), { force: true })
           const db = await commentConn()
           commentDb.removeByWorkspace(db, sub)
@@ -234,6 +249,19 @@ function studioApi(): Plugin {
             const target = join(dir, rel)
             try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
             try { symlinkSync(nmDir, target) } catch { /* exists */ }
+          }
+          // Symlink logos-ts into .agent-runs/ so .storybook relative imports
+          // (e.g. ../../../logos-ts/studio/src/comment-ui) resolve correctly.
+          try { symlinkSync(LOGOS_TS, resolve(RUNS, "logos-ts")) } catch { /* exists */ }
+        }
+
+        if (caps.storybook) {
+          send({ type: "status", message: "starting workspace storybook…" })
+          const wsFrontend = join(dir, relative(PROJECT_ROOT, caps.storybook.frontendDir))
+          try {
+            await sbManager.ensure(wsId, wsFrontend)
+          } catch (e: any) {
+            send({ type: "stderr", message: "workspace storybook failed: " + e.message })
           }
         }
 
@@ -341,8 +369,11 @@ function studioApi(): Plugin {
             }
           }
           try {
+            const reindexArgs = [resolve(LOGOS_TS, "src/build-index.ts"), dir, "-"]
+            const wsSbUrl = sbManager.get(wsId)
+            if (wsSbUrl) reindexArgs.push(wsSbUrl)
             ws.index = JSON.parse(
-              execFileSync(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), dir, "-"], {
+              execFileSync(tsx, reindexArgs, {
                 cwd: LOGOS_TS,
                 encoding: "utf8",
               })
@@ -442,47 +473,17 @@ function studioApi(): Plugin {
   }
 }
 
-let storybookUrl = ""
-const STORYBOOK_PID_FILE = resolve(STUDIO, ".storybook.pid")
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.listen(0, () => {
-      const port = (srv.address() as { port: number }).port
-      srv.close(() => resolve(port))
-    })
-    srv.on("error", reject)
-  })
-}
-
 function autoStorybook(): Plugin {
-  let child: ReturnType<typeof spawn> | null = null
   return {
     name: "auto-storybook",
-    async configureServer() {
-      if (!caps.storybook) return
-      cleanupStalePid(STORYBOOK_PID_FILE)
-
-      const npx = resolve(caps.storybook.frontendDir, "node_modules/.bin/storybook")
-      const port = await getFreePort()
-      child = spawn(npx, ["dev", "--ci", "--no-open", "--port", String(port)], {
-        cwd: caps.storybook.frontendDir,
-        stdio: ["ignore", "pipe", "pipe"],
-      })
-      if (child.pid) writePid(STORYBOOK_PID_FILE, child.pid)
-
-      child.stdout?.on("data", (d) => {
-        const s = d.toString()
-        const m = s.match(/https?:\/\/localhost:(\d+)/)
-        if (m) {
-          storybookUrl = `http://localhost:${m[1]}`
-          console.log(`[storybook] ready on ${storybookUrl}`)
-        }
-      })
-      child.stderr?.on("data", () => {})
-      child.on("error", (e) => console.error("[storybook]", e.message))
-      const cleanup = () => { child?.kill(); try { unlinkSync(STORYBOOK_PID_FILE) } catch {} }
+    configureServer() {
+      sbManager.cleanupAll()
+      if (caps.storybook) {
+        sbManager.ensure("base", caps.storybook.frontendDir).catch((e) =>
+          console.error("[storybook] base failed to start:", e.message)
+        )
+      }
+      const cleanup = () => sbManager.shutdownAll()
       process.on("exit", cleanup)
       process.on("SIGINT", () => { cleanup(); process.exit() })
       process.on("SIGTERM", () => { cleanup(); process.exit() })

@@ -44,6 +44,17 @@ export function App() {
 
   const view = activeWorkspaceId && workspaceIndex ? workspaceIndex : index
 
+  const [storybookUrls, setStorybookUrls] = useState<Record<string, string>>({})
+  const refreshStorybooks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/storybooks")
+      if (res.ok) setStorybookUrls((await res.json()) as Record<string, string>)
+    } catch {}
+  }, [])
+  const activeStorybookUrl = activeWorkspaceId
+    ? storybookUrls[activeWorkspaceId] ?? storybookUrls["base"] ?? index.storybookUrl
+    : storybookUrls["base"] ?? index.storybookUrl
+
   const diff = useMemo(
     () => (activeWorkspaceId && workspaceIndex ? diffIndex(index, workspaceIndex) : {}),
     [activeWorkspaceId, workspaceIndex, index]
@@ -90,14 +101,26 @@ export function App() {
     } catch { /* no dev server */ }
   }, [])
 
+  const bootedRef = useRef(false)
   useEffect(() => {
-    refresh()
-    refreshComments()
-    refreshWorkspaces()
-    refreshTests()
-    const iv = setInterval(refreshTests, 2_000)
+    if (bootedRef.current) return
+    bootedRef.current = true
+    ;(async () => {
+      await Promise.all([refresh(), refreshComments(), refreshTests(), refreshStorybooks()])
+      const wsRes = await fetch("/api/workspaces").catch(() => null)
+      const wsList = wsRes?.ok ? ((await wsRes.json()) as WorkspaceMeta[]) : []
+      setWorkspaces(wsList)
+      setWorkspacesLoading(false)
+      if (wsList.length > 0) {
+        const latest = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
+        await openWorkspace(latest.id)
+      } else {
+        await createWorkspace()
+      }
+    })()
+    const iv = setInterval(() => { refreshTests(); refreshStorybooks() }, 2_000)
     return () => clearInterval(iv)
-  }, [refresh, refreshComments, refreshWorkspaces, refreshTests])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openWorkspace = useCallback(async (id: string) => {
     try {
@@ -110,11 +133,6 @@ export function App() {
     } catch {
       /* ignore */
     }
-  }, [])
-
-  const onBase = useCallback(() => {
-    setActiveWorkspaceId(null)
-    setWorkspaceIndex(null)
   }, [])
 
   const createWorkspace = useCallback(
@@ -140,14 +158,19 @@ export function App() {
   const deleteWorkspace = useCallback(
     async (id: string) => {
       await fetch(`/api/workspaces/${id}`, { method: "DELETE" })
-      if (activeWorkspaceId === id) {
-        setActiveWorkspaceId(null)
-        setWorkspaceIndex(null)
-      }
       setSelected((s) => (s?.type === "workspace" && s.id === id ? null : s))
       await Promise.all([refreshWorkspaces(), refreshComments()])
+      if (activeWorkspaceId === id) {
+        const res = await fetch("/api/workspaces").catch(() => null)
+        const wsList = res?.ok ? ((await res.json()) as WorkspaceMeta[]) : []
+        if (wsList.length > 0) {
+          await openWorkspace(wsList.sort((a, b) => b.createdAt - a.createdAt)[0].id)
+        } else {
+          await createWorkspace()
+        }
+      }
     },
-    [activeWorkspaceId, refreshWorkspaces, refreshComments]
+    [activeWorkspaceId, refreshWorkspaces, refreshComments, openWorkspace, createWorkspace]
   )
   const deleteComment = useCallback(
     async (id: string) => {
@@ -269,15 +292,15 @@ export function App() {
   )
   const addComment = useCallback(
     async (target: string, label: string, text: string, mode: "code" | "arch", fork: boolean) => {
-      let wsId = activeWorkspaceId
-      if (fork || !wsId) wsId = await createWorkspace(wsId ?? undefined)
+      const wsId = fork ? await createWorkspace(activeWorkspaceId) : activeWorkspaceId
+      if (!wsId) return
       await fetch("/api/comments", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ target, label, text, mode, workspaceId: wsId }),
       })
       await refreshComments()
-      if (wsId) ensureAgent(wsId, mode)
+      ensureAgent(wsId, mode)
     },
     [activeWorkspaceId, createWorkspace, refreshComments, ensureAgent]
   )
@@ -336,10 +359,6 @@ export function App() {
         workspacesLoading={workspacesLoading}
         activeWorkspaceId={activeWorkspaceId}
         selected={selected}
-        onBase={() => {
-          setSelected(null)
-          onBase()
-        }}
         onNewWorkspace={() => createWorkspace()}
         onOpenWorkspace={(id) => {
           setSelected({ type: "workspace", id })
@@ -376,7 +395,7 @@ export function App() {
           <ContentPanel
             file={currentFile}
             selection={selection}
-            storybookUrl={index.storybookUrl}
+            storybookUrl={activeStorybookUrl}
             onView={setView}
             onCapture={onCapture}
             comments={commentsByTarget}
@@ -393,19 +412,11 @@ export function App() {
 
       <footer className="statusbar">
         <span>
-          {activeWs ? (
-            <>
-              {svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 11)} {activeWs.name}{" "}
-              <a className="arch-diff-toggle" onClick={() => setArchDiffOpen((o) => !o)}>
-                {archDiffOpen ? "close diff" : "arch diff"}
-              </a>{" "}
-              <a className="exit-ws" onClick={onBase}>
-                exit to base
-              </a>
-            </>
-          ) : (
-            `logos-ts · ${index.root.split("/").pop()}`
-          )}
+          {svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 11)}{" "}
+          {activeWs?.name ?? "workspace"}{" "}
+          <a className="arch-diff-toggle" onClick={() => setArchDiffOpen((o) => !o)}>
+            {archDiffOpen ? "close diff" : "arch diff"}
+          </a>
         </span>
         <span>
           <span className="agent-toggle" onClick={() => setAgentOpen((o) => !o)}>

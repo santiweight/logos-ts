@@ -13,7 +13,6 @@ interface Props {
   workspacesLoading: boolean
   activeWorkspaceId: string | null
   selected: { type: "workspace" | "comment"; id: string } | null
-  onBase: () => void
   onNewWorkspace: () => void
   onOpenWorkspace: (id: string) => void
   onFork: () => void
@@ -32,7 +31,6 @@ export function ChangesRail({
   workspacesLoading,
   activeWorkspaceId,
   selected,
-  onBase,
   onNewWorkspace,
   onOpenWorkspace,
   onFork,
@@ -69,9 +67,6 @@ export function ChangesRail({
         </span>
       </div>
 
-      <div className={`rail-row base ${!activeWorkspaceId ? "active" : ""}`} onClick={onBase}>
-        <span className="rail-dot">●</span> Base
-      </div>
       {workspacesLoading && workspaces.length === 0 && (
         <div className="rail-loading muted small">Loading workspaces…</div>
       )}
