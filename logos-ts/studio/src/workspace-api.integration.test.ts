@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
 const STUDIO_SRC = dirname(fileURLToPath(import.meta.url))
 const STUDIO = resolve(STUDIO_SRC, "..")
 const LOGOS_TS = resolve(STUDIO, "..")
+const AGENT_RUNS = resolve(LOGOS_TS, ".agent-runs")
 
 let projectRoot: string
 let binDir: string
@@ -63,7 +64,7 @@ function jsonPost(path: string, body: unknown): Promise<Response> {
 
 async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<string> {
   return new Promise((resolveUrl, reject) => {
-    const timeout = setTimeout(() => reject(new Error("server did not start")), timeoutMs)
+    const timeout = setTimeout(() => reject(new Error(`server did not start\n${buf}`)), timeoutMs)
     let buf = ""
     const onData = (d: Buffer) => {
       buf += d.toString()
@@ -116,16 +117,20 @@ describe("workspace API mode isolation", () => {
     server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
       env: { ...process.env, LOGOS_PROJECT: projectRoot, PATH: `${binDir}:${process.env["PATH"] ?? ""}` },
     })
-    baseUrl = await waitForServer(server)
-  }, 45_000)
+    baseUrl = await waitForServer(server, 90_000)
+  }, 120_000)
 
   afterAll(() => {
+    if (server?.pid) {
+      try { process.kill(-server.pid, "SIGTERM") } catch {}
+    }
     server?.kill()
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
     if (binDir) rmSync(binDir, { recursive: true, force: true })
-    rmSync(resolve(LOGOS_TS, ".agent-runs"), { recursive: true, force: true })
+    rmSync(AGENT_RUNS, { recursive: true, force: true })
   })
 
   it("creates code workspaces by default and arch workspaces explicitly", async () => {

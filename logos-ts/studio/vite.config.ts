@@ -1,9 +1,9 @@
 import { defineConfig, type Plugin, type Connect } from "vite"
 import react from "@vitejs/plugin-react"
 import { execFile, execFileSync } from "node:child_process"
-import { writeFileSync, mkdirSync, watch, cpSync, existsSync, symlinkSync, readdirSync } from "node:fs"
+import { writeFileSync, mkdirSync, watch, cpSync, existsSync, symlinkSync, readdirSync, mkdtempSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { dirname, resolve, join, relative } from "node:path"
+import { basename, dirname, resolve, join, relative } from "node:path"
 import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
 import { WorkspaceManager, type WorkspaceKind } from "../src/workspace-manager"
@@ -27,8 +27,8 @@ const ALLOWED_HOSTS = [
 function copyProject(src: string): string {
   const sessionsDir = resolve(LOGOS_TS, ".dev-sessions")
   mkdirSync(sessionsDir, { recursive: true })
-  const sessionId = `session-${Date.now()}`
-  const ephDir = resolve(sessionsDir, sessionId)
+  const ephDir = mkdtempSync(resolve(sessionsDir, "session-"))
+  const sessionId = basename(ephDir)
   const gcResult = gcDevSessions(sessionsDir, { currentSessionId: sessionId })
   if (gcResult.removed.length > 0) {
     console.log(`[logos] removed stale sessions: ${gcResult.removed.join(", ")}`)
