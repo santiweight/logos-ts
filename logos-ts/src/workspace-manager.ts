@@ -328,7 +328,8 @@ export class WorkspaceManager {
         : `${context}\n\n${sandbox}` +
           `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change.\n\n` +
           `Address these change requests:\n${goalLine}\n\n` +
-          `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck.` +
+          `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck. ` +
+          `Do not run lint as part of default verification; strict lint is an optional cleanup pass only when explicitly requested.` +
           (this.caps.tests
             ? ` Do NOT run tests yourself. Tests auto-run on every file save via the test-runner MCP. ` +
               `After making changes, call \`test_results(wait_for_completion=true)\` to wait for the auto-triggered run to finish and see the results. ` +

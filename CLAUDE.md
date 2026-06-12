@@ -77,3 +77,6 @@ No PRs required — push directly to `origin/main` after rebasing.
 cd hn-jobs && node scripts/healthcheck.mjs          # whole suite, JSON summary
 cd hn-jobs && node scripts/healthcheck.mjs job-filters   # scope by path substring
 ```
+
+Strict linting is intentionally optional. Use typecheck/tests as the regular
+verification gate; run `npm run lint:strict` only for deliberate cleanup passes.
