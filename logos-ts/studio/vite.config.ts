@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { dirname, resolve, join, relative } from "node:path"
 import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
-import { WorkspaceManager } from "../src/workspace-manager"
+import { WorkspaceManager, type WorkspaceKind } from "../src/workspace-manager"
 import type { StudioIndex } from "../src/build-index"
 import { ClaudeSessionManager } from "../src/claude-session-manager"
 import { authPlugin } from "./server/auth"
@@ -228,7 +228,7 @@ function studioApi(): Plugin {
         if (req.method === "POST" && sub.endsWith("/goals")) {
           const wsId = sub.replace(/\/goals$/, "")
           const body = JSON.parse((await readBody(req)) || "{}")
-          const goal = wsMgr.addGoal(wsId, {
+          const result = await wsMgr.addGoal(wsId, {
             id: `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
             text: String(body.text ?? ""),
             label: String(body.label ?? ""),
@@ -238,9 +238,13 @@ function studioApi(): Plugin {
             storyId: body.storyId ?? null,
             selector: body.selector ?? null,
             component: body.component ?? null,
-          })
-          if (!goal) { res.statusCode = 404; res.end(JSON.stringify({ error: "workspace not found" })); return }
-          res.end(JSON.stringify(goal))
+          }, { fork: body.fork === true })
+          if ("error" in result) {
+            res.statusCode = result.status
+            res.end(JSON.stringify({ error: result.error }))
+            return
+          }
+          res.end(JSON.stringify({ ...result.goal, workspaceId: result.workspaceId }))
           return
         }
 
@@ -290,9 +294,11 @@ function studioApi(): Plugin {
 
         if (req.method === "POST") {
           const body = JSON.parse((await readBody(req)) || "{}")
+          const kind: WorkspaceKind = body.kind === "arch" ? "arch" : "code"
           const meta = await wsMgr.create({
             name: body.name,
             fromWorkspaceId: body.fromWorkspaceId,
+            kind,
           })
           res.end(JSON.stringify(meta))
           return

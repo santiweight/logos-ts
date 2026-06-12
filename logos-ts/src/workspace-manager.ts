@@ -2,10 +2,15 @@
 // WorkspaceManager: owns workspace lifecycle, goal queue, and agent sequencing.
 //
 // Ontology:
-//   Workspace  — a forked project codebase on disk
+//   Workspace  — a forked project codebase on disk, typed as code or architecture
 //   Goal       — a change request to be achieved in a workspace
 //   GoalQueue  — the ordered list of goals for a workspace (one per workspace)
 //   AgentRun   — executes one goal in a workspace's fork directory
+//
+// Code and architecture work are isolated by workspace kind. Arch goals posted
+// to a code workspace fork into a dedicated arch workspace. Arch goals posted
+// to an arch workspace join its queue unless the caller explicitly asks to fork.
+// Each architecture workspace runs at most one architecture agent at a time.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync, readdirSync } from "node:fs"
 import { resolve, relative, join, dirname, basename } from "node:path"
@@ -15,7 +20,7 @@ import { promisify } from "node:util"
 const execFileAsync = promisify(execFile)
 import type { StorybookManager } from "./storybook-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
-import { buildGoalLine, selectNextGoal } from "./prompt.js"
+import { buildArchPrompt, buildGoalLine, selectNextGoal } from "./prompt.js"
 
 export interface Goal {
   id: string
@@ -31,9 +36,12 @@ export interface Goal {
   sessionId?: string | null
 }
 
+export type WorkspaceKind = "code" | "arch"
+
 export interface WorkspaceState {
   id: string
   name: string
+  kind: WorkspaceKind
   parentId: string | null
   createdAt: number
   forkDir: string
@@ -44,10 +52,15 @@ export interface WorkspaceState {
 export interface WorkspaceMeta {
   id: string
   name: string
+  kind: WorkspaceKind
   parentId: string | null
   createdAt: number
   goals: Goal[]
 }
+
+export type AddGoalResult =
+  | { goal: Goal; workspaceId: string }
+  | { error: string; status: number }
 
 export interface AgentEvent {
   type: string
@@ -66,6 +79,7 @@ interface ProjectCaps {
 export class WorkspaceManager {
   private workspaces = new Map<string, WorkspaceState>()
   private runningAgents = new Map<string, ChildProcess>() // goalId → child
+  private workspaceSeq = 0
   private wsDir: string
   private runsDir: string
   private logosTsSrc: string
@@ -109,6 +123,7 @@ export class WorkspaceManager {
     for (const f of readdirSync(this.wsDir).filter((f) => f.endsWith(".json"))) {
       try {
         const ws = JSON.parse(readFileSync(resolve(this.wsDir, f), "utf8")) as WorkspaceState
+        if (ws.kind !== "code" && ws.kind !== "arch") continue
         this.workspaces.set(ws.id, ws)
       } catch { /* corrupt file */ }
     }
@@ -144,12 +159,18 @@ export class WorkspaceManager {
     return dir
   }
 
+  private nextWorkspaceId(): string {
+    this.workspaceSeq += 1
+    return `ws-${Date.now()}-${this.workspaceSeq}`
+  }
+
   // --- public API ---
 
   list(): WorkspaceMeta[] {
     return [...this.workspaces.values()].map((ws) => ({
       id: ws.id,
       name: ws.name,
+      kind: ws.kind,
       parentId: ws.parentId,
       createdAt: ws.createdAt,
       goals: ws.goals,
@@ -173,10 +194,11 @@ export class WorkspaceManager {
     return ws
   }
 
-  async create(opts?: { name?: string; fromWorkspaceId?: string }): Promise<WorkspaceMeta> {
-    const id = `ws-${Date.now()}`
+  async create(opts?: { name?: string; fromWorkspaceId?: string; kind?: WorkspaceKind }): Promise<WorkspaceMeta> {
+    const id = this.nextWorkspaceId()
     const parentId = opts?.fromWorkspaceId ?? null
     const parentWs = parentId ? this.workspaces.get(parentId) : null
+    const kind = opts?.kind ?? "code"
     const forkDir = this.createFork(id)
 
     // Start Storybook before awaiting the index — it only needs the fork dir,
@@ -192,6 +214,7 @@ export class WorkspaceManager {
     const ws: WorkspaceState = {
       id,
       name: opts?.name ?? "workspace",
+      kind,
       parentId,
       createdAt: Date.now(),
       forkDir,
@@ -201,7 +224,7 @@ export class WorkspaceManager {
     this.workspaces.set(id, ws)
     this.save(ws)
 
-    return { id: ws.id, name: ws.name, parentId: ws.parentId, createdAt: ws.createdAt, goals: ws.goals }
+    return { id: ws.id, name: ws.name, kind: ws.kind, parentId: ws.parentId, createdAt: ws.createdAt, goals: ws.goals }
   }
 
   private startStorybook(id: string, forkDir: string): Promise<string> {
@@ -256,14 +279,28 @@ export class WorkspaceManager {
     this.workspaces.clear()
   }
 
-  addGoal(wsId: string, goal: Omit<Goal, "status">): Goal | null {
-    const ws = this.workspaces.get(wsId)
-    if (!ws) return null
+  async addGoal(wsId: string, goal: Omit<Goal, "status">, opts?: { fork?: boolean }): Promise<AddGoalResult> {
+    let ws = this.workspaces.get(wsId)
+    if (!ws) return { error: "workspace not found", status: 404 }
+
+    if (goal.mode === "code" && ws.kind === "arch") {
+      return { error: "code goals cannot be added to architecture workspaces", status: 409 }
+    }
+
+    if (goal.mode === "arch" && (ws.kind !== "arch" || opts?.fork === true)) {
+      const meta = await this.create({
+        name: `arch: ${goal.label || goal.target}`,
+        fromWorkspaceId: wsId,
+        kind: "arch",
+      })
+      ws = this.workspaces.get(meta.id)
+      if (!ws) return { error: "created architecture workspace could not be loaded", status: 500 }
+    }
 
     const g: Goal = { ...goal, status: "pending" }
     ws.goals.push(g)
     this.save(ws)
-    return g
+    return { goal: g, workspaceId: ws.id }
   }
 
   removeGoal(wsId: string, goalId: string): void {
@@ -289,9 +326,17 @@ export class WorkspaceManager {
   processNext(wsId: string, onEvent: AgentEventCallback): string | null {
     const ws = this.workspaces.get(wsId)
     if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return null }
+    if (ws.kind === "arch" && ws.goals.some((g) => g.status === "running" || this.runningAgents.has(g.id))) {
+      onEvent({ type: "error", message: "architecture workspace already has a running agent" })
+      return null
+    }
 
     const goal = selectNextGoal(ws.goals, this.runningAgents)
     if (!goal) { onEvent({ type: "error", message: "no pending goals" }); return null }
+    if (goal.mode !== ws.kind) {
+      onEvent({ type: "error", message: `${goal.mode} goal cannot run in ${ws.kind} workspace` })
+      return null
+    }
 
     goal.status = "running"
     this.save(ws)
@@ -303,7 +348,7 @@ export class WorkspaceManager {
   private async runGoalAgent(ws: WorkspaceState, goal: Goal, onEvent: AgentEventCallback): Promise<void> {
     const dir = ws.forkDir
 
-    // Architecture mode: strip bodies
+    // Architecture mode: strip bodies for this single architecture agent.
     const mode = goal.mode
     const bodiesFile = resolve(this.runsDir, `${goal.id}.bodies.json`)
     if (mode === "arch") {
@@ -334,11 +379,7 @@ export class WorkspaceManager {
     const goalLine = buildGoalLine(goal)
     const prompt =
       mode === "arch"
-        ? `${context}\n\n${sandbox}` +
-          `You are in ARCHITECTURE MODE. The code is shown as pure SIGNATURES using \`declare\` — no bodies, no \`=\`, no values. The real implementations are filled back in automatically after you finish.\n\n` +
-          `Tests appear as \`test("name")\` or \`test("name", () => expr)\` lines above the declaration they cover. You can add new tests (name-only or with a single expression), remove tests, or leave them. Test lines are written back to \`.test.ts\` files automatically — name-only tests get a placeholder body.\n\n` +
-          `Restructure the ARCHITECTURE to satisfy the change: move / split / rename / add these \`declare\` signatures across files. Keep everything as bare \`declare\` declarations — do NOT write bodies, values, or import statements.\n\n` +
-          `Change requests:\n${goalLine}\n`
+        ? buildArchPrompt(context, sandbox, goalLine)
         : `${context}\n\n${sandbox}` +
           `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change.\n\n` +
           `Address these change requests:\n${goalLine}\n\n` +

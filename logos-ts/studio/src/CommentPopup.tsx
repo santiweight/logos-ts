@@ -6,11 +6,12 @@ interface Props {
   y: number
   label: string
   goals: Goal[]
+  workspaceKind?: "code" | "arch" | undefined
   onAdd: (text: string, mode: "code" | "arch", fork: boolean) => void
   onClose: () => void
 }
 
-export function CommentPopup({ x, y, label, goals, onAdd, onClose }: Props) {
+export function CommentPopup({ x, y, label, goals, workspaceKind, onAdd, onClose }: Props) {
   const left = Math.min(x, window.innerWidth - 290)
   const top = Math.min(y, window.innerHeight - 280)
 
@@ -19,7 +20,7 @@ export function CommentPopup({ x, y, label, goals, onAdd, onClose }: Props) {
   return (
     <div style={overlayStyle} onClick={onClose}>
       <div style={{ ...popoverShell, position: "fixed", left, top }} onClick={(e) => e.stopPropagation()}>
-        <CommentThread label={label} comments={goals} onAdd={handleAdd} onClose={onClose} />
+        <CommentThread label={label} comments={goals} workspaceKind={workspaceKind} onAdd={handleAdd} onClose={onClose} />
       </div>
     </div>
   )

@@ -17,6 +17,14 @@ function nodeSqlitePlugin(): Plugin {
 export default defineConfig({
   plugins: [nodeSqlitePlugin()],
   test: {
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "studio/**",
+      "evals/**",
+      ".dev-sessions/**",
+      ".agent-runs/**",
+    ],
     server: { deps: { external: [/^node:/] } },
   },
 })

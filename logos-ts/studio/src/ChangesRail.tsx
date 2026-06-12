@@ -99,6 +99,7 @@ export function ChangesRail({
                   ×
                 </button>
                 <span className="rail-dot fork">{branchIcon}</span> {w.name}
+                <span className={`cmode ${w.kind}`}>{w.kind}</span>
                 {w.parentId && <span className="rail-status"> · branch</span>}
                 {!isActive && goals.length > 0 && <span className="rail-status"> · {goals.length}</span>}
                 {goals.some((g) => runningGoals.has(g.id)) && (

@@ -86,6 +86,8 @@ export interface Goal {
   sessionId?: string | null
 }
 
+export type WorkspaceKind = "code" | "arch"
+
 export interface GoalApi {
   comments: Record<string, Goal[]>
   onComment: (target: string, label: string, x: number, y: number) => void
@@ -120,6 +122,7 @@ export interface SbState {
 export interface WorkspaceMeta {
   id: string
   name: string
+  kind: WorkspaceKind
   parentId: string | null
   createdAt: number
   goals: Goal[]

@@ -31,8 +31,8 @@ describe("ChangesRail", () => {
 
   it("shows workspace list when loaded with workspaces", () => {
     const workspaces = [
-      { id: "ws-1", name: "feature-branch", parentId: null, createdAt: 1000, goals: [] },
-      { id: "ws-2", name: "bugfix", parentId: null, createdAt: 2000, goals: [] },
+      { id: "ws-1", name: "feature-branch", kind: "code" as const, parentId: null, createdAt: 1000, goals: [] },
+      { id: "ws-2", name: "bugfix", kind: "code" as const, parentId: null, createdAt: 2000, goals: [] },
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={false} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
@@ -42,7 +42,7 @@ describe("ChangesRail", () => {
 
   it("hides loading indicator once workspaces arrive", () => {
     const workspaces = [
-      { id: "ws-1", name: "my-workspace", parentId: null, createdAt: 1000, goals: [] },
+      { id: "ws-1", name: "my-workspace", kind: "code" as const, parentId: null, createdAt: 1000, goals: [] },
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={true} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
@@ -59,6 +59,7 @@ describe("ChangesRail", () => {
       {
         id: "ws-1",
         name: "feature",
+        kind: "code" as const,
         parentId: null,
         createdAt: 1000,
         goals: [
@@ -82,6 +83,7 @@ describe("ChangesRail", () => {
       {
         id: "ws-1",
         name: "feature",
+        kind: "code" as const,
         parentId: null,
         createdAt: 1000,
         goals: [
@@ -105,6 +107,7 @@ describe("ChangesRail", () => {
       {
         id: "ws-1",
         name: "active-ws",
+        kind: "code" as const,
         parentId: null,
         createdAt: 2000,
         goals: [
@@ -114,6 +117,7 @@ describe("ChangesRail", () => {
       {
         id: "ws-2",
         name: "idle-ws",
+        kind: "code" as const,
         parentId: null,
         createdAt: 1000,
         goals: [

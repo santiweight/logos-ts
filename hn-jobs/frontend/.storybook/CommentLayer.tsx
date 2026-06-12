@@ -46,12 +46,14 @@ export function CommentLayer({
   const [hover, setHover] = useState<HoverTarget | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [openSelector, setOpenSelector] = useState<string | null>(null)
+  const [workspaceKind, setWorkspaceKind] = useState<"code" | "arch">("code")
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick((t) => t + 1), [])
 
   // Receive goals from the studio parent frame
   useEffect(() => {
-    return onGoalsFromStudio((goals) => {
+    return onGoalsFromStudio((goals, kind) => {
+      setWorkspaceKind(kind)
       setComments(goals.filter((g) => g.storyId === storyId))
     })
   }, [storyId])
@@ -159,6 +161,7 @@ export function CommentLayer({
       text: p.text,
       author: "you",
       mode: p.mode,
+      fork: p.fork,
     })
   }
 
@@ -218,6 +221,7 @@ export function CommentLayer({
                   onAdd={(p) => {
                     sendComment(openSelector, list[0]?.label ?? openSelector, p)
                   }}
+                  workspaceKind={workspaceKind}
                   onClose={() => setOpenSelector(null)}
                 />
               </div>
@@ -230,6 +234,7 @@ export function CommentLayer({
               label={draft.label}
               onSave={saveDraft}
               onCancel={() => setDraft(null)}
+              workspaceKind={workspaceKind}
             />
           </div>
         )}

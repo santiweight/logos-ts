@@ -41,6 +41,7 @@ const goal2: Goal = {
 const ws1: WorkspaceMeta = {
   id: "ws-1",
   name: "workspace-1",
+  kind: "code",
   parentId: null,
   createdAt: Date.now() - 300_000,
   goals: [goal1, goal2],
@@ -49,6 +50,7 @@ const ws1: WorkspaceMeta = {
 const ws2: WorkspaceMeta = {
   id: "ws-2",
   name: "workspace-2",
+  kind: "code",
   parentId: "ws-1",
   createdAt: Date.now() - 60_000,
   goals: [],

@@ -14,6 +14,7 @@ export interface StoryComment {
   createdAt: number
   component?: string
   mode?: string
+  fork?: boolean
   status?: string
 }
 
@@ -23,9 +24,13 @@ export function postComment(comment: Omit<StoryComment, "id" | "createdAt">): vo
   } catch {}
 }
 
-export function onGoalsFromStudio(cb: (goals: StoryComment[]) => void): () => void {
+export function onGoalsFromStudio(
+  cb: (goals: StoryComment[], workspaceKind: "code" | "arch") => void,
+): () => void {
   const handler = (e: MessageEvent) => {
-    if (e.data?.type === "logos:story-goals") cb(e.data.goals as StoryComment[])
+    if (e.data?.type === "logos:story-goals") {
+      cb(e.data.goals as StoryComment[], e.data.workspaceKind === "arch" ? "arch" : "code")
+    }
   }
   window.addEventListener("message", handler)
   return () => window.removeEventListener("message", handler)

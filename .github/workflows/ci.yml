@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            logos-ts/package-lock.json
+            logos-ts/studio/package-lock.json
+            hn-jobs/frontend/package-lock.json
+
+      - name: Install logos-ts dependencies
+        working-directory: logos-ts
+        run: npm ci
+
+      - name: Typecheck logos-ts
+        working-directory: logos-ts
+        run: npm run typecheck
+
+      - name: Test logos-ts
+        working-directory: logos-ts
+        run: npm test
+
+      - name: Install studio dependencies
+        working-directory: logos-ts/studio
+        run: npm ci
+
+      - name: Typecheck studio
+        working-directory: logos-ts/studio
+        run: npm run typecheck
+
+      - name: Test studio workspace flows
+        working-directory: logos-ts/studio
+        run: npm test -- ChangesRail.test.tsx workspace-api.integration.test.ts
+
+      - name: Install sample frontend dependencies
+        working-directory: hn-jobs/frontend
+        run: npm ci
+
+      - name: Typecheck sample frontend
+        working-directory: hn-jobs/frontend
+        run: npm run typecheck

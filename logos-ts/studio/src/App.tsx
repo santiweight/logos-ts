@@ -19,6 +19,7 @@ import type {
   TestState,
   View,
   Workspace,
+  WorkspaceKind,
   WorkspaceMeta,
 } from "./types"
 import seedData from "./studio-index.json"
@@ -154,12 +155,12 @@ export function App() {
   }, [activeWorkspaceId, refreshWorkspaces])
 
   const createWorkspace = useCallback(
-    async (fromWorkspaceId?: string | null): Promise<string | null> => {
+    async (fromWorkspaceId?: string | null, kind: WorkspaceKind = "code"): Promise<string | null> => {
       try {
         const res = await fetch("/api/workspaces", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ fromWorkspaceId: fromWorkspaceId ?? undefined }),
+          body: JSON.stringify({ fromWorkspaceId: fromWorkspaceId ?? undefined, kind }),
         })
         if (!res.ok) return null
         const meta = (await res.json()) as WorkspaceMeta
@@ -344,8 +345,8 @@ export function App() {
   // ---- actions ----
   const onFork = useCallback(async () => {
     setBusy("forking workspace…")
-    try { await createWorkspace(activeWorkspaceId) } finally { setBusy(null) }
-  }, [createWorkspace, activeWorkspaceId])
+    try { await createWorkspace(activeWorkspaceId, activeWs?.kind ?? "code") } finally { setBusy(null) }
+  }, [createWorkspace, activeWorkspaceId, activeWs?.kind])
 
   const onSelect = useCallback((sel: Selection) => setSelection(sel), [])
 
@@ -359,22 +360,28 @@ export function App() {
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
       extra?: { storyId?: string; selector?: string; component?: string },
     ) => {
-      // 1. Create workspace if forking or if none exists
-      let wsId = fork ? await createWorkspace(activeWorkspaceId) : activeWorkspaceId
-      if (!wsId) wsId = await createWorkspace()
+      // 1. Code forks are created client-side. Arch isolation is owned by the backend.
+      let wsId = fork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
+      if (!wsId) wsId = await createWorkspace(null, "code")
       if (!wsId) return
 
       // 2. Add goal to workspace queue
       const goalRes = await fetch(`/api/workspaces/${wsId}/goals`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target, label, text, mode, ...extra }),
+        body: JSON.stringify({ target, label, text, mode, fork, ...extra }),
       })
-      const goal = goalRes.ok ? await goalRes.json() as Goal : null
+      const result = await goalRes.json()
+      if (!goalRes.ok) {
+        console.error("failed to add goal:", result.error)
+        return
+      }
+      const goal = result as Goal & { workspaceId?: string }
+      const goalWsId = goal.workspaceId ?? wsId
       await refreshWorkspaces()
 
       // 3. Trigger agent to process the queue
-      runAgent(wsId, goal?.id)
+      runAgent(goalWsId, goal.id)
     },
     [activeWorkspaceId, createWorkspace, refreshWorkspaces, runAgent]
   )
@@ -383,9 +390,9 @@ export function App() {
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.data?.type !== "logos:story-comment") return
-      const { storyId, component, selector, label, text, mode } = e.data
+      const { storyId, component, selector, label, text, mode, fork } = e.data
       const target = component ? `component:${component}` : `story:${storyId}`
-      addGoal(target, label ?? storyId, text, mode ?? "code", false, { storyId, selector, component })
+      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component })
     }
     window.addEventListener("message", onMsg)
     return () => window.removeEventListener("message", onMsg)
@@ -407,11 +414,11 @@ export function App() {
         mode: g.mode,
         status: g.status,
       }))
-    const msg = { type: "logos:story-goals", goals: storyGoals }
+    const msg = { type: "logos:story-goals", goals: storyGoals, workspaceKind: activeWs?.kind ?? "code" }
     document.querySelectorAll<HTMLIFrameElement>("iframe.story-frame").forEach((f) => {
       try { f.contentWindow?.postMessage(msg, "*") } catch {}
     })
-  }, [activeGoals])
+  }, [activeGoals, activeWs?.kind])
 
   const currentFile = view.files.find((f) => f.file === selection.file) ?? view.files[0]
 
@@ -579,6 +586,7 @@ export function App() {
           y={popup.y}
           label={popup.label}
           goals={goalsByTarget[popup.target] ?? []}
+          workspaceKind={activeWs?.kind}
           onAdd={(text, mode, fork) => { addGoal(popup.target, popup.label, text, mode, fork); setPopup(null) }}
           onClose={() => setPopup(null)}
         />

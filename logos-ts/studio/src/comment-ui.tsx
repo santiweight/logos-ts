@@ -28,12 +28,14 @@ export function CommentThread({
   onAdd,
   onRemove,
   onClose,
+  workspaceKind,
 }: {
   label: string
   comments: CommentItem[]
   onAdd: (payload: SubmitPayload) => void
   onRemove?: (id: string) => void
   onClose: () => void
+  workspaceKind?: "code" | "arch" | undefined
 }) {
   const [text, setText] = useState("")
   const [mode, setMode] = useState<"code" | "arch">("code")
@@ -92,7 +94,7 @@ export function CommentThread({
         placeholder="Reply…"
         style={textareaStyle}
       />
-      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={!text.trim()} />
+      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={!text.trim()} workspaceKind={workspaceKind} />
     </>
   )
 }
@@ -103,10 +105,12 @@ export function CommentComposer({
   label,
   onSave,
   onCancel,
+  workspaceKind,
 }: {
   label: string
   onSave: (payload: SubmitPayload) => void
   onCancel: () => void
+  workspaceKind?: "code" | "arch" | undefined
 }) {
   const [text, setText] = useState("")
   const [mode, setMode] = useState<"code" | "arch">("code")
@@ -130,7 +134,7 @@ export function CommentComposer({
         placeholder="Add a comment…"
         style={textareaStyle}
       />
-      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={!text.trim()} />
+      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={!text.trim()} workspaceKind={workspaceKind} />
     </>
   )
 }
@@ -161,6 +165,7 @@ function ModeBar({
   setFork,
   onSubmit,
   disabled,
+  workspaceKind,
 }: {
   mode: "code" | "arch"
   setMode: (m: "code" | "arch") => void
@@ -168,7 +173,9 @@ function ModeBar({
   setFork: (f: boolean) => void
   onSubmit: () => void
   disabled: boolean
+  workspaceKind?: "code" | "arch" | undefined
 }) {
+  const forkForced = mode === "arch" && workspaceKind !== "arch"
   return (
     <div style={actionsStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -178,9 +185,9 @@ function ModeBar({
         </div>
         <button
           type="button"
-          style={forkBtn(fork)}
-          onClick={() => setFork(!fork)}
-          title="Fork a new workspace for this change"
+          style={{ ...forkBtn(fork || forkForced), cursor: forkForced ? "default" : "pointer" }}
+          onClick={() => { if (!forkForced) setFork(!fork) }}
+          title={forkForced ? "Architecture mode creates an architecture workspace" : "Fork a new workspace for this change"}
         >
           ⑂
         </button>
