@@ -135,3 +135,23 @@ export interface Job {
   hidden: boolean
   hiddenReason: string | null
 }
+
+// --- directory query/filter ---
+
+export type JobSort = "company" | "newest" | "salary-desc"
+export type ApplyFilter = "link" | "email" | "hn-reply" | "missing"
+
+export interface JobFilters {
+  q?: string
+  month?: string
+  tag?: string
+  family?: string
+  seniority?: string
+  region?: string
+  salary?: "disclosed"
+  apply?: ApplyFilter
+  remote: boolean
+  visa: boolean
+  intern: boolean
+  sort: JobSort
+}
