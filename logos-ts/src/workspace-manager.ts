@@ -291,6 +291,7 @@ export class WorkspaceManager {
       mode === "arch"
         ? `${context}\n\n${sandbox}` +
           `You are in ARCHITECTURE MODE. The code is shown as pure SIGNATURES using \`declare\` — no bodies, no \`=\`, no values. The real implementations are filled back in automatically after you finish.\n\n` +
+          `Tests appear as \`test("name")\` or \`test("name", () => expr)\` lines above the declaration they cover. You can add new tests (name-only or with a single expression), remove tests, or leave them. Test lines are written back to \`.test.ts\` files automatically — name-only tests get a placeholder body.\n\n` +
           `Restructure the ARCHITECTURE to satisfy the change: move / split / rename / add these \`declare\` signatures across files. Keep everything as bare \`declare\` declarations — do NOT write bodies, values, or import statements.\n\n` +
           `Change requests:\n${goalLine}\n`
         : `${context}\n\n${sandbox}` +
