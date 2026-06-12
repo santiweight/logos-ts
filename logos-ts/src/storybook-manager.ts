@@ -11,11 +11,23 @@ export interface SbEntry {
   startedAt: number
 }
 
+export type SbStatus = "starting" | "ready" | "failed"
+
+export interface SbState {
+  status: SbStatus
+  startedAt: number
+  logs: string[]
+  error?: string
+}
+
 type Registry = Record<string, SbEntry>
+
+const MAX_LOG_LINES = 50
 
 export class StorybookManager {
   private registry: Registry = {}
   private live = new Map<string, ChildProcess>()
+  private states = new Map<string, SbState>()
   private mapFile: string
   private logosSrc: string
   private projectRoot: string
@@ -76,6 +88,25 @@ export class StorybookManager {
     return { ...this.registry }
   }
 
+  /** Get startup state for a workspace (status, logs, error). */
+  state(id: string): SbState | null {
+    return this.states.get(id) ?? null
+  }
+
+  /** Get all startup states. */
+  allStates(): Record<string, SbState> {
+    const out: Record<string, SbState> = {}
+    for (const [id, s] of this.states) out[id] = s
+    return out
+  }
+
+  private pushLog(id: string, line: string): void {
+    const s = this.states.get(id)
+    if (!s) return
+    s.logs.push(line)
+    if (s.logs.length > MAX_LOG_LINES) s.logs.shift()
+  }
+
   /**
    * Ensure a Storybook is running for the given workspace.
    * Returns a promise that resolves with the URL once the port is detected.
@@ -85,6 +116,9 @@ export class StorybookManager {
     const existing = this.get(id)
     if (existing) return Promise.resolve(existing)
 
+    const state: SbState = { status: "starting", startedAt: Date.now(), logs: [] }
+    this.states.set(id, state)
+
     return new Promise((resolve_, reject) => {
       const npx = resolve(frontendDir, "node_modules/.bin/storybook")
       const child = spawn(npx, ["dev", "--ci", "--no-open"], {
@@ -93,21 +127,42 @@ export class StorybookManager {
         env: { ...process.env, LOGOS_TS_SRC: this.logosSrc, LOGOS_PROJECT_ROOT: this.projectRoot },
       })
 
+      let resolved = false
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      const fail = (error: string) => {
+        state.status = "failed"
+        state.error = error
+        if (!resolved) {
+          resolved = true
+          if (timeout) clearTimeout(timeout)
+          reject(new Error(error))
+        }
+      }
+
+      child.on("error", (e) => {
+        console.error(`[storybook-mgr] ${id} error:`, e.message)
+        fail(e.message)
+      })
+
       if (!child.pid) {
-        reject(new Error(`failed to spawn storybook for ${id}`))
+        fail(`failed to spawn storybook for ${id}`)
         return
       }
 
       this.live.set(id, child)
-      let resolved = false
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true
-          reject(new Error(`storybook for ${id} did not print a port within 30s`))
-        }
+      timeout = setTimeout(() => {
+        fail(`storybook for ${id} did not print a port within 30s`)
       }, 30_000)
 
+      const bufferLines = (d: Buffer) => {
+        for (const line of d.toString().split("\n")) {
+          const trimmed = line.trim()
+          if (trimmed) this.pushLog(id, trimmed)
+        }
+      }
+
       child.stdout?.on("data", (d: Buffer) => {
+        bufferLines(d)
         const s = d.toString()
         const m = s.match(/https?:\/\/localhost:(\d+)/)
         if (m && !resolved) {
@@ -124,30 +179,19 @@ export class StorybookManager {
             startedAt: Date.now(),
           }
           this.registry[id] = entry
+          state.status = "ready"
           this.save()
           console.log(`[storybook-mgr] ${id} ready on ${url} (pid ${child.pid})`)
           resolve_(url)
         }
       })
-      child.stderr?.on("data", () => {})
-      child.on("error", (e) => {
-        console.error(`[storybook-mgr] ${id} error:`, e.message)
-        if (!resolved) {
-          resolved = true
-          clearTimeout(timeout)
-          reject(e)
-        }
-      })
+      child.stderr?.on("data", bufferLines)
       child.on("close", (code) => {
         console.log(`[storybook-mgr] ${id} exited (code ${code})`)
         delete this.registry[id]
         this.live.delete(id)
         this.save()
-        if (!resolved) {
-          resolved = true
-          clearTimeout(timeout)
-          reject(new Error(`storybook for ${id} exited with code ${code}`))
-        }
+        fail(`storybook for ${id} exited with code ${code}`)
       })
     })
   }
