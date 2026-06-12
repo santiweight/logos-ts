@@ -4,14 +4,9 @@ import { execFile, execFileSync } from "node:child_process"
 import { writeFileSync, mkdirSync, watch, cpSync, existsSync, symlinkSync, readdirSync, mkdtempSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { basename, dirname, resolve, join, relative } from "node:path"
-import { detectProject } from "../src/detect-project"
-import { StorybookManager } from "../src/storybook-manager"
-import { WorkspaceManager, type WorkspaceKind } from "../src/workspace-manager"
 import type { StudioIndex } from "../src/build-index"
-import { ClaudeSessionManager } from "../src/claude-session-manager"
 import { authPlugin } from "./server/auth"
 import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
-import { gcDevSessions, writeDevSessionPid } from "../src/dev-session-gc"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -24,7 +19,21 @@ const ALLOWED_HOSTS = [
     .filter(Boolean),
 ]
 
-function copyProject(src: string): string {
+type DetectProject = typeof import("../src/detect-project")["detectProject"]
+type WorkspaceKind = import("../src/workspace-manager").WorkspaceKind
+
+type StudioRuntime = {
+  projectRoot: string
+  caps: ReturnType<DetectProject>
+  tsx: string
+  studioPortFile: string
+  indexReady: Promise<StudioIndex>
+  sbManager: import("../src/storybook-manager").StorybookManager
+  wsMgr: import("../src/workspace-manager").WorkspaceManager
+}
+
+async function copyProject(src: string): Promise<string> {
+  const { gcDevSessions, writeDevSessionPid } = await import("../src/dev-session-gc")
   const sessionsDir = resolve(LOGOS_TS, ".dev-sessions")
   mkdirSync(sessionsDir, { recursive: true })
   const ephDir = mkdtempSync(resolve(sessionsDir, "session-"))
@@ -57,46 +66,62 @@ function copyProject(src: string): string {
   return ephDir
 }
 
-const PROJECT_ROOT = copyProject(SOURCE_PROJECT)
-const caps = detectProject(PROJECT_ROOT)
-console.log(`[logos] project: ${caps.root}`)
-console.log(`[logos] storybook: ${caps.storybook ? caps.storybook.configDir : "not found"}`)
-console.log(`[logos] tests: ${caps.tests ? caps.tests.command.join(" ") : "not found"}`)
-const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
-const STUDIO_PORT_FILE = resolve(PROJECT_ROOT, ".logos", "studio-port")
+async function createStudioRuntime(): Promise<StudioRuntime> {
+  const [
+    { detectProject },
+    { StorybookManager },
+    { WorkspaceManager },
+    { ClaudeSessionManager },
+  ] = await Promise.all([
+    import("../src/detect-project"),
+    import("../src/storybook-manager"),
+    import("../src/workspace-manager"),
+    import("../src/claude-session-manager"),
+  ])
 
-const indexReady: Promise<StudioIndex> = new Promise((res, rej) => {
-  const t0 = Date.now()
-  console.log(`[logos] building index (background)…`)
-  execFile(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), PROJECT_ROOT, "-"], {
-    cwd: LOGOS_TS, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
-  }, (err, stdout) => {
-    if (err) { rej(err); return }
-    console.log(`[logos] index ready in ${Date.now() - t0}ms`)
-    res(JSON.parse(stdout) as StudioIndex)
+  const projectRoot = await copyProject(SOURCE_PROJECT)
+  const caps = detectProject(projectRoot)
+  console.log(`[logos] project: ${caps.root}`)
+  console.log(`[logos] storybook: ${caps.storybook ? caps.storybook.configDir : "not found"}`)
+  console.log(`[logos] tests: ${caps.tests ? caps.tests.command.join(" ") : "not found"}`)
+  const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
+  const studioPortFile = resolve(projectRoot, ".logos", "studio-port")
+
+  const indexReady: Promise<StudioIndex> = new Promise((res, rej) => {
+    const t0 = Date.now()
+    console.log(`[logos] building index (background)...`)
+    execFile(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), projectRoot, "-"], {
+      cwd: LOGOS_TS, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+    }, (err, stdout) => {
+      if (err) { rej(err); return }
+      console.log(`[logos] index ready in ${Date.now() - t0}ms`)
+      res(JSON.parse(stdout) as StudioIndex)
+    })
   })
-})
 
-const sbManager = new StorybookManager(
-  resolve(PROJECT_ROOT, ".logos", "storybooks.json"),
-  resolve(LOGOS_TS, "src"),
-  PROJECT_ROOT,
-)
+  const sbManager = new StorybookManager(
+    resolve(projectRoot, ".logos", "storybooks.json"),
+    resolve(LOGOS_TS, "src"),
+    projectRoot,
+  )
 
-const sessionMgr = new ClaudeSessionManager(resolve(PROJECT_ROOT, ".logos", "sessions.db"))
+  const sessionMgr = new ClaudeSessionManager(resolve(projectRoot, ".logos", "sessions.db"))
 
-const wsMgr = new WorkspaceManager({
-  wsDir: resolve(PROJECT_ROOT, ".workspaces"),
-  runsDir: resolve(LOGOS_TS, ".agent-runs"),
-  logosTsSrc: resolve(LOGOS_TS, "src"),
-  logosTsRoot: LOGOS_TS,
-  projectRoot: PROJECT_ROOT,
-  caps,
-  sbManager,
-  sessions: sessionMgr,
-  tsx,
-  getIndex: () => indexReady,
-})
+  const wsMgr = new WorkspaceManager({
+    wsDir: resolve(projectRoot, ".workspaces"),
+    runsDir: resolve(LOGOS_TS, ".agent-runs"),
+    logosTsSrc: resolve(LOGOS_TS, "src"),
+    logosTsRoot: LOGOS_TS,
+    projectRoot,
+    caps,
+    sbManager,
+    sessions: sessionMgr,
+    tsx,
+    getIndex: () => indexReady,
+  })
+
+  return { projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, wsMgr }
+}
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((res) => {
@@ -106,10 +131,20 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
   })
 }
 
-function studioApi(): Plugin {
+function studioApi(runtime: StudioRuntime): Plugin {
   return {
     name: "logos-ts-studio-api",
     configureServer(server) {
+      const {
+        projectRoot: PROJECT_ROOT,
+        caps,
+        tsx,
+        studioPortFile: STUDIO_PORT_FILE,
+        indexReady,
+        sbManager,
+        wsMgr,
+      } = runtime
+
       server.httpServer?.once("listening", () => {
         const addr = server.httpServer!.address()
         if (addr && typeof addr === "object") {
@@ -336,20 +371,29 @@ function studioApi(): Plugin {
         res.setHeader("content-type", "text/event-stream")
         res.setHeader("cache-control", "no-cache")
         res.setHeader("connection", "keep-alive")
-        const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`)
+        let closed = false
+        let ended = false
+        req.on("close", () => { closed = true })
+        const send = (o: unknown) => {
+          if (!closed) res.write(`data: ${JSON.stringify(o)}\n\n`)
+        }
+        const end = () => {
+          if (!closed && !ended) {
+            ended = true
+            res.end()
+          }
+        }
 
         const goalId = requestedGoalId
           ? wsMgr.processById(wsId, requestedGoalId, (evt) => {
               send(evt)
-              if (evt.type === "done" || evt.type === "error") res.end()
+              if (evt.type === "done" || evt.type === "error") end()
             })
           : wsMgr.processNext(wsId, (evt) => {
               send(evt)
-              if (evt.type === "done" || evt.type === "error") res.end()
+              if (evt.type === "done" || evt.type === "error") end()
             })
-        if (!goalId) return res.end()
-
-        req.on("close", () => wsMgr.abort(goalId))
+        if (!goalId) end()
       })
 
       // --- Session log retrieval ---
@@ -417,10 +461,11 @@ function studioApi(): Plugin {
   }
 }
 
-function autoStorybook(): Plugin {
+function autoStorybook(runtime: StudioRuntime): Plugin {
   return {
     name: "auto-storybook",
     configureServer() {
+      const { caps, sbManager, wsMgr } = runtime
       sbManager.cleanupAll()
       // Ensure Storybooks are running for all existing workspaces
       for (const wsMeta of wsMgr.list()) {
@@ -441,17 +486,23 @@ function autoStorybook(): Plugin {
   }
 }
 
-export default defineConfig({
-  cacheDir: process.env.LOGOS_VITE_CACHE_DIR || undefined,
-  plugins: [authPlugin(), react(), studioApi(), storybookProxyPlugin(sbManager), autoStorybook()],
-  server: {
-    // Bind a concrete address: the default "localhost" can end up IPv6-only,
-    // and the page hangs whenever the browser resolves localhost to 127.0.0.1.
-    host: process.env.LOGOS_HOST || "127.0.0.1",
-    allowedHosts: ALLOWED_HOSTS,
-    port: Number(process.env.PORT) || 0,
-    strictPort: Boolean(process.env.PORT),
-    hmr: process.env.LOGOS_DISABLE_HMR === "1" ? false : undefined,
-    watch: { ignored: ["**/.workspaces/**", "**/.agent-runs/**"] },
-  },
+export default defineConfig(async ({ command }) => {
+  const runtime = command === "serve" ? await createStudioRuntime() : null
+
+  return {
+    cacheDir: process.env.LOGOS_VITE_CACHE_DIR || undefined,
+    plugins: runtime
+      ? [authPlugin(), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), autoStorybook(runtime)]
+      : [react()],
+    server: {
+      // Bind a concrete address: the default "localhost" can end up IPv6-only,
+      // and the page hangs whenever the browser resolves localhost to 127.0.0.1.
+      host: process.env.LOGOS_HOST || "127.0.0.1",
+      allowedHosts: ALLOWED_HOSTS,
+      port: Number(process.env.PORT) || 0,
+      strictPort: Boolean(process.env.PORT),
+      hmr: process.env.LOGOS_DISABLE_HMR === "1" ? false : undefined,
+      watch: { ignored: ["**/.workspaces/**", "**/.agent-runs/**"] },
+    },
+  }
 })

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { spawn, type ChildProcess } from "node:child_process"
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -14,6 +14,7 @@ let projectRoot: string
 let binDir: string
 let server: ChildProcess
 let baseUrl: string
+let signalFile: string
 const TEST_TIMEOUT = 20_000
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
@@ -27,6 +28,7 @@ interface WorkspaceMeta {
 interface Goal {
   id: string
   mode: "code" | "arch"
+  status?: "pending" | "running" | "done" | "error"
   workspaceId?: string
 }
 
@@ -49,9 +51,15 @@ function createProject(): string {
 
 function createFakeClaude(): string {
   const dir = mkdtempSync(join(tmpdir(), "logos-fake-claude-"))
+  signalFile = join(dir, "signals.log")
   const script = join(dir, "claude")
   writeFileSync(script, [
     "#!/usr/bin/env node",
+    "const fs = require('node:fs')",
+    "process.on('SIGTERM', () => {",
+    "  if (process.env.FAKE_CLAUDE_SIGNALS) fs.appendFileSync(process.env.FAKE_CLAUDE_SIGNALS, 'SIGTERM\\n')",
+    "  process.exit(143)",
+    "})",
     "console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fake-session' }))",
     "setTimeout(() => process.exit(0), 15000)",
     "",
@@ -62,6 +70,14 @@ function createFakeClaude(): string {
 
 function api(path: string, opts?: RequestInit): Promise<Response> {
   return fetch(`${baseUrl}${path}`, opts)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((res) => setTimeout(res, ms))
+}
+
+function fakeClaudeSignals(): string {
+  return signalFile && existsSync(signalFile) ? readFileSync(signalFile, "utf8") : ""
 }
 
 function jsonPost(path: string, body: unknown): Promise<Response> {
@@ -136,7 +152,12 @@ describe("workspace API mode isolation", () => {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, LOGOS_PROJECT: projectRoot, PATH: `${binDir}:${process.env["PATH"] ?? ""}` },
+      env: {
+        ...process.env,
+        LOGOS_PROJECT: projectRoot,
+        FAKE_CLAUDE_SIGNALS: signalFile,
+        PATH: `${binDir}:${process.env["PATH"] ?? ""}`,
+      },
     })
     baseUrl = await waitForServer(server, 90_000)
   }, 120_000)
@@ -278,6 +299,12 @@ describe("workspace API mode isolation", () => {
       },
     }))
 
+    await firstRes.body?.cancel()
     controller.abort()
+    await sleep(500)
+
+    expect(fakeClaudeSignals()).toBe("")
+    const updated = await readWorkspace(arch.id)
+    expect(updated.goals.find((g) => g.id === first.body.id)?.status).toBe("running")
   }, TEST_TIMEOUT)
 })

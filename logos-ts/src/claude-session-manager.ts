@@ -1,6 +1,8 @@
-import { DatabaseSync } from "node:sqlite"
+import { createRequire } from "node:module"
 import { mkdirSync } from "node:fs"
 import { dirname } from "node:path"
+
+const require = createRequire(import.meta.url)
 
 export interface ClaudeSession {
   id: string
@@ -18,9 +20,10 @@ export interface SessionEvent {
 }
 
 export class ClaudeSessionManager {
-  private db: DatabaseSync
+  private db: import("node:sqlite").DatabaseSync
 
   constructor(dbPath: string) {
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite")
     mkdirSync(dirname(dbPath), { recursive: true })
     this.db = new DatabaseSync(dbPath)
     this.db.exec(`
