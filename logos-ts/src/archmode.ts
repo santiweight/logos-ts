@@ -315,17 +315,23 @@ function splice(dir: string, recFile: string) {
     }
   }
 
-  // Splice original bodies back
+  // Splice original bodies back. The arch view owns doc comments — the agent
+  // may have rewritten them — so keep the declare's current JSDoc (replaceWithText
+  // would otherwise consume it) and restore only the implementation beneath it.
+  const withDocs = (node: { getJsDocs(): { getText(): string }[] }, text: string): string => {
+    const docs = node.getJsDocs().map((d) => d.getText()).join("\n")
+    return docs ? `${docs}\n${text}` : text
+  }
   let n = 0
   for (const sf of nonTests(allSources(project))) {
     for (const [name, text] of byName) {
       const fd = sf.getFunction(name)
-      if (fd != null && fd.hasDeclareKeyword()) { fd.replaceWithText(text); n++; continue }
+      if (fd != null && fd.hasDeclareKeyword()) { fd.replaceWithText(withDocs(fd, text)); n++; continue }
       const cd = sf.getClass(name)
-      if (cd != null && cd.hasDeclareKeyword()) { cd.replaceWithText(text); n++; continue }
+      if (cd != null && cd.hasDeclareKeyword()) { cd.replaceWithText(withDocs(cd, text)); n++; continue }
       const vd = sf.getVariableDeclaration(name)
       const vs = vd != null ? vd.getVariableStatement() : undefined
-      if (vs != null && vs.hasDeclareKeyword()) { vs.replaceWithText(text); n++ }
+      if (vs != null && vs.hasDeclareKeyword()) { vs.replaceWithText(withDocs(vs, text)); n++ }
     }
   }
 
