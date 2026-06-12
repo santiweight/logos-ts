@@ -151,8 +151,11 @@ export class StorybookManager {
 
       this.live.set(id, child)
       timeout = setTimeout(() => {
-        fail(`storybook for ${id} did not print a port within 30s`)
-      }, 30_000)
+        // Give up and reap the child so an unregistered Storybook isn't leaked.
+        try { child.kill() } catch {}
+        this.live.delete(id)
+        fail(`storybook for ${id} did not print a port within 120s`)
+      }, 120_000)
 
       const bufferLines = (d: Buffer) => {
         for (const line of d.toString().split("\n")) {
@@ -161,10 +164,12 @@ export class StorybookManager {
         }
       }
 
+      // Accumulate stdout across chunks — the URL can be split mid-line.
+      let stdoutBuf = ""
       child.stdout?.on("data", (d: Buffer) => {
         bufferLines(d)
-        const s = d.toString()
-        const m = s.match(/https?:\/\/localhost:(\d+)/)
+        stdoutBuf += d.toString()
+        const m = stdoutBuf.match(/https?:\/\/localhost:(\d+)/)
         if (m && !resolved) {
           resolved = true
           clearTimeout(timeout)

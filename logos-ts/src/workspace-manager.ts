@@ -168,8 +168,18 @@ export class WorkspaceManager {
     const id = `ws-${Date.now()}`
     const parentId = opts?.fromWorkspaceId ?? null
     const parentWs = parentId ? this.workspaces.get(parentId) : null
-    const index = parentWs ? parentWs.index : await this.snapshotIndex()
     const forkDir = this.createFork(id)
+
+    // Start Storybook before awaiting the index — it only needs the fork dir,
+    // and on a cold server the index build would otherwise delay it by ~15s.
+    if (this.caps.storybook) {
+      const wsFrontend = join(forkDir, relative(this.projectRoot, this.caps.storybook.frontendDir))
+      this.sbManager.ensure(id, wsFrontend).catch((e: any) => {
+        console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
+      })
+    }
+
+    const index = parentWs ? parentWs.index : await this.snapshotIndex()
 
     const ws: WorkspaceState = {
       id,
@@ -182,13 +192,6 @@ export class WorkspaceManager {
     }
     this.workspaces.set(id, ws)
     this.save(ws)
-
-    if (this.caps.storybook) {
-      const wsFrontend = join(forkDir, relative(this.projectRoot, this.caps.storybook.frontendDir))
-      this.sbManager.ensure(id, wsFrontend).catch((e: any) => {
-        console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
-      })
-    }
 
     return { id: ws.id, name: ws.name, parentId: ws.parentId, createdAt: ws.createdAt, goals: ws.goals }
   }
