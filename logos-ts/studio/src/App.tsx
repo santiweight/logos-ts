@@ -185,18 +185,6 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey)
   }, [selected, activeWorkspaceId, deleteWorkspace, deleteGoal])
 
-  // Listen for story comments from Storybook iframe
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      if (e.data?.type !== "logos:story-comment") return
-      const { storyId, component, selector, label, text, mode } = e.data
-      const target = component ? `component:${component}` : `story:${storyId}`
-      addGoal(target, label ?? storyId, text, mode ?? "code", false)
-    }
-    window.addEventListener("message", onMsg)
-    return () => window.removeEventListener("message", onMsg)
-  }, [addGoal])
-
   const [archDiffOpen, setArchDiffOpen] = useState(false)
 
   // ---- agent ----
@@ -247,7 +235,10 @@ export function App() {
   )
 
   const addGoal = useCallback(
-    async (target: string, label: string, text: string, mode: "code" | "arch", fork: boolean) => {
+    async (
+      target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
+      extra?: { storyId?: string; selector?: string; component?: string },
+    ) => {
       // 1. Create workspace if forking or if none exists
       let wsId = fork ? await createWorkspace(activeWorkspaceId) : activeWorkspaceId
       if (!wsId) wsId = await createWorkspace()
@@ -257,7 +248,7 @@ export function App() {
       await fetch(`/api/workspaces/${wsId}/goals`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target, label, text, mode }),
+        body: JSON.stringify({ target, label, text, mode, ...extra }),
       })
       await refreshWorkspaces()
 
@@ -266,6 +257,40 @@ export function App() {
     },
     [activeWorkspaceId, createWorkspace, refreshWorkspaces, runAgent]
   )
+
+  // Listen for story comments from Storybook iframe
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type !== "logos:story-comment") return
+      const { storyId, component, selector, label, text, mode } = e.data
+      const target = component ? `component:${component}` : `story:${storyId}`
+      addGoal(target, label ?? storyId, text, mode ?? "code", false, { storyId, selector, component })
+    }
+    window.addEventListener("message", onMsg)
+    return () => window.removeEventListener("message", onMsg)
+  }, [addGoal])
+
+  // Push goals to Storybook iframes so they can render pins
+  useEffect(() => {
+    const storyGoals = activeGoals
+      .filter((g) => g.storyId)
+      .map((g) => ({
+        id: g.id,
+        storyId: g.storyId,
+        selector: g.selector ?? "",
+        label: g.label,
+        text: g.text,
+        author: "you",
+        createdAt: g.createdAt,
+        component: g.component,
+        mode: g.mode,
+        status: g.status,
+      }))
+    const msg = { type: "logos:story-goals", goals: storyGoals }
+    document.querySelectorAll<HTMLIFrameElement>("iframe.story-frame").forEach((f) => {
+      try { f.contentWindow?.postMessage(msg, "*") } catch {}
+    })
+  }, [activeGoals])
 
   const currentFile = view.files.find((f) => f.file === selection.file) ?? view.files[0]
 

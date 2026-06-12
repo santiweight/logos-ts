@@ -1,6 +1,5 @@
 import type { StorybookConfig } from "@storybook/react-vite"
 import path from "node:path"
-import { commentsServerPlugin } from "./comments-server"
 
 const config: StorybookConfig = {
   stories: [
@@ -10,8 +9,6 @@ const config: StorybookConfig = {
   addons: [],
   framework: { name: "@storybook/react-vite", options: {} },
   viteFinal(viteConfig) {
-    viteConfig.plugins = viteConfig.plugins ?? []
-    viteConfig.plugins.push(commentsServerPlugin())
     viteConfig.resolve = viteConfig.resolve ?? {}
     viteConfig.resolve.alias = {
       ...viteConfig.resolve.alias as Record<string, string>,

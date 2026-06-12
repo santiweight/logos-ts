@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  addComment,
+  postComment,
+  onGoalsFromStudio,
   cssPath,
   describe,
-  listComments,
-  removeComment,
   resolve,
   type StoryComment,
 } from "./comment-store"
@@ -50,12 +49,12 @@ export function CommentLayer({
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick((t) => t + 1), [])
 
-  const refresh = useCallback(() => {
-    listComments(storyId).then(setComments)
-  }, [storyId])
+  // Receive goals from the studio parent frame
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    return onGoalsFromStudio((goals) => {
+      setComments(goals.filter((g) => g.storyId === storyId))
+    })
+  }, [storyId])
 
   useEffect(() => {
     setDraft(null)
@@ -140,43 +139,34 @@ export function CommentLayer({
   const groups = useMemo(() => {
     const map = new Map<string, StoryComment[]>()
     for (const c of comments) {
-      const arr = map.get(c.selector) ?? []
+      const sel = c.selector
+      if (!sel) continue
+      const arr = map.get(sel) ?? []
       arr.push(c)
-      map.set(c.selector, arr)
+      map.set(sel, arr)
     }
     return map
   }, [comments])
 
-  const author = "you"
   const root = rootRef.current
 
-  const notifyStudio = (comment: { selector: string; label: string; text: string; mode: string }) => {
-    try {
-      window.parent?.postMessage({
-        type: "logos:story-comment",
-        storyId,
-        component,
-        ...comment,
-      }, "*")
-    } catch {}
-  }
-
-  const saveDraft = async (p: SubmitPayload) => {
-    if (!draft) return
-    const selector = draft.selector
-    await addComment({
+  const sendComment = (selector: string, label: string, p: SubmitPayload) => {
+    postComment({
       storyId,
       component,
       selector,
-      label: draft.label,
+      label,
       text: p.text,
-      author,
+      author: "you",
       mode: p.mode,
     })
-    notifyStudio({ selector, label: draft.label, text: p.text, mode: p.mode })
+  }
+
+  const saveDraft = (p: SubmitPayload) => {
+    if (!draft) return
+    sendComment(draft.selector, draft.label, p)
     setDraft(null)
-    refresh()
-    setOpenSelector(selector)
+    setOpenSelector(draft.selector)
   }
 
   const total = comments.length
@@ -225,23 +215,8 @@ export function CommentLayer({
                 <CommentThread
                   label={list[0]?.label ?? openSelector}
                   comments={list}
-                  onAdd={async (p) => {
-                    const label = list[0]?.label ?? openSelector
-                    await addComment({
-                      storyId,
-                      component,
-                      selector: openSelector,
-                      label,
-                      text: p.text,
-                      author,
-                      mode: p.mode,
-                    })
-                    notifyStudio({ selector: openSelector, label, text: p.text, mode: p.mode })
-                    refresh()
-                  }
-                  onRemove={async (id) => {
-                    await removeComment(id)
-                    refresh()
+                  onAdd={(p) => {
+                    sendComment(openSelector, list[0]?.label ?? openSelector, p)
                   }}
                   onClose={() => setOpenSelector(null)}
                 />

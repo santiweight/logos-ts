@@ -1,14 +1,8 @@
-// Persistence for element-pinned story comments.
+// Storybook ↔ Studio bridge via postMessage.
 //
-// Comments are written to disk via the Storybook dev-server middleware (see
-// comments-server.ts) so they land in <project>/.logos/ where Logos backend
-// agents read them — the same file-on-disk channel every other agent
-// instruction uses. localStorage is a fallback for when the endpoint isn't
-// reachable (e.g. a static `build-storybook` bundle), so the UI still works.
-//
-// A comment anchors to a single element via a :scope-relative CSS path computed
-// against the story root, with a human-readable `label` kept for display and as
-// a fallback when the anchor element can no longer be resolved.
+// Comments live exclusively in the studio's goal system. The Storybook iframe
+// sends new comments to the parent frame and receives the current goal list
+// back so it can render pins.
 
 export interface StoryComment {
   id: string
@@ -19,83 +13,23 @@ export interface StoryComment {
   author: string
   createdAt: number
   component?: string
-  workspaceId?: string | null
   mode?: string
-  target?: string
-  agentId?: string
-  agentStatus?: string
+  status?: string
 }
 
-const ENDPOINT = "/api/story-comments"
-const KEY = "hn-jobs:story-comments:v1"
-
-export async function listComments(storyId: string): Promise<StoryComment[]> {
-  const all = await readAll()
-  return all.filter((c) => c.storyId === storyId).sort((a, b) => a.createdAt - b.createdAt)
-}
-
-export async function addComment(
-  input: Omit<StoryComment, "id" | "createdAt">,
-): Promise<StoryComment> {
-  const comment: StoryComment = { ...input, id: newId(), createdAt: Date.now() }
+export function postComment(comment: Omit<StoryComment, "id" | "createdAt">): void {
   try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(comment),
-    })
-    if (!res.ok) throw new Error(`POST ${res.status}`)
-    const data = (await res.json()) as { comment?: StoryComment }
-    if (data.comment) return data.comment
-  } catch {
-    localWriteAll([...localReadAll(), comment])
+    window.parent?.postMessage({ type: "logos:story-comment", ...comment }, "*")
+  } catch {}
+}
+
+export function onGoalsFromStudio(cb: (goals: StoryComment[]) => void): () => void {
+  const handler = (e: MessageEvent) => {
+    if (e.data?.type === "logos:story-goals") cb(e.data.goals as StoryComment[])
   }
-  return comment
+  window.addEventListener("message", handler)
+  return () => window.removeEventListener("message", handler)
 }
-
-export async function removeComment(id: string): Promise<void> {
-  try {
-    const res = await fetch(`${ENDPOINT}?id=${encodeURIComponent(id)}`, { method: "DELETE" })
-    if (!res.ok) throw new Error(`DELETE ${res.status}`)
-  } catch {
-    localWriteAll(localReadAll().filter((c) => c.id !== id))
-  }
-}
-
-async function readAll(): Promise<StoryComment[]> {
-  try {
-    const res = await fetch(ENDPOINT)
-    if (!res.ok) throw new Error(`GET ${res.status}`)
-    const data = (await res.json()) as { comments: StoryComment[] }
-    return data.comments
-  } catch {
-    return localReadAll()
-  }
-}
-
-function localReadAll(): StoryComment[] {
-  try {
-    const raw = localStorage.getItem(KEY)
-    return raw ? (JSON.parse(raw) as StoryComment[]) : []
-  } catch {
-    return []
-  }
-}
-
-function localWriteAll(comments: StoryComment[]): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(comments))
-  } catch {
-    /* ignore */
-  }
-}
-
-function newId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
-  return `c_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
-}
-
-// --- DOM anchoring -----------------------------------------------------------
 
 export function cssPath(el: Element, root: Element): string {
   if (el === root) return ":scope"
