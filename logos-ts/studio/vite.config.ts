@@ -11,6 +11,7 @@ import type { StudioIndex } from "../src/build-index"
 import { ClaudeSessionManager } from "../src/claude-session-manager"
 import { authPlugin } from "./server/auth"
 import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
+import { gcDevSessions, writeDevSessionPid } from "../src/dev-session-gc"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -28,10 +29,18 @@ function copyProject(src: string): string {
   mkdirSync(sessionsDir, { recursive: true })
   const sessionId = `session-${Date.now()}`
   const ephDir = resolve(sessionsDir, sessionId)
+  const gcResult = gcDevSessions(sessionsDir, { currentSessionId: sessionId })
+  if (gcResult.removed.length > 0) {
+    console.log(`[logos] removed stale sessions: ${gcResult.removed.join(", ")}`)
+  }
+  if (gcResult.failed.length > 0) {
+    console.warn(`[logos] failed to remove stale sessions: ${gcResult.failed.map((f) => f.sessionId).join(", ")}`)
+  }
   cpSync(src, ephDir, {
     recursive: true,
     filter: (s) => !/node_modules|\.logos_cache|\.logos$|\.vite-logos|dist$/.test(s),
   })
+  writeDevSessionPid(ephDir)
   for (const entry of readdirSync(src)) {
     const full = join(src, entry)
     if (entry === "node_modules" && existsSync(full)) {
