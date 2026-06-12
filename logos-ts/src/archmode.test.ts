@@ -582,7 +582,7 @@ export function totalArea(shapes: Shape[]): number {
     expect(readFile(dir, "b.ts")).toBe(b)
   })
 
-  it("React-style const component with props", () => {
+  it("React component keeps its full text — the render tree is the architecture", () => {
     const src = `import { type FC } from "react"
 
 export interface ButtonProps {
@@ -603,13 +603,60 @@ export const Button: FC<ButtonProps> = ({ label, onClick, disabled }) => {
 
     run("strip", dir, recFile)
     const stripped = readFile(dir, "Button.tsx")
-    expect(stripped).toContain("declare const Button")
-    expect(stripped).not.toContain("<button")
+    expect(stripped).toContain("<button onClick={onClick}")
+    expect(stripped).not.toContain("declare const Button")
 
     run("splice", dir, recFile)
     const restored = readFile(dir, "Button.tsx")
     expect(restored).toContain("<button onClick={onClick}")
     expect(restored).toContain("{label}")
+    expect(restored).not.toContain("declare")
+  })
+
+  it("agent edits to component JSX survive splice", () => {
+    const src = `import { type FC } from "react"
+
+export const Badge: FC<{ text: string }> = ({ text }) => {
+  return <span>{text}</span>
+}
+`
+    const { dir, recFile } = tracked(setupFixture({ "Badge.tsx": src }))
+
+    run("strip", dir, recFile)
+    // Simulate an arch agent reshaping the render tree
+    writeFileSync(join(dir, "Badge.tsx"), readFile(dir, "Badge.tsx").replace(
+      "<span>{text}</span>",
+      "<strong className=\"badge\">{text}</strong>",
+    ))
+
+    run("splice", dir, recFile)
+    const restored = readFile(dir, "Badge.tsx")
+    expect(restored).toContain("<strong className=\"badge\">{text}</strong>")
+    expect(restored).not.toContain("<span>")
+  })
+
+  it("non-component helper beside a component still strips and splices", () => {
+    const src = `import { type FC } from "react"
+
+export function labelFor(count: number): string {
+  return count === 1 ? "1 item" : count + " items"
+}
+
+export const Counter: FC<{ count: number }> = ({ count }) => {
+  return <div>{labelFor(count)}</div>
+}
+`
+    const { dir, recFile } = tracked(setupFixture({ "Counter.tsx": src }))
+
+    run("strip", dir, recFile)
+    const stripped = readFile(dir, "Counter.tsx")
+    expect(stripped).toContain("declare function labelFor")
+    expect(stripped).not.toContain("1 item")
+    expect(stripped).toContain("<div>{labelFor(count)}</div>")
+
+    run("splice", dir, recFile)
+    const restored = readFile(dir, "Counter.tsx")
+    expect(restored).toContain("count === 1")
     expect(restored).not.toContain("declare")
   })
 })
