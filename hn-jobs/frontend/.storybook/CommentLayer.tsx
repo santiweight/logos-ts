@@ -150,6 +150,17 @@ export function CommentLayer({
   const author = "you"
   const root = rootRef.current
 
+  const notifyStudio = (comment: { selector: string; label: string; text: string; mode: string }) => {
+    try {
+      window.parent?.postMessage({
+        type: "logos:story-comment",
+        storyId,
+        component,
+        ...comment,
+      }, "*")
+    } catch {}
+  }
+
   const saveDraft = async (p: SubmitPayload) => {
     if (!draft) return
     const selector = draft.selector
@@ -162,6 +173,7 @@ export function CommentLayer({
       author,
       mode: p.mode,
     })
+    notifyStudio({ selector, label: draft.label, text: p.text, mode: p.mode })
     setDraft(null)
     refresh()
     setOpenSelector(selector)
@@ -214,17 +226,19 @@ export function CommentLayer({
                   label={list[0]?.label ?? openSelector}
                   comments={list}
                   onAdd={async (p) => {
+                    const label = list[0]?.label ?? openSelector
                     await addComment({
                       storyId,
                       component,
                       selector: openSelector,
-                      label: list[0]?.label ?? openSelector,
+                      label,
                       text: p.text,
                       author,
                       mode: p.mode,
                     })
+                    notifyStudio({ selector: openSelector, label, text: p.text, mode: p.mode })
                     refresh()
-                  }}
+                  }
                   onRemove={async (id) => {
                     await removeComment(id)
                     refresh()

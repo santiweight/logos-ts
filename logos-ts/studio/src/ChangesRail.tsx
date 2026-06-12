@@ -1,4 +1,4 @@
-import type { Comment, WorkspaceMeta } from "./types"
+import type { Goal, WorkspaceMeta } from "./types"
 import { svgIcon } from "./icons"
 
 const branchIcon = svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 12)
@@ -8,17 +8,16 @@ const collapseIcon = svgIcon("M15 18l-6-6 6-6", 12)
 interface Props {
   open: boolean
   onToggle: () => void
-  comments: Comment[]
   workspaces: WorkspaceMeta[]
   workspacesLoading: boolean
   activeWorkspaceId: string | null
-  selected: { type: "workspace" | "comment"; id: string } | null
+  selected: { type: "workspace" | "goal"; id: string } | null
   onNewWorkspace: () => void
   onOpenWorkspace: (id: string) => void
   onFork: () => void
-  onSelectComment: (id: string) => void
+  onSelectGoal: (id: string) => void
   onDeleteWorkspace: (id: string) => void
-  onDeleteComment: (id: string) => void
+  onDeleteGoal: (wsId: string, goalId: string) => void
   agentRunning: boolean
   agentWorkspace: string | null
 }
@@ -26,7 +25,6 @@ interface Props {
 export function ChangesRail({
   open,
   onToggle,
-  comments,
   workspaces,
   workspacesLoading,
   activeWorkspaceId,
@@ -34,9 +32,9 @@ export function ChangesRail({
   onNewWorkspace,
   onOpenWorkspace,
   onFork,
-  onSelectComment,
+  onSelectGoal,
   onDeleteWorkspace,
-  onDeleteComment,
+  onDeleteGoal,
   agentRunning,
   agentWorkspace,
 }: Props) {
@@ -50,8 +48,6 @@ export function ChangesRail({
       </div>
     )
   }
-
-  const commentsFor = (wsId: string) => comments.filter((c) => c.workspaceId === wsId)
 
   return (
     <div className="rail">
@@ -80,7 +76,7 @@ export function ChangesRail({
         .map((w) => {
           const isActive = activeWorkspaceId === w.id
           const wsSelected = selected?.type === "workspace" && selected.id === w.id
-          const wsComments = commentsFor(w.id)
+          const goals = w.goals ?? []
           return (
             <div key={w.id}>
               <div
@@ -99,7 +95,7 @@ export function ChangesRail({
                 </button>
                 <span className="rail-dot fork">{branchIcon}</span> {w.name}
                 {w.parentId && <span className="rail-status"> · branch</span>}
-                {!isActive && wsComments.length > 0 && <span className="rail-status"> · {wsComments.length}</span>}
+                {!isActive && goals.length > 0 && <span className="rail-status"> · {goals.length}</span>}
                 {agentRunning && agentWorkspace === w.id && (
                   <span className="rail-agent" title="Agent running">
                     <span className="ag-spin">↻</span>
@@ -120,35 +116,36 @@ export function ChangesRail({
               </div>
 
               {isActive &&
-                wsComments
+                goals
                   .slice()
                   .reverse()
-                  .map((c) => {
-                    const cSelected = selected?.type === "comment" && selected.id === c.id
+                  .map((g) => {
+                    const gSelected = selected?.type === "goal" && selected.id === g.id
                     return (
                       <div
-                        key={c.id}
-                        className={`rail-row comment ${cSelected ? "active" : ""}`}
+                        key={g.id}
+                        className={`rail-row comment ${gSelected ? "active" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation()
-                          onSelectComment(c.id)
+                          onSelectGoal(g.id)
                         }}
                       >
                         <button
                           className="rail-del"
-                          title="Delete change (⌘⌫)"
+                          title="Delete goal (⌘⌫)"
                           onClick={(e) => {
                             e.stopPropagation()
-                            onDeleteComment(c.id)
+                            onDeleteGoal(w.id, g.id)
                           }}
                         >
                           ×
                         </button>
                         <div className="rail-target">
-                          {c.label}
-                          <span className={`cmode ${c.mode ?? "code"}`}>{c.mode ?? "code"}</span>
+                          {g.label}
+                          <span className={`cmode ${g.mode ?? "code"}`}>{g.mode ?? "code"}</span>
+                          <span className={`goal-status ${g.status}`}>{g.status}</span>
                         </div>
-                        <div className="rail-comment">{c.text}</div>
+                        <div className="rail-comment">{g.text}</div>
                       </div>
                     )
                   })}

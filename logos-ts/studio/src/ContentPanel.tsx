@@ -1,6 +1,6 @@
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { GraphView } from "./GraphView"
-import type { CommentApi, DiffStatus, FileEntry, FileItem, Selection, View } from "./types"
+import type { GoalApi, DiffStatus, FileEntry, FileItem, Selection, View } from "./types"
 
 interface Props {
   file: FileEntry
@@ -8,8 +8,8 @@ interface Props {
   storybookUrl: string
   onView: (view: View) => void
   onCapture: (storyId: string) => void
-  comments: CommentApi["comments"]
-  onComment: CommentApi["onComment"]
+  comments: GoalApi["comments"]
+  onComment: GoalApi["onComment"]
   diff: Record<string, DiffStatus>
 }
 

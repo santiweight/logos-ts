@@ -1,7 +1,7 @@
 import { createContext, useContext, useState } from "react"
-import type { CommentApi, DiffStatus } from "./types"
+import type { GoalApi, DiffStatus } from "./types"
 
-export const CommentCtx = createContext<CommentApi>({ comments: {}, onComment: () => {} })
+export const CommentCtx = createContext<GoalApi>({ comments: {}, onComment: () => {} })
 // nodeId -> diff status (green=added, blue=changed, red=removed) for the active workspace.
 export const DiffCtx = createContext<Record<string, DiffStatus>>({})
 

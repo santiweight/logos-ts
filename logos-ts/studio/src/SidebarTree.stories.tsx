@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { SidebarTree } from "./SidebarTree"
-import type { FileEntry, Comment, TestState } from "./types"
+import type { FileEntry, Goal, TestState } from "./types"
 
 const files: FileEntry[] = [
   {
@@ -79,12 +79,12 @@ export const WithDiff: Story = {
   },
 }
 
-export const WithComments: Story = {
+export const WithGoals: Story = {
   args: {
     comments: {
       "fn:parseJob": [
-        { id: "c1", target: "fn:parseJob", label: "parseJob", text: "needs refactor", workspaceId: "ws-1", mode: "code", createdAt: 0 },
-        { id: "c2", target: "fn:parseJob", label: "parseJob", text: "also fix types", workspaceId: "ws-1", mode: "arch", createdAt: 0 },
+        { id: "g1", target: "fn:parseJob", label: "parseJob", text: "needs refactor", mode: "code", createdAt: 0, status: "pending" as const },
+        { id: "g2", target: "fn:parseJob", label: "parseJob", text: "also fix types", mode: "arch", createdAt: 0, status: "done" as const },
       ],
     },
   },

@@ -72,24 +72,21 @@ export interface Selection {
   exportName?: string
 }
 
-export interface Comment {
+export interface Goal {
   id: string
-  target: string
-  label: string
   text: string
-  workspaceId: string | null
+  label: string
+  target: string
   mode: "code" | "arch"
   createdAt: number
-  author?: string
   storyId?: string | null
   selector?: string | null
   component?: string | null
-  agentId?: string | null
-  agentStatus?: string | null
+  status: "pending" | "running" | "done" | "error"
 }
 
-export interface CommentApi {
-  comments: Record<string, Comment[]>
+export interface GoalApi {
+  comments: Record<string, Goal[]>
   onComment: (target: string, label: string, x: number, y: number) => void
 }
 
@@ -115,8 +112,9 @@ export interface TestState {
 export interface WorkspaceMeta {
   id: string
   name: string
-  parentId?: string | null
+  parentId: string | null
   createdAt: number
+  goals: Goal[]
 }
 export interface Workspace extends WorkspaceMeta {
   index: StudioIndex

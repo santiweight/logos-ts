@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import type { Comment } from "./types"
+import type { Goal } from "./types"
 import { CommentPopup } from "./CommentPopup"
 
 const meta: Meta<typeof CommentPopup> = {
@@ -12,59 +12,54 @@ type Story = StoryObj<typeof CommentPopup>
 
 const noop = () => {}
 
-const existingComment: Comment = {
-  id: "c-1",
+const goal1: Goal = {
+  id: "g-1",
   target: "fn:buildStudioIndex",
   label: "buildStudioIndex",
   text: "Switch to the unified FileEntry model here",
-  workspaceId: "ws-1",
   mode: "code",
   createdAt: Date.now() - 180_000,
+  status: "done",
 }
 
-const agentComment: Comment = {
-  id: "c-2",
+const goal2: Goal = {
+  id: "g-2",
   target: "fn:buildStudioIndex",
   label: "buildStudioIndex",
   text: "Flatten the two-bucket model into files[]",
-  workspaceId: "ws-1",
   mode: "arch",
   createdAt: Date.now() - 60_000,
-  agentId: "agent-7f3a",
-  agentStatus: "done",
+  status: "done",
 }
 
-// Fresh popup with no existing comments — shows the composer.
-export const NewComment: Story = {
+export const NewGoal: Story = {
   args: {
     x: 200,
     y: 120,
     label: "buildStudioIndex",
-    comments: [],
+    goals: [],
     onAdd: noop,
     onClose: noop,
   },
 }
 
-// Popup showing an existing comment thread.
 export const WithThread: Story = {
   args: {
     x: 200,
     y: 120,
     label: "buildStudioIndex",
-    comments: [existingComment],
+    goals: [goal1],
     onAdd: noop,
     onClose: noop,
   },
 }
 
-// Thread with an agent-assigned comment showing status badge.
-export const WithAgentComment: Story = {
+export const WithMultipleGoals: Story = {
   args: {
     x: 200,
     y: 120,
     label: "buildStudioIndex",
-    comments: [existingComment, agentComment],
+    goals: [goal1, goal2],
     onAdd: noop,
     onClose: noop,
   },

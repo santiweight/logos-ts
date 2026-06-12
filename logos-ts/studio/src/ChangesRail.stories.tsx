@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import type { Comment, WorkspaceMeta } from "./types"
+import type { Goal, WorkspaceMeta } from "./types"
 import { ChangesRail } from "./ChangesRail"
 
 const meta: Meta<typeof ChangesRail> = {
@@ -18,10 +18,32 @@ type Story = StoryObj<typeof ChangesRail>
 
 const noop = () => {}
 
+const goal1: Goal = {
+  id: "g-1",
+  target: "fn:loadProject",
+  label: "loadProject",
+  text: "Add glob pattern parameter so callers can scope the file set",
+  mode: "code",
+  createdAt: Date.now() - 240_000,
+  status: "done",
+}
+
+const goal2: Goal = {
+  id: "g-2",
+  target: "cls:StudioIndex",
+  label: "StudioIndex",
+  text: "Flatten into a single files[] array",
+  mode: "arch",
+  createdAt: Date.now() - 120_000,
+  status: "pending",
+}
+
 const ws1: WorkspaceMeta = {
   id: "ws-1",
   name: "workspace-1",
+  parentId: null,
   createdAt: Date.now() - 300_000,
+  goals: [goal1, goal2],
 }
 
 const ws2: WorkspaceMeta = {
@@ -29,33 +51,13 @@ const ws2: WorkspaceMeta = {
   name: "workspace-2",
   parentId: "ws-1",
   createdAt: Date.now() - 60_000,
-}
-
-const comment1: Comment = {
-  id: "c-1",
-  target: "fn:loadProject",
-  label: "loadProject",
-  text: "Add glob pattern parameter so callers can scope the file set",
-  workspaceId: "ws-1",
-  mode: "code",
-  createdAt: Date.now() - 240_000,
-}
-
-const comment2: Comment = {
-  id: "c-2",
-  target: "cls:StudioIndex",
-  label: "StudioIndex",
-  text: "Flatten into a single files[] array",
-  workspaceId: "ws-1",
-  mode: "arch",
-  createdAt: Date.now() - 120_000,
+  goals: [],
 }
 
 export const Empty: Story = {
   args: {
     open: true,
     onToggle: noop,
-    comments: [],
     workspaces: [],
     workspacesLoading: false,
     activeWorkspaceId: null,
@@ -63,9 +65,9 @@ export const Empty: Story = {
     onNewWorkspace: noop,
     onOpenWorkspace: noop,
     onFork: noop,
-    onSelectComment: noop,
+    onSelectGoal: noop,
     onDeleteWorkspace: noop,
-    onDeleteComment: noop,
+    onDeleteGoal: noop,
     agentRunning: false,
     agentWorkspace: null,
   },
@@ -91,7 +93,6 @@ export const WithWorkspaces: Story = {
     ...Empty.args,
     workspaces: [ws1, ws2],
     activeWorkspaceId: "ws-1",
-    comments: [comment1, comment2],
   },
 }
 
@@ -103,9 +104,9 @@ export const AgentRunning: Story = {
   },
 }
 
-export const CommentSelected: Story = {
+export const GoalSelected: Story = {
   args: {
     ...WithWorkspaces.args,
-    selected: { type: "comment", id: "c-2" },
+    selected: { type: "goal", id: "g-2" },
   },
 }

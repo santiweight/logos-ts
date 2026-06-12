@@ -1,43 +1,49 @@
 import { defineConfig, type Plugin, type Connect } from "vite"
 import react from "@vitejs/plugin-react"
-import { execFile, execFileSync, spawn } from "node:child_process"
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, symlinkSync, watch } from "node:fs"
+import { execFile, execFileSync } from "node:child_process"
+import { writeFileSync, mkdirSync, watch, cpSync, existsSync, symlinkSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { dirname, resolve, relative, join } from "node:path"
-import * as commentDb from "../src/comment-db"
+import { dirname, resolve, join } from "node:path"
 import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
+import { WorkspaceManager } from "../src/workspace-manager"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
-const PROJECT_ROOT = resolve(process.env.LOGOS_PROJECT || resolve(STUDIO, "../../hn-jobs"))
+const SOURCE_PROJECT = resolve(process.env.LOGOS_PROJECT || resolve(STUDIO, "../../hn-jobs"))
+
+function copyProject(src: string): string {
+  const sessionsDir = resolve(LOGOS_TS, ".dev-sessions")
+  mkdirSync(sessionsDir, { recursive: true })
+  const sessionId = `session-${Date.now()}`
+  const ephDir = resolve(sessionsDir, sessionId)
+  cpSync(src, ephDir, {
+    recursive: true,
+    filter: (s) => !/node_modules|\.logos_cache|\.logos$|dist$|__snapshots__/.test(s),
+  })
+  for (const entry of readdirSync(src)) {
+    const full = join(src, entry)
+    if (entry === "node_modules" && existsSync(full)) {
+      symlinkSync(full, join(ephDir, entry))
+    }
+  }
+  const frontendNm = join(src, "frontend", "node_modules")
+  if (existsSync(frontendNm)) {
+    mkdirSync(join(ephDir, "frontend"), { recursive: true })
+    symlinkSync(frontendNm, join(ephDir, "frontend", "node_modules"))
+  }
+  console.log(`[logos] session: ${sessionId}`)
+  console.log(`[logos] copied ${src} → ${ephDir}`)
+  return ephDir
+}
+
+const PROJECT_ROOT = copyProject(SOURCE_PROJECT)
 const caps = detectProject(PROJECT_ROOT)
 console.log(`[logos] project: ${caps.root}`)
 console.log(`[logos] storybook: ${caps.storybook ? caps.storybook.configDir : "not found"}`)
 console.log(`[logos] tests: ${caps.tests ? caps.tests.command.join(" ") : "not found"}`)
 const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
-const LEGACY_COMMENTS = resolve(STUDIO, "comments.json")
-const WS_DIR = resolve(STUDIO, ".workspaces")
 const STUDIO_PORT_FILE = resolve(PROJECT_ROOT, ".logos", "studio-port")
-
-type SqliteDb = Awaited<ReturnType<typeof commentDb.open>>
-let _commentConn: SqliteDb | null = null
-async function commentConn(): Promise<SqliteDb> {
-  if (_commentConn) return _commentConn
-  _commentConn = await commentDb.open(PROJECT_ROOT)
-  await commentDb.migrateStudioJson(_commentConn, LEGACY_COMMENTS)
-  return _commentConn
-}
-
-const loadWorkspaceMetas = () => {
-  if (!existsSync(WS_DIR)) return []
-  return readdirSync(WS_DIR)
-    .filter((f) => f.endsWith(".json"))
-    .map((f) => {
-      const { index, ...meta } = JSON.parse(readFileSync(resolve(WS_DIR, f), "utf8"))
-      return meta
-    })
-}
 
 const sbManager = new StorybookManager(
   resolve(PROJECT_ROOT, ".logos", "storybooks.json"),
@@ -45,18 +51,16 @@ const sbManager = new StorybookManager(
   PROJECT_ROOT,
 )
 
-// Snapshot the current architecture/index — the "fork".
-const snapshotIndex = () => {
-  const args = [resolve(LOGOS_TS, "src/build-index.ts"), PROJECT_ROOT, "-"]
-  const baseSbUrl = sbManager.get("base")
-  if (baseSbUrl) args.push(baseSbUrl)
-  return JSON.parse(
-    execFileSync(tsx, args, {
-      cwd: LOGOS_TS,
-      encoding: "utf8",
-    })
-  )
-}
+const wsMgr = new WorkspaceManager({
+  wsDir: resolve(PROJECT_ROOT, ".workspaces"),
+  runsDir: resolve(LOGOS_TS, ".agent-runs"),
+  logosTsSrc: resolve(LOGOS_TS, "src"),
+  logosTsRoot: LOGOS_TS,
+  projectRoot: PROJECT_ROOT,
+  caps,
+  sbManager,
+  tsx,
+})
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((res) => {
@@ -66,7 +70,6 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
   })
 }
 
-// Expose logos-ts as a tiny dev API for the studio (index + capture).
 function studioApi(): Plugin {
   return {
     name: "logos-ts-studio-api",
@@ -83,10 +86,7 @@ function studioApi(): Plugin {
         const args = [resolve(LOGOS_TS, "src/build-index.ts"), PROJECT_ROOT, "-"]
         const baseSbUrl = sbManager.get("base")
         if (baseSbUrl) args.push(baseSbUrl)
-        const json = execFileSync(tsx, args, {
-          cwd: LOGOS_TS,
-          encoding: "utf8",
-        })
+        const json = execFileSync(tsx, args, { cwd: LOGOS_TS, encoding: "utf8" })
         res.setHeader("content-type", "application/json")
         res.end(json)
       })
@@ -100,7 +100,7 @@ function studioApi(): Plugin {
         }))
       })
 
-      // Persistent test runner — starts on boot, re-runs on file changes.
+      // Persistent test runner
       type TestState = {
         status: "running" | "pass" | "fail" | "idle"
         results: { total: number; passed: number; failed: number; failures: { test: string; file: string; message: string }[] } | null
@@ -125,7 +125,6 @@ function studioApi(): Plugin {
             testState.runningSince = null
           })
         }
-
         const DEBOUNCE_MS = 1500
         let debounce: ReturnType<typeof setTimeout> | null = null
         const onFileChange = (filename: string | null) => {
@@ -134,7 +133,7 @@ function studioApi(): Plugin {
           debounce = setTimeout(runTests, DEBOUNCE_MS)
         }
         for (const dir of caps.tests.watchDirs) {
-          try { watch(resolve(PROJECT_ROOT, dir), { recursive: true }, (_ev, f) => onFileChange(f)) } catch { /* dir may not exist */ }
+          try { watch(resolve(PROJECT_ROOT, dir), { recursive: true }, (_ev, f) => onFileChange(f)) } catch {}
         }
         runTests()
       }
@@ -146,8 +145,7 @@ function studioApi(): Plugin {
 
       server.middlewares.use("/api/graph", (_req, res) => {
         const json = execFileSync(tsx, [resolve(LOGOS_TS, "src/build-graph.ts"), PROJECT_ROOT], {
-          cwd: LOGOS_TS,
-          encoding: "utf8",
+          cwd: LOGOS_TS, encoding: "utf8",
         })
         res.setHeader("content-type", "application/json")
         res.end(json)
@@ -161,66 +159,71 @@ function studioApi(): Plugin {
         res.end(JSON.stringify(urls))
       })
 
+      // --- Workspace CRUD ---
       server.middlewares.use("/api/workspaces", async (req, res) => {
         res.setHeader("content-type", "application/json")
-        const sub = (req.url || "/").replace(/^\//, "").split("?")[0] // "" or "ws-123"
-        if (req.method === "GET") {
-          if (sub) {
-            const p = resolve(WS_DIR, `${sub}.json`)
-            if (!existsSync(p)) {
-              res.statusCode = 404
-              res.end("{}")
-              return
-            }
-            if (caps.storybook && !sbManager.get(sub)) {
-              const RUNS = resolve(STUDIO, "..", ".agent-runs")
-              const agentFrontend = join(RUNS, sub, relative(PROJECT_ROOT, caps.storybook.frontendDir))
-              const frontendDir = existsSync(agentFrontend) ? agentFrontend : caps.storybook.frontendDir
-              sbManager.ensure(sub, frontendDir).catch((e) =>
-                console.error(`[storybook:${sub}] failed to start:`, e.message)
-              )
-            }
-            res.end(readFileSync(p, "utf8"))
-            return
-          }
-          res.end(JSON.stringify(loadWorkspaceMetas()))
-          return
-        }
-        if (req.method === "POST") {
+        const sub = (req.url || "/").replace(/^\//, "").split("?")[0]
+
+        // POST /api/workspaces/:id/goals — add a goal
+        if (req.method === "POST" && sub.endsWith("/goals")) {
+          const wsId = sub.replace(/\/goals$/, "")
           const body = JSON.parse((await readBody(req)) || "{}")
-          const id = `ws-${Date.now()}`
-          // Branch from an existing workspace's copy, or snapshot base.
-          const fromId = body.fromWorkspaceId as string | undefined
-          const fromPath = fromId ? resolve(WS_DIR, `${fromId}.json`) : null
-          const index =
-            fromPath && existsSync(fromPath) ? JSON.parse(readFileSync(fromPath, "utf8")).index : snapshotIndex()
-          const ws = {
-            id,
-            name: String(body.name ?? "workspace"),
-            parentId: fromId ?? null,
+          const goal = wsMgr.addGoal(wsId, {
+            id: `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+            text: String(body.text ?? ""),
+            label: String(body.label ?? ""),
+            target: String(body.target ?? ""),
+            mode: body.mode === "arch" ? "arch" : "code",
             createdAt: Date.now(),
-            index,
-          }
-          if (!existsSync(WS_DIR)) mkdirSync(WS_DIR, { recursive: true })
-          writeFileSync(resolve(WS_DIR, `${id}.json`), JSON.stringify(ws))
-          const { index: _omit, ...meta } = ws
-          res.end(JSON.stringify(meta))
+            storyId: body.storyId ?? null,
+            selector: body.selector ?? null,
+            component: body.component ?? null,
+          })
+          if (!goal) { res.statusCode = 404; res.end(JSON.stringify({ error: "workspace not found" })); return }
+          res.end(JSON.stringify(goal))
           return
         }
-        if (req.method === "DELETE" && sub) {
-          sbManager.shutdown(sub)
-          rmSync(resolve(WS_DIR, `${sub}.json`), { force: true })
-          const db = await commentConn()
-          commentDb.removeByWorkspace(db, sub)
+
+        // DELETE /api/workspaces/:id/goals/:goalId
+        if (req.method === "DELETE" && sub.includes("/goals/")) {
+          const [wsId, , goalId] = sub.split("/")
+          wsMgr.removeGoal(wsId, goalId)
           res.end(JSON.stringify({ ok: true }))
           return
         }
+
+        if (req.method === "GET") {
+          if (sub) {
+            const ws = wsMgr.get(sub)
+            if (!ws) { res.statusCode = 404; res.end("{}"); return }
+            res.end(JSON.stringify(ws))
+            return
+          }
+          res.end(JSON.stringify(wsMgr.list()))
+          return
+        }
+
+        if (req.method === "POST") {
+          const body = JSON.parse((await readBody(req)) || "{}")
+          const meta = wsMgr.create({
+            name: body.name,
+            fromWorkspaceId: body.fromWorkspaceId,
+          })
+          res.end(JSON.stringify(meta))
+          return
+        }
+
+        if (req.method === "DELETE" && sub) {
+          wsMgr.delete(sub)
+          res.end(JSON.stringify({ ok: true }))
+          return
+        }
+
         res.statusCode = 405
         res.end()
       })
 
-      // Live agent run over SSE: materialize a real fork, spawn `claude` to
-      // address the workspace's comments, and stream its tool-call events.
+      // --- Agent run (SSE) — process next goal in a workspace's queue ---
       server.middlewares.use("/api/agent/run", async (req, res) => {
         const wsId = new URL(req.url || "", "http://x").searchParams.get("workspace") || ""
         res.setHeader("content-type", "text/event-stream")
@@ -228,229 +231,17 @@ function studioApi(): Plugin {
         res.setHeader("connection", "keep-alive")
         const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`)
 
-        const wsPath = resolve(WS_DIR, `${wsId}.json`)
-        if (!wsId || !existsSync(wsPath)) {
-          send({ type: "error", message: "no such workspace" })
-          return res.end()
-        }
-        const ws = JSON.parse(readFileSync(wsPath, "utf8"))
-        const db = await commentConn()
-        const allComments = commentDb.list(db)
-        const changes = allComments.filter((c) => c.workspaceId === wsId)
-        if (!changes.length) {
-          send({ type: "error", message: "this workspace has no changes to address" })
-          return res.end()
-        }
-
-        // Fork OUTSIDE the studio root so Vite never watches/serves it.
-        const RUNS = resolve(STUDIO, "..", ".agent-runs")
-        const dir = resolve(RUNS, wsId)
-        if (!existsSync(dir)) {
-          send({ type: "status", message: "forking working copy…" })
-          mkdirSync(RUNS, { recursive: true })
-          cpSync(PROJECT_ROOT, dir, {
-            recursive: true,
-            filter: (s) => !/node_modules|\.workspaces|\.logos_cache|dist|__snapshots__/.test(s),
-          })
-          for (const nmDir of caps.nodeModulesDirs) {
-            const rel = relative(PROJECT_ROOT, nmDir)
-            const target = join(dir, rel)
-            try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
-            try { symlinkSync(nmDir, target) } catch { /* exists */ }
-          }
-        }
-
-        if (caps.storybook) {
-          send({ type: "status", message: "starting workspace storybook…" })
-          const wsFrontend = join(dir, relative(PROJECT_ROOT, caps.storybook.frontendDir))
-          try {
-            await sbManager.ensure(wsId, wsFrontend)
-          } catch (e: any) {
-            send({ type: "stderr", message: "workspace storybook failed: " + e.message })
-          }
-        }
-
-        // Architecture mode: strip every function/method body to a stub so the
-        // agent edits a signatures-only "architecture view".
-        const mode = new URL(req.url || "", "http://x").searchParams.get("mode") || "code"
-        const bodiesFile = resolve(RUNS, `${wsId}.bodies.json`)
-        if (mode === "arch") {
-          send({ type: "status", message: "stripping to architecture view…" })
-          try {
-            execFileSync(tsx, [resolve(LOGOS_TS, "src/archmode.ts"), "strip", dir, bodiesFile], {
-              cwd: LOGOS_TS,
-              encoding: "utf8",
-            })
-          } catch (e) {
-            send({ type: "stderr", message: "strip failed: " + String(e) })
-          }
-        }
-
-        // Pre-load architecture context (recursive descent over the change's deps)
-        // so the agent skips discovery entirely.
-        send({ type: "status", message: "building architecture context…" })
-        const targets = [...new Set(changes.map((c: { target: string; component?: string | null }) =>
-          c.component ? `component:${c.component}` : c.target
-        ))]
-        let context = ""
-        try {
-          context = execFileSync(tsx, [resolve(LOGOS_TS, "src/context.ts"), dir, "40000", ...targets], {
-            cwd: LOGOS_TS,
-            encoding: "utf8",
-            maxBuffer: 16 * 1024 * 1024,
-          })
-        } catch (e) {
-          send({ type: "stderr", message: "context build failed: " + String(e) })
-        }
-
-        const list = changes.map((c: { label: string; text: string }) => `- (${c.label}) ${c.text}`).join("\n")
-        const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
-        const prompt =
-          mode === "arch"
-            ? `${context}\n\n${sandbox}` +
-              `You are in ARCHITECTURE MODE. The code is shown as pure SIGNATURES using \`declare\` — no bodies, no \`=\`, no values (e.g. \`export declare function parseJob(text: string): ParsedJob\`, \`export declare const TECH_KEYWORDS: TechKeyword[]\`, \`declare class JobStore { upsertJob(job: Job): Job }\`). The real implementations, values, and imports are filled back in automatically after you finish.\n\n` +
-              `Restructure the ARCHITECTURE to satisfy the change: move / split / rename / add these \`declare\` signatures across files (you may create and delete files). Keep everything as bare \`declare\` declarations — do NOT write bodies, values, or import statements. Just shape the signatures and where they live. Do not run tests.\n\n` +
-              `Change requests:\n${list}\n`
-            : `${context}\n\n${sandbox}` +
-              `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change (its path is the header in the context).\n\n` +
-              `Address these change requests:\n${list}\n\n` +
-              `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck.` +
-              (caps.tests
-                ? ` Do NOT run tests yourself. Tests auto-run on every file save via the test-runner MCP. ` +
-                  `After making changes, call \`test_results(wait_for_completion=true)\` to wait for the auto-triggered run to finish and see the results. ` +
-                  `Iterate until the tests relevant to your change pass; ignore pre-existing stub failures you didn't cause. ` +
-                  `Always check test_results before finishing — do not consider your work done until tests pass.`
-                : ` This project has no automated test runner configured. Verify your changes manually.`)
-
-        send({ type: "status", message: "starting agent…" })
-        const mcpConfig: { mcpServers: Record<string, unknown> } = { mcpServers: {} }
-        if (caps.tests) {
-          const testRunnerConfig = JSON.stringify({
-            cwd: dir,
-            command: caps.tests.command,
-            watch: caps.tests.watchDirs,
-            filePattern: "\\.(tsx?|jsx?)$",
-          })
-          mcpConfig.mcpServers["test-runner"] = {
-            command: tsx,
-            args: [resolve(LOGOS_TS, "src/test-runner-mcp.ts"), testRunnerConfig],
-          }
-        }
-        const mcpConfigPath = resolve(RUNS, `${wsId}.mcp.json`)
-        writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
-
-        const child = spawn(
-          "claude",
-          ["-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
-          { cwd: dir, stdio: ["ignore", "pipe", "pipe"] }
-        )
-        let buf = ""
-        child.stdout.on("data", (d) => {
-          buf += d.toString()
-          let i
-          while ((i = buf.indexOf("\n")) >= 0) {
-            const line = buf.slice(0, i)
-            buf = buf.slice(i + 1)
-            if (!line.trim()) continue
-            try {
-              send({ type: "event", event: JSON.parse(line) })
-            } catch {
-              send({ type: "raw", line })
-            }
-          }
+        const started = wsMgr.processNext(wsId, (evt) => {
+          send(evt)
+          if (evt.type === "done" || evt.type === "error") res.end()
         })
-        child.stderr.on("data", (d) => send({ type: "stderr", message: d.toString() }))
-        child.on("error", (e) => send({ type: "error", message: String(e) }))
-        child.on("close", (code) => {
-          if (mode === "arch") {
-            send({ type: "status", message: "splicing implementations + inferring imports…" })
-            try {
-              execFileSync(tsx, [resolve(LOGOS_TS, "src/archmode.ts"), "splice", dir, bodiesFile], {
-                cwd: LOGOS_TS,
-                encoding: "utf8",
-              })
-            } catch (e) {
-              send({ type: "stderr", message: "splice failed: " + String(e) })
-            }
-          }
-          try {
-            const reindexArgs = [resolve(LOGOS_TS, "src/build-index.ts"), dir, "-"]
-            const wsSbUrl = sbManager.get(wsId)
-            if (wsSbUrl) reindexArgs.push(wsSbUrl)
-            ws.index = JSON.parse(
-              execFileSync(tsx, reindexArgs, {
-                cwd: LOGOS_TS,
-                encoding: "utf8",
-              })
-            )
-            writeFileSync(wsPath, JSON.stringify(ws))
-          } catch {
-            /* re-index best effort */
-          }
-          rmSync(mcpConfigPath, { force: true })
-          send({ type: "done", code })
-          res.end()
-        })
-        req.on("close", () => {
-          try {
-            child.kill()
-          } catch {
-            /* ignore */
-          }
-        })
-      })
+        if (!started) return res.end()
 
-      server.middlewares.use("/api/comments", async (req, res) => {
-        res.setHeader("content-type", "application/json")
-        const sub = (req.url || "/").replace(/^\//, "").split("?")[0]
-        try {
-          const db = await commentConn()
-          if (req.method === "GET") {
-            res.end(JSON.stringify(commentDb.list(db)))
-            return
-          }
-          if (req.method === "PUT" && sub.endsWith("/workspace")) {
-            const id = sub.replace(/\/workspace$/, "")
-            const body = JSON.parse((await readBody(req)) || "{}")
-            commentDb.setWorkspace(db, id, body.workspaceId)
-            res.end(JSON.stringify({ ok: true }))
-            return
-          }
-          if (req.method === "DELETE" && sub) {
-            commentDb.remove(db, sub)
-            res.end(JSON.stringify({ ok: true }))
-            return
-          }
-          if (req.method === "POST") {
-            const body = JSON.parse((await readBody(req)) || "{}")
-            const row = commentDb.insert(db, {
-              id: `${Date.now()}-${Math.round(Math.random() * 1e6)}`,
-              target: String(body.target ?? ""),
-              label: String(body.label ?? ""),
-              text: String(body.text ?? ""),
-              workspaceId: body.workspaceId ?? null,
-              mode: body.mode === "arch" ? "arch" : "code",
-              createdAt: Date.now(),
-              storyId: body.storyId ?? null,
-              selector: body.selector ?? null,
-              component: body.component ?? null,
-            })
-            res.end(JSON.stringify(row))
-            return
-          }
-          res.statusCode = 405
-          res.end()
-        } catch (err) {
-          res.statusCode = 500
-          res.end(JSON.stringify({ error: String(err) }))
-        }
+        req.on("close", () => wsMgr.abort(wsId))
       })
 
       server.middlewares.use("/api/capture", async (req, res) => {
-        if (req.method !== "POST") {
-          res.statusCode = 405
-          return res.end()
-        }
+        if (req.method !== "POST") { res.statusCode = 405; return res.end() }
         res.setHeader("content-type", "application/json")
         if (!caps.storybook) {
           res.statusCode = 501
@@ -459,14 +250,12 @@ function studioApi(): Plugin {
         try {
           const { storyRef } = JSON.parse((await readBody(req)) || "{}")
           const out = execFileSync(tsx, [resolve(LOGOS_TS, "src/capture.ts"), PROJECT_ROOT, storyRef], {
-            cwd: LOGOS_TS,
-            encoding: "utf8",
+            cwd: LOGOS_TS, encoding: "utf8",
           })
           const testFile = (out.match(/captured -> (.+)/)?.[1] ?? "").trim()
           const frontendVitest = resolve(caps.storybook.frontendDir, "node_modules/.bin/vitest")
-          execFileSync(frontendVitest, ["run", relative(caps.storybook.frontendDir, testFile)], {
-            cwd: caps.storybook.frontendDir,
-            encoding: "utf8",
+          execFileSync(frontendVitest, ["run", resolve(caps.storybook.frontendDir, testFile)], {
+            cwd: caps.storybook.frontendDir, encoding: "utf8",
           })
           res.end(JSON.stringify({ ok: true, testFile }))
         } catch (e) {
@@ -500,7 +289,6 @@ export default defineConfig({
   plugins: [react(), studioApi(), autoStorybook()],
   server: {
     port: 0,
-    // never watch agent forks / workspace snapshots (they'd force full reloads)
     watch: { ignored: ["**/.workspaces/**", "**/.agent-runs/**"] },
   },
 })

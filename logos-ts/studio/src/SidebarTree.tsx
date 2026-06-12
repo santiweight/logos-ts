@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { ICONS } from "./icons"
 import { Tree, type NodeApi, type NodeRendererProps } from "react-arborist"
 import type {
-  Comment,
+  Goal,
   DiffStatus,
   FileEntry,
   FileItem,
@@ -33,7 +33,7 @@ interface Props {
   files: FileEntry[]
   selection: Selection
   onSelect: (sel: Selection) => void
-  comments: Record<string, Comment[] | undefined>
+  comments: Record<string, Goal[] | undefined>
   onComment: (target: string, label: string, x: number, y: number) => void
   diff: Record<string, DiffStatus>
   testState: TestState | null

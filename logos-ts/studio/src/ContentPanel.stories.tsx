@@ -93,11 +93,11 @@ export const WithDiff: Story = {
   },
 }
 
-export const WithComments: Story = {
+export const WithGoals: Story = {
   args: {
     comments: {
       "component:JobCard": [
-        { id: "c1", target: "component:JobCard", label: "<JobCard/>", text: "Add loading skeleton", workspaceId: "ws-1", mode: "code", createdAt: 0 },
+        { id: "g1", target: "component:JobCard", label: "<JobCard/>", text: "Add loading skeleton", mode: "code", createdAt: 0, status: "pending" as const },
       ],
     },
   },

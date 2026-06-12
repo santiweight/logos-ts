@@ -1,5 +1,7 @@
 node_modules
 .agent-runs/
+.dev-project/
+.dev-sessions/
 .workspaces/
 .storybook.pid
 comments.json
