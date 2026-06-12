@@ -7,9 +7,14 @@
 //   AgentRun   — executes one goal in a workspace's fork directory
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync, readdirSync } from "node:fs"
+import { writeFile } from "node:fs/promises"
 import { resolve, relative, join, dirname } from "node:path"
-import { execFileSync, spawn, type ChildProcess } from "node:child_process"
+import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
+import { promisify } from "node:util"
+
+const execFileAsync = promisify(execFile)
 import type { StorybookManager } from "./storybook-manager"
+import type { ClaudeSessionManager } from "./claude-session-manager.js"
 
 export interface Goal {
   id: string
@@ -22,6 +27,7 @@ export interface Goal {
   selector?: string | null
   component?: string | null
   status: "pending" | "running" | "done" | "error"
+  sessionId?: string | null
 }
 
 export interface WorkspaceState {
@@ -58,7 +64,7 @@ interface ProjectCaps {
 
 export class WorkspaceManager {
   private workspaces = new Map<string, WorkspaceState>()
-  private runningAgents = new Map<string, ChildProcess>()
+  private runningAgents = new Map<string, ChildProcess>() // goalId → child
   private wsDir: string
   private runsDir: string
   private logosTsSrc: string
@@ -66,6 +72,7 @@ export class WorkspaceManager {
   private projectRoot: string
   private caps: ProjectCaps
   private sbManager: StorybookManager
+  private sessions: ClaudeSessionManager
   private tsx: string
 
   constructor(opts: {
@@ -76,6 +83,7 @@ export class WorkspaceManager {
     projectRoot: string
     caps: ProjectCaps
     sbManager: StorybookManager
+    sessions: ClaudeSessionManager
     tsx: string
   }) {
     this.wsDir = opts.wsDir
@@ -85,6 +93,7 @@ export class WorkspaceManager {
     this.projectRoot = opts.projectRoot
     this.caps = opts.caps
     this.sbManager = opts.sbManager
+    this.sessions = opts.sessions
     this.tsx = opts.tsx
 
     mkdirSync(this.wsDir, { recursive: true })
@@ -182,13 +191,18 @@ export class WorkspaceManager {
     const ws = this.workspaces.get(id)
     if (!ws) return
 
-    // Kill any running agent
-    const child = this.runningAgents.get(id)
-    if (child) { try { child.kill() } catch {} }
-    this.runningAgents.delete(id)
+    // Kill any running agents for this workspace's goals
+    for (const g of ws.goals) {
+      const child = this.runningAgents.get(g.id)
+      if (child) { try { child.kill() } catch {} }
+      this.runningAgents.delete(g.id)
+    }
 
     // Shutdown workspace storybook
     this.sbManager.shutdown(id)
+
+    // Remove sessions
+    this.sessions.deleteByWorkspace(id)
 
     // Remove fork directory
     rmSync(ws.forkDir, { recursive: true, force: true })
@@ -223,24 +237,23 @@ export class WorkspaceManager {
     return this.workspaces.get(wsId)?.goals.find((g) => g.status === "pending")
   }
 
-  isRunning(wsId: string): boolean {
-    return this.runningAgents.has(wsId)
+  isGoalRunning(goalId: string): boolean {
+    return this.runningAgents.has(goalId)
   }
 
-  /** Process the next pending goal in the workspace's queue. Returns false if nothing to do. */
-  processNext(wsId: string, onEvent: AgentEventCallback): boolean {
+  /** Process the next pending goal in the workspace's queue. Returns the goal ID, or null if nothing to do. */
+  processNext(wsId: string, onEvent: AgentEventCallback): string | null {
     const ws = this.workspaces.get(wsId)
-    if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return false }
-    if (this.runningAgents.has(wsId)) { onEvent({ type: "error", message: "agent already running" }); return false }
+    if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return null }
 
-    const goal = ws.goals.find((g) => g.status === "pending")
-    if (!goal) { onEvent({ type: "error", message: "no pending goals" }); return false }
+    const goal = ws.goals.find((g) => g.status === "pending" && !this.runningAgents.has(g.id))
+    if (!goal) { onEvent({ type: "error", message: "no pending goals" }); return null }
 
     goal.status = "running"
     this.save(ws)
 
     this.runGoalAgent(ws, goal, onEvent)
-    return true
+    return goal.id
   }
 
   private async runGoalAgent(ws: WorkspaceState, goal: Goal, onEvent: AgentEventCallback): Promise<void> {
@@ -248,11 +261,11 @@ export class WorkspaceManager {
 
     // Architecture mode: strip bodies
     const mode = goal.mode
-    const bodiesFile = resolve(this.runsDir, `${ws.id}.bodies.json`)
+    const bodiesFile = resolve(this.runsDir, `${goal.id}.bodies.json`)
     if (mode === "arch") {
       onEvent({ type: "status", message: "stripping to architecture view…" })
       try {
-        execFileSync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "strip", dir, bodiesFile], {
+        await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "strip", dir, bodiesFile], {
           cwd: this.logosTsRoot, encoding: "utf8",
         })
       } catch (e) {
@@ -265,15 +278,21 @@ export class WorkspaceManager {
     const targets = [goal.component ? `component:${goal.component}` : goal.target]
     let context = ""
     try {
-      context = execFileSync(this.tsx, [resolve(this.logosTsRoot, "src/context.ts"), dir, "40000", ...targets], {
+      const { stdout } = await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/context.ts"), dir, "40000", ...targets], {
         cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
       })
+      context = stdout
     } catch (e) {
       onEvent({ type: "stderr", message: "context build failed: " + String(e) })
     }
 
     const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
-    const goalLine = `- (${goal.label}) ${goal.text}`
+    const elementContext = [
+      goal.component && `component: ${goal.component}`,
+      goal.storyId && `story: ${goal.storyId}`,
+      goal.selector && `element: ${goal.selector}`,
+    ].filter(Boolean).join(", ")
+    const goalLine = `- (${goal.label}${elementContext ? ` [${elementContext}]` : ""}) ${goal.text}`
     const prompt =
       mode === "arch"
         ? `${context}\n\n${sandbox}` +
@@ -305,16 +324,38 @@ export class WorkspaceManager {
         args: [resolve(this.logosTsRoot, "src/test-runner-mcp.ts"), testRunnerConfig],
       }
     }
-    const mcpConfigPath = resolve(this.runsDir, `${ws.id}.mcp.json`)
-    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
+    const mcpConfigPath = resolve(this.runsDir, `${goal.id}.mcp.json`)
+    await writeFile(mcpConfigPath, JSON.stringify(mcpConfig))
 
     onEvent({ type: "status", message: "starting agent…" })
+
+    const session = this.sessions.create(goal.id, ws.id)
+    let sessionId = session.id
+    goal.sessionId = sessionId
+    this.save(ws)
+
+    const recordAndEmit = (evt: AgentEvent) => {
+      this.sessions.addEvent(sessionId, evt.type, evt)
+
+      if (evt.type === "event") {
+        const e = evt.event as Record<string, unknown> | undefined
+        if (e?.type === "system" && e?.subtype === "init" && typeof e?.session_id === "string") {
+          this.sessions.setClaudeId(sessionId, e.session_id)
+          sessionId = e.session_id
+          goal.sessionId = sessionId
+          this.save(ws)
+        }
+      }
+
+      onEvent(evt)
+    }
+
     const child = spawn(
       "claude",
       ["-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
       { cwd: dir, stdio: ["ignore", "pipe", "pipe"] },
     )
-    this.runningAgents.set(ws.id, child)
+    this.runningAgents.set(goal.id, child)
 
     let buf = ""
     child.stdout.on("data", (d) => {
@@ -324,22 +365,22 @@ export class WorkspaceManager {
         const line = buf.slice(0, i)
         buf = buf.slice(i + 1)
         if (!line.trim()) continue
-        try { onEvent({ type: "event", event: JSON.parse(line) }) } catch { onEvent({ type: "raw", line }) }
+        try { recordAndEmit({ type: "event", event: JSON.parse(line) }) } catch { recordAndEmit({ type: "raw", line }) }
       }
     })
-    child.stderr.on("data", (d) => onEvent({ type: "stderr", message: d.toString() }))
-    child.on("error", (e) => onEvent({ type: "error", message: String(e) }))
-    child.on("close", (code) => {
-      this.runningAgents.delete(ws.id)
+    child.stderr.on("data", (d) => recordAndEmit({ type: "stderr", message: d.toString() }))
+    child.on("error", (e) => recordAndEmit({ type: "error", message: String(e) }))
+    child.on("close", async (code) => {
+      this.runningAgents.delete(goal.id)
 
       if (mode === "arch") {
-        onEvent({ type: "status", message: "splicing implementations + inferring imports…" })
+        recordAndEmit({ type: "status", message: "splicing implementations + inferring imports…" })
         try {
-          execFileSync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "splice", dir, bodiesFile], {
+          await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "splice", dir, bodiesFile], {
             cwd: this.logosTsRoot, encoding: "utf8",
           })
         } catch (e) {
-          onEvent({ type: "stderr", message: "splice failed: " + String(e) })
+          recordAndEmit({ type: "stderr", message: "splice failed: " + String(e) })
         }
       }
 
@@ -348,24 +389,27 @@ export class WorkspaceManager {
         const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), dir, "-"]
         const wsSbUrl = this.sbManager.get(ws.id)
         if (wsSbUrl) reindexArgs.push(wsSbUrl)
-        ws.index = JSON.parse(
-          execFileSync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
-        )
+        const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
+        ws.index = JSON.parse(stdout)
       } catch { /* best effort */ }
 
       goal.status = code === 0 ? "done" : "error"
       this.save(ws)
       rmSync(mcpConfigPath, { force: true })
-      onEvent({ type: "done", code })
+      recordAndEmit({ type: "done", code })
     })
   }
 
-  /** Kill a running agent for a workspace. */
-  abort(wsId: string): void {
-    const child = this.runningAgents.get(wsId)
+  get sessionManager(): ClaudeSessionManager {
+    return this.sessions
+  }
+
+  /** Kill the running agent for a goal. */
+  abort(goalId: string): void {
+    const child = this.runningAgents.get(goalId)
     if (child) {
       try { child.kill() } catch {}
-      this.runningAgents.delete(wsId)
+      this.runningAgents.delete(goalId)
     }
   }
 }

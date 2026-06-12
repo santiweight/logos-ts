@@ -68,8 +68,7 @@ export const Empty: Story = {
     onSelectGoal: noop,
     onDeleteWorkspace: noop,
     onDeleteGoal: noop,
-    agentRunning: false,
-    agentWorkspace: null,
+    runningGoals: new Set<string>(),
   },
 }
 
@@ -99,8 +98,7 @@ export const WithWorkspaces: Story = {
 export const AgentRunning: Story = {
   args: {
     ...WithWorkspaces.args,
-    agentRunning: true,
-    agentWorkspace: "ws-1",
+    runningGoals: new Set(["g-1"]),
   },
 }
 

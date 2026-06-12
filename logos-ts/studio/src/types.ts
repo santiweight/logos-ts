@@ -83,6 +83,7 @@ export interface Goal {
   selector?: string | null
   component?: string | null
   status: "pending" | "running" | "done" | "error"
+  sessionId?: string | null
 }
 
 export interface GoalApi {

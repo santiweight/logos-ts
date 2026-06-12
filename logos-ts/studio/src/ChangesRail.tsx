@@ -18,8 +18,7 @@ interface Props {
   onSelectGoal: (id: string) => void
   onDeleteWorkspace: (id: string) => void
   onDeleteGoal: (wsId: string, goalId: string) => void
-  agentRunning: boolean
-  agentWorkspace: string | null
+  runningGoals: Set<string>
 }
 
 export function ChangesRail({
@@ -35,8 +34,7 @@ export function ChangesRail({
   onSelectGoal,
   onDeleteWorkspace,
   onDeleteGoal,
-  agentRunning,
-  agentWorkspace,
+  runningGoals,
 }: Props) {
   if (!open) {
     return (
@@ -96,7 +94,7 @@ export function ChangesRail({
                 <span className="rail-dot fork">{branchIcon}</span> {w.name}
                 {w.parentId && <span className="rail-status"> · branch</span>}
                 {!isActive && goals.length > 0 && <span className="rail-status"> · {goals.length}</span>}
-                {agentRunning && agentWorkspace === w.id && (
+                {goals.some((g) => runningGoals.has(g.id)) && (
                   <span className="rail-agent" title="Agent running">
                     <span className="ag-spin">↻</span>
                   </span>
