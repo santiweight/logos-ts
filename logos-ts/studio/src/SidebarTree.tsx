@@ -149,8 +149,9 @@ function buildData(
           sel: { file: f.file, view: "captured" as View, exportName: cap.exportName },
         }
       })
+      const compId = `comp:${comp.name}`
       children.push({
-        id: `comp:${comp.name}`,
+        id: compId,
         name: comp.name,
         kind: "comp",
         status,
@@ -159,6 +160,7 @@ function buildData(
         sel: { file: f.file, view: "code" },
         children: [...storyNodes, ...capturedNodes].length ? [...storyNodes, ...capturedNodes] : undefined,
       })
+      openIds[`file:${f.file}`] = true
     }
 
     const items = f.items.slice().sort((a, b) => a.name.localeCompare(b.name))
@@ -219,8 +221,7 @@ function buildData(
     return out
   }
 
-  const data = dirNodes(root, "")
-  return { data, openIds }
+  return { data: dirNodes(root, ""), openIds }
 }
 
 const GLYPH: Record<Kind, ReactNode> = {
@@ -361,6 +362,7 @@ export function SidebarTree({
       </div>
       <div className="sidebar-tree" ref={ref}>
         <Tree<SNode>
+          key={files.length}
           data={data}
           idAccessor="id"
           openByDefault={false}
