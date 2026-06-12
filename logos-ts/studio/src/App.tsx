@@ -9,6 +9,7 @@ import { ArchDiffPanel } from "./ArchDiffPanel"
 import { diffIndex } from "./diff"
 import type {
   Goal,
+  SbState,
   Selection,
   StudioIndex,
   TestState,
@@ -42,15 +43,23 @@ export function App() {
   const view = activeWorkspaceId && workspaceIndex ? workspaceIndex : index
 
   const [storybookUrls, setStorybookUrls] = useState<Record<string, string>>({})
+  const [storybookStates, setStorybookStates] = useState<Record<string, SbState>>({})
   const refreshStorybooks = useCallback(async () => {
     try {
       const res = await fetch("/api/storybooks")
-      if (res.ok) setStorybookUrls((await res.json()) as Record<string, string>)
+      if (res.ok) {
+        const data = await res.json() as { urls: Record<string, string>; states: Record<string, SbState> }
+        setStorybookUrls(data.urls)
+        setStorybookStates(data.states)
+      }
     } catch {}
   }, [])
   const activeStorybookUrl = activeWorkspaceId
     ? storybookUrls[activeWorkspaceId] ?? ""
     : index.storybookUrl || ""
+  const activeStorybookState = activeWorkspaceId
+    ? storybookStates[activeWorkspaceId] ?? null
+    : null
 
   const diff = useMemo(
     () => (activeWorkspaceId && workspaceIndex ? diffIndex(index, workspaceIndex) : {}),
@@ -382,6 +391,7 @@ export function App() {
             file={currentFile}
             selection={selection}
             storybookUrl={activeStorybookUrl}
+            storybookState={activeStorybookState}
             onView={setView}
             onCapture={onCapture}
             comments={goalsByTarget}

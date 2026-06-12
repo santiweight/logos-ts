@@ -45,12 +45,17 @@ async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<st
   })
 }
 
+async function getStorybookUrls(): Promise<Record<string, string>> {
+  const res = await api("/api/storybooks")
+  const data = await res.json() as { urls: Record<string, string> }
+  return data.urls
+}
+
 async function waitForStorybook(timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
-      const res = await api("/api/storybooks")
-      const urls = await res.json() as Record<string, string>
+      const urls = await getStorybookUrls()
       if (urls.base) return
     } catch {}
     await new Promise((r) => setTimeout(r, 500))
@@ -85,9 +90,7 @@ describe("workspace + storybook integration", () => {
   })
 
   it("base storybook is accessible", async () => {
-    const res = await api("/api/storybooks")
-    expect(res.ok).toBe(true)
-    const urls = await res.json() as Record<string, string>
+    const urls = await getStorybookUrls()
     expect(urls.base).toBeDefined()
     expect(urls.base).toMatch(/^http:\/\/localhost:\d+$/)
 
@@ -108,8 +111,7 @@ describe("workspace + storybook integration", () => {
     // Give time for any erroneous spawning
     await new Promise((r) => setTimeout(r, 2_000))
 
-    const sbRes = await api("/api/storybooks")
-    const urls = await sbRes.json() as Record<string, string>
+    const urls = await getStorybookUrls()
     expect(urls[ws.id]).toBeUndefined()
     expect(urls.base).toBeDefined()
   })
@@ -140,8 +142,7 @@ describe("workspace + storybook integration", () => {
     // Wait to see if an agent run triggers
     await new Promise((r) => setTimeout(r, 3_000))
 
-    const sbRes = await api("/api/storybooks")
-    const urls = await sbRes.json() as Record<string, string>
+    const urls = await getStorybookUrls()
     // Only base should exist — no workspace storybook should have been spawned
     // because agent runs are triggered client-side, not server-side
     expect(Object.keys(urls)).toEqual(["base"])
@@ -161,8 +162,7 @@ describe("workspace + storybook integration", () => {
     const deadline = Date.now() + 35_000
     let wsSbUrl: string | undefined
     while (Date.now() < deadline) {
-      const sbRes = await api("/api/storybooks")
-      const urls = await sbRes.json() as Record<string, string>
+      const urls = await getStorybookUrls()
       if (urls[ws.id]) {
         wsSbUrl = urls[ws.id]
         break
@@ -171,12 +171,11 @@ describe("workspace + storybook integration", () => {
     }
     expect(wsSbUrl).toBeDefined()
     expect(wsSbUrl).toMatch(/^http:\/\/localhost:\d+$/)
-    expect(wsSbUrl).not.toBe((await api("/api/storybooks").then(r => r.json()) as Record<string, string>).base)
+    expect(wsSbUrl).not.toBe((await getStorybookUrls()).base)
   }, 45_000)
 
   it("active storybook URL falls back to base when workspace has no storybook", async () => {
-    const sbRes = await api("/api/storybooks")
-    const urls = await sbRes.json() as Record<string, string>
+    const urls = await getStorybookUrls()
 
     // For any workspace ID that doesn't have a storybook entry,
     // the frontend derivation should fall back to base
@@ -226,8 +225,7 @@ describe("workspace + storybook integration", () => {
     let wsSbUrl: string | undefined
     const deadline = Date.now() + 45_000
     while (Date.now() < deadline) {
-      const sbRes = await api("/api/storybooks")
-      const urls = await sbRes.json() as Record<string, string>
+      const urls = await getStorybookUrls()
       if (urls[ws.id]) {
         wsSbUrl = urls[ws.id]
         break
@@ -258,8 +256,7 @@ describe("workspace + storybook integration", () => {
 
     await api(`/api/workspaces/${ws.id}`, { method: "DELETE" })
 
-    const sbRes = await api("/api/storybooks")
-    const urls = await sbRes.json() as Record<string, string>
+    const urls = await getStorybookUrls()
     expect(urls[ws.id]).toBeUndefined()
   })
 })

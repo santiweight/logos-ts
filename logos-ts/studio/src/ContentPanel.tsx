@@ -1,11 +1,13 @@
+import { useState, useEffect, useRef } from "react"
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { GraphView } from "./GraphView"
-import type { GoalApi, DiffStatus, FileEntry, FileItem, Selection, View } from "./types"
+import type { GoalApi, DiffStatus, FileEntry, FileItem, SbState, Selection, View } from "./types"
 
 interface Props {
   file: FileEntry
   selection: Selection
   storybookUrl: string
+  storybookState: SbState | null
   onView: (view: View) => void
   onCapture: (storyId: string) => void
   comments: GoalApi["comments"]
@@ -17,6 +19,7 @@ export function ContentPanel({
   file,
   selection,
   storybookUrl,
+  storybookState,
   onView,
   onCapture,
   comments,
@@ -69,6 +72,7 @@ export function ContentPanel({
             <StoryView
               storyId={selection.storyId}
               storybookUrl={storybookUrl}
+              storybookState={storybookState}
               onCapture={onCapture}
             />
           )}
@@ -237,17 +241,68 @@ function FileCodeView({ file }: { file: FileEntry }) {
   )
 }
 
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(iv)
+  }, [])
+  const sec = Math.floor((now - since) / 1000)
+  return <>{sec}s</>
+}
+
 function StoryView({
   storyId,
   storybookUrl,
+  storybookState,
   onCapture,
 }: {
   storyId?: string
   storybookUrl: string
+  storybookState: SbState | null
   onCapture: (storyId: string) => void
 }) {
+  const logsEndRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [storybookState?.logs.length])
+
   if (!storyId) return <div className="empty">No story selected.</div>
-  if (!storybookUrl) return <div className="empty">Waiting for workspace Storybook to start…</div>
+
+  if (!storybookUrl) {
+    if (storybookState?.status === "failed") {
+      return (
+        <div className="sb-startup">
+          <div className="sb-startup-header sb-failed">Storybook failed to start</div>
+          {storybookState.error && <div className="sb-startup-error">{storybookState.error}</div>}
+          {storybookState.logs.length > 0 && (
+            <pre className="sb-startup-logs">
+              {storybookState.logs.join("\n")}
+              <div ref={logsEndRef} />
+            </pre>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div className="sb-startup">
+        <div className="sb-startup-header">
+          <span className="ag-spin">⟳</span>{" "}
+          Starting Storybook
+          {storybookState?.startedAt && <> (<Elapsed since={storybookState.startedAt} />)</>}
+          ...
+        </div>
+        {storybookState?.logs && storybookState.logs.length > 0 && (
+          <pre className="sb-startup-logs">
+            {storybookState.logs.join("\n")}
+            <div ref={logsEndRef} />
+          </pre>
+        )}
+      </div>
+    )
+  }
+
   const src = `${storybookUrl}/iframe.html?id=${storyId}&viewMode=story`
   return (
     <div className="pane">

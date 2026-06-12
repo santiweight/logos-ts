@@ -152,9 +152,10 @@ function studioApi(): Plugin {
       server.middlewares.use("/api/storybooks", (_req, res) => {
         res.setHeader("content-type", "application/json")
         const entries = sbManager.all()
+        const states = sbManager.allStates()
         const urls: Record<string, string> = {}
         for (const [id, entry] of Object.entries(entries)) urls[id] = entry.url
-        res.end(JSON.stringify(urls))
+        res.end(JSON.stringify({ urls, states }))
       })
 
       // --- Workspace CRUD ---

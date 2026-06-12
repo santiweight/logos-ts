@@ -109,6 +109,13 @@ export interface TestState {
   runningSince: number | null
 }
 
+export interface SbState {
+  status: "starting" | "ready" | "failed"
+  startedAt: number
+  logs: string[]
+  error?: string
+}
+
 export interface WorkspaceMeta {
   id: string
   name: string
