@@ -313,7 +313,6 @@ export function SidebarTree({
   diff,
   testState,
 }: Props) {
-  const [term, setTerm] = useState("")
   const results = testState?.results ?? null
   const testsRunning = testState?.status === "running"
   const failingTests = useMemo(() => {
@@ -347,19 +346,6 @@ export function SidebarTree({
 
   return (
     <SidebarCtx.Provider value={ctx}>
-      <div className="sidebar-search">
-        <input
-          className="sidebar-search-input"
-          placeholder="Filter files & symbols…"
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-        />
-        {term && (
-          <button className="sidebar-search-clear" onClick={() => setTerm("")} title="Clear">
-            ✕
-          </button>
-        )}
-      </div>
       <div className="sidebar-tree" ref={ref}>
         <Tree<SNode>
           key={files.length}
@@ -375,8 +361,6 @@ export function SidebarTree({
           disableDrag
           disableDrop
           disableEdit
-          searchTerm={term}
-          searchMatch={(node, t) => node.data.name.toLowerCase().includes(t.toLowerCase())}
         >
           {Node}
         </Tree>
