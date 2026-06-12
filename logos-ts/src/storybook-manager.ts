@@ -246,7 +246,23 @@ export class StorybookManager {
       state.error = e.message
       console.error(`[storybook-mgr] ${id} spawn error:`, e.message)
     })
-    child.stdout?.on("data", (d: Buffer) => this.pushLog(id, d.toString()))
+    let stdoutBuf = ""
+    let actualUrl = url
+    let actualPort = port
+    child.stdout?.on("data", (d: Buffer) => {
+      const chunk = d.toString()
+      this.pushLog(id, chunk)
+      stdoutBuf += chunk
+      const m = stdoutBuf.match(/https?:\/\/localhost:(\d+)/)
+      if (m) {
+        const parsed = parseInt(m[1], 10)
+        if (parsed !== port) {
+          console.log(`[storybook-mgr] ${id} bound to port ${parsed} instead of allocated ${port}`)
+          actualPort = parsed
+          actualUrl = `http://localhost:${parsed}`
+        }
+      }
+    })
     child.stderr?.on("data", (d: Buffer) => this.pushLog(id, d.toString()))
 
     if (!child.pid) {
@@ -267,22 +283,22 @@ export class StorybookManager {
         try { child.kill() } catch {}
         this.live.delete(id)
         state.status = "failed"
-        state.error = `storybook for ${id} did not answer on ${url} within ${STARTUP_TIMEOUT_MS / 1000}s — see ${this.logFile(id)}`
+        state.error = `storybook for ${id} did not answer on ${actualUrl} within ${STARTUP_TIMEOUT_MS / 1000}s — see ${this.logFile(id)}`
         throw new Error(state.error)
       }
       try {
-        const res = await fetch(`${url}/index.json`, { signal: AbortSignal.timeout(2_000) })
+        const res = await fetch(`${actualUrl}/index.json`, { signal: AbortSignal.timeout(2_000) })
         if (res.ok) break
       } catch { /* not up yet */ }
       await new Promise((r) => setTimeout(r, READY_POLL_MS))
     }
 
-    const entry: SbEntry = { id, pid: child.pid, port, url, cwd: frontendDir, startedAt: Date.now() }
+    const entry: SbEntry = { id, pid: child.pid, port: actualPort, url: actualUrl, cwd: frontendDir, startedAt: Date.now() }
     this.registry[id] = entry
     state.status = "ready"
     this.save()
-    console.log(`[storybook-mgr] ${id} ready on ${url} (pid ${child.pid})`)
-    return url
+    console.log(`[storybook-mgr] ${id} ready on ${actualUrl} (pid ${child.pid})`)
+    return actualUrl
   }
 
   /** Kill a specific workspace's Storybook and forget its state. */
