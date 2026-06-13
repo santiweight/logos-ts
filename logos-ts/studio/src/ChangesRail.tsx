@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { useEffect, useState } from "react"
 import type { Goal, WorkspaceMeta } from "./types"
 import { svgIcon } from "./icons"
 
@@ -18,6 +19,7 @@ interface Props {
   onResetWorkspaces: () => void
   onOpenWorkspace: (id: string) => void
   onFork: () => void
+  onCreatePullRequest: (id: string) => void
   onSelectGoal: (id: string) => void
   onDeleteWorkspace: (id: string) => void
   onDeleteGoal: (wsId: string, goalId: string) => void
@@ -35,11 +37,28 @@ export function ChangesRail({
   onResetWorkspaces,
   onOpenWorkspace,
   onFork,
+  onCreatePullRequest,
   onSelectGoal,
   onDeleteWorkspace,
   onDeleteGoal,
   runningGoals,
 }: Props) {
+  const [menu, setMenu] = useState<{ x: number; y: number; workspaceId: string } | null>(null)
+
+  useEffect(() => {
+    if (!menu) return
+    const close = () => setMenu(null)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close()
+    }
+    window.addEventListener("click", close)
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.removeEventListener("click", close)
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [menu])
+
   if (!open) {
     return (
       <div className="rail collapsed">
@@ -87,6 +106,11 @@ export function ChangesRail({
               <div
                 className={`rail-row ws ${isActive || wsSelected ? "active" : ""}`}
                 onClick={() => onOpenWorkspace(w.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setMenu({ x: e.clientX, y: e.clientY, workspaceId: w.id })
+                }}
               >
                 <button
                   className="rail-del"
@@ -158,6 +182,22 @@ export function ChangesRail({
             </div>
           )
         })}
+      {menu && (
+        <div
+          className="rail-context-menu"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              onCreatePullRequest(menu.workspaceId)
+              setMenu(null)
+            }}
+          >
+            Create pull request
+          </button>
+        </div>
+      )}
     </div>
   )
 }

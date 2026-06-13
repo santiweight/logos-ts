@@ -35,6 +35,15 @@ function combineDiffStatus(
   return "changed"
 }
 
+function branchNameFromWorkspace(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._/-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return slug ? `logos/${slug}` : "logos/workspace"
+}
+
 export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
@@ -195,6 +204,44 @@ export function App() {
     },
     [activeWorkspaceId, refreshWorkspaces, openWorkspace, createWorkspace]
   )
+
+  const createWorkspacePullRequest = useCallback(async (id: string) => {
+    const workspace = workspaces.find((w) => w.id === id)
+    const suggested = branchNameFromWorkspace(workspace?.name ?? "workspace")
+    const branchName = window.prompt("Branch name for the pull request", suggested)?.trim()
+    if (!branchName) return
+
+    setBusy(`creating PR for ${branchName}…`)
+    try {
+      const res = await fetch(`/api/workspaces/${id}/push-branch`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ branchName }),
+      })
+      const data = await res.json().catch(() => ({})) as {
+        error?: string
+        remote?: string
+        branchName?: string
+        changed?: boolean
+        pullRequest?: { url: string; number: number | null; created: boolean }
+      }
+      if (!res.ok) {
+        window.alert(data.error ?? "Failed to create pull request")
+        return
+      }
+      const pushedBranch = data.branchName ?? branchName
+      const remote = data.remote ?? "origin"
+      const prUrl = data.pullRequest?.url
+      if (prUrl) {
+        window.open(prUrl, "_blank", "noopener,noreferrer")
+        window.alert(`${data.pullRequest?.created === false ? "Opened existing" : "Created"} PR for ${remote}/${pushedBranch}\n${prUrl}`)
+      } else {
+        window.alert(`Pushed ${remote}/${pushedBranch}, but no PR URL was returned`)
+      }
+    } finally {
+      setBusy(null)
+    }
+  }, [workspaces])
 
   const deleteGoal = useCallback(
     async (wsId: string, goalId: string) => {
@@ -534,6 +581,7 @@ export function App() {
           openWorkspace(id)
         }}
         onFork={onFork}
+        onCreatePullRequest={createWorkspacePullRequest}
         onSelectGoal={(id) => { setSelected({ type: "goal", id }); loadSessionForGoal(id) }}
         onDeleteWorkspace={deleteWorkspace}
         onDeleteGoal={deleteGoal}

@@ -103,6 +103,30 @@ body {
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .rail-fork:hover { color: var(--text); border-color: var(--muted); background: rgba(255,255,255,0.04); }
+.rail-context-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 150px;
+  padding: 4px;
+  background: #1f2328;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.rail-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.rail-context-menu button:hover { background: rgba(255,255,255,0.08); }
 .rail-head span { display: flex; align-items: center; gap: 2px; }
 .rail-head span button + button { margin-left: 0; }
 .rail-run {

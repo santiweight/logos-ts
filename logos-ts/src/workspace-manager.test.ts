@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { EventEmitter } from "node:events"
 import { PassThrough } from "node:stream"
+import { execFileSync } from "node:child_process"
 import { afterEach, describe, it, expect } from "vitest"
 import { buildElementContext, buildGoalLine, selectNextGoal } from "./prompt.js"
 import { WorkspaceManager, type AddGoalResult, type Goal } from "./workspace-manager.js"
@@ -526,5 +527,50 @@ describe("WorkspaceManager workspace kinds", () => {
       activeInstanceId: created.activeInstanceId,
       baseInstanceId: created.baseInstanceId,
     })
+  })
+
+  it("pushes the active workspace as a remote branch", async () => {
+    const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
+    tempDirs.push(root)
+    const gitRoot = join(root, "repo")
+    const sourceProjectRoot = join(gitRoot, "hn-jobs")
+    const remote = join(root, "remote.git")
+    mkdirSync(sourceProjectRoot, { recursive: true })
+    writeFileSync(join(sourceProjectRoot, "package.json"), "{}")
+    execFileSync("git", ["init"], { cwd: gitRoot, encoding: "utf8" })
+    execFileSync("git", ["config", "user.email", "logos@example.com"], { cwd: gitRoot, encoding: "utf8" })
+    execFileSync("git", ["config", "user.name", "Logos Test"], { cwd: gitRoot, encoding: "utf8" })
+    execFileSync("git", ["add", "."], { cwd: gitRoot, encoding: "utf8" })
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: gitRoot, encoding: "utf8" })
+    execFileSync("git", ["init", "--bare", remote], { encoding: "utf8" })
+    execFileSync("git", ["remote", "add", "origin", remote], { cwd: gitRoot, encoding: "utf8" })
+
+    const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
+    const mgr = new WorkspaceManager({
+      runsDir: join(root, ".agent-runs"),
+      store,
+      logosTsSrc: join(LOGOS_TS_ROOT, "src"),
+      logosTsRoot: LOGOS_TS_ROOT,
+      projectRoot: sourceProjectRoot,
+      sourceProjectRoot,
+      caps: { root: sourceProjectRoot, nodeModulesDirs: [] },
+      sbManager: { get: () => null, shutdown: () => undefined } as any,
+      sessions: createSessions() as any,
+      tsx: TSX,
+      getIndex: async () => ({ root: sourceProjectRoot, files: [] }),
+    })
+    const workspace = await mgr.create({ name: "Publish Me" })
+    const state = mgr.get(workspace.id)
+    if (!state) throw new Error("missing workspace")
+    mkdirSync(join(state.forkDir, "src"), { recursive: true })
+    writeFileSync(join(state.forkDir, "src", "generated.txt"), "from workspace\n")
+
+    const result = mgr.pushAsBranch(workspace.id, "Publish Me")
+
+    expect(result).toMatchObject({ branchName: "logos/publish-me", remote: "origin", changed: true })
+    expect(execFileSync("git", ["--git-dir", remote, "show", "refs/heads/logos/publish-me:hn-jobs/src/generated.txt"], {
+      encoding: "utf8",
+    })).toBe("from workspace\n")
+    expect(existsSync(join(sourceProjectRoot, "src", "generated.txt"))).toBe(false)
   })
 })

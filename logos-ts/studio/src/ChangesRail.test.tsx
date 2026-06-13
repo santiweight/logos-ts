@@ -1,5 +1,5 @@
-import { render, screen, cleanup } from "@testing-library/react"
-import { describe, it, expect, afterEach } from "vitest"
+import { render, screen, cleanup, fireEvent } from "@testing-library/react"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import { ChangesRail } from "./ChangesRail"
 
 afterEach(cleanup)
@@ -17,6 +17,7 @@ const baseProps = {
   onResetWorkspaces: noop,
   onOpenWorkspace: noop as (id: string) => void,
   onFork: noop,
+  onCreatePullRequest: noop as (id: string) => void,
   onSelectGoal: noop as (id: string) => void,
   onDeleteWorkspace: noop as (id: string) => void,
   onDeleteGoal: noop as (wsId: string, goalId: string) => void,
@@ -143,5 +144,24 @@ describe("ChangesRail", () => {
     )
     const spinners = screen.getAllByTitle("Agent running")
     expect(spinners).toHaveLength(1)
+  })
+
+  it("opens a workspace context menu with create pull request", () => {
+    const onCreatePullRequest = vi.fn()
+    const workspaces = [
+      { id: "ws-1", name: "feature", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+    ]
+    render(
+      <ChangesRail
+        {...baseProps}
+        workspaces={workspaces}
+        onCreatePullRequest={onCreatePullRequest}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByText(/feature/), { clientX: 10, clientY: 20 })
+    fireEvent.click(screen.getByText("Create pull request"))
+
+    expect(onCreatePullRequest).toHaveBeenCalledWith("ws-1")
   })
 })

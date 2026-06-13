@@ -115,6 +115,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     logosTsSrc: resolve(LOGOS_TS, "src"),
     logosTsRoot: LOGOS_TS,
     projectRoot,
+    sourceProjectRoot: SOURCE_PROJECT,
     caps,
     sbManager,
     sessions: sessionMgr,
@@ -329,6 +330,36 @@ function studioApi(runtime: StudioRuntime): Plugin {
           } catch (e) {
             res.statusCode = 500
             res.end(JSON.stringify({ error: String(e) }))
+          }
+          return
+        }
+
+        // POST /api/workspaces/:id/push-branch — publish active workspace as a git branch and PR
+        if (req.method === "POST" && sub.endsWith("/push-branch")) {
+          const wsId = sub.replace(/\/push-branch$/, "")
+          try {
+            const body = JSON.parse((await readBody(req)) || "{}")
+            const branchName = String(body.branchName ?? "")
+            console.log(`[workspace-publish-api] request: ${JSON.stringify({ workspaceId: wsId, branchName })}`)
+            const result = wsMgr.pushAsBranch(wsId, String(body.branchName ?? ""), {
+              remote: typeof body.remote === "string" ? body.remote : undefined,
+              createPullRequest: true,
+              baseBranch: typeof body.baseBranch === "string" ? body.baseBranch : undefined,
+              title: typeof body.title === "string" ? body.title : `Logos workspace: ${branchName}`,
+              body: "Created automatically from a Logos workspace.",
+            })
+            console.log(`[workspace-publish-api] success: ${JSON.stringify({
+              workspaceId: wsId,
+              branchName: result.branchName,
+              remote: result.remote,
+              commit: result.commit,
+              pullRequest: result.pullRequest,
+            })}`)
+            res.end(JSON.stringify({ ok: true, ...result }))
+          } catch (e) {
+            console.error(`[workspace-publish-api] failed: ${e instanceof Error ? e.message : String(e)}`)
+            res.statusCode = /workspace not found/.test(String(e)) ? 404 : 400
+            res.end(JSON.stringify({ ok: false, error: String(e instanceof Error ? e.message : e) }))
           }
           return
         }
