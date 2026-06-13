@@ -117,14 +117,11 @@ export const FactTable: FC<FactTableProps> = ({ job }) => {
         <tr>
           <th>Apply via</th>
           <td>
-            {applyMethodLabel(job.applyMethod)}
+            {!job.applyUrl && applyMethodLabel(job.applyMethod)}
             {job.applyUrl && (
-              <>
-                {" — "}
-                <a href={job.applyUrl} target="_blank" rel="noopener noreferrer">
-                  {job.applyUrl}
-                </a>
-              </>
+              <a href={job.applyUrl} target="_blank" rel="noopener noreferrer">
+                {job.applyUrl}
+              </a>
             )}
             {job.applyEmail && (
               <>
