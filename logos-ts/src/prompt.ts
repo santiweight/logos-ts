@@ -29,8 +29,7 @@ export function buildArchPrompt(context: string, sandbox: string, goalLine: stri
 
 export function buildImplPrompt(context: string, sandbox: string, goalLine: string, verifyNote: string): string {
   return `${context}\n\n${sandbox}` +
-    `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase.\n\n` +
-    `WORKFLOW: The full source of files you need to edit is shown above. To edit, you must Read the file first (tool requirement), then Edit with the minimal change. For a small change: Read → Edit → test_results (3 tool calls). Do not explore, do not refactor. After confirming tests pass, stop immediately — do not summarize what you did.\n\n` +
+    `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. The full source of files you need to edit is shown above; Read a file before editing it (tool requirement).\n\n` +
     `Address these change requests:\n${goalLine}\n\n` +
     `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck. ${verifyNote}`
 }
