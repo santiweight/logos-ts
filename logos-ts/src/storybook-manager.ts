@@ -1,7 +1,7 @@
 /* eslint-disable prefer-const, @typescript-eslint/prefer-readonly, @typescript-eslint/no-dynamic-delete, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unused-vars */
 import { spawn, type ChildProcess } from "node:child_process"
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs"
-import { resolve, dirname, basename } from "node:path"
+import { resolve, basename } from "node:path"
+import type { LogosRuntimeStore } from "./runtime-store.js"
 
 export interface SbEntry {
   id: string
@@ -29,24 +29,19 @@ export class StorybookManager {
   private registry: Registry = {}
   private live = new Map<string, ChildProcess>()
   private states = new Map<string, SbState>()
-  private mapFile: string
+  private store: LogosRuntimeStore
   private logosSrc: string
   private projectRoot: string
 
-  constructor(mapFile: string, logosSrc: string, projectRoot: string) {
-    this.mapFile = mapFile
+  constructor(store: LogosRuntimeStore, logosSrc: string, projectRoot: string) {
+    this.store = store
     this.logosSrc = logosSrc
     this.projectRoot = projectRoot
-    mkdirSync(dirname(mapFile), { recursive: true })
-    try {
-      this.registry = JSON.parse(readFileSync(mapFile, "utf8"))
-    } catch {
-      this.registry = {}
-    }
+    this.registry = this.store.listStorybooks()
   }
 
   private save(): void {
-    writeFileSync(this.mapFile, JSON.stringify(this.registry, null, 2))
+    this.store.saveStorybooks(this.registry)
   }
 
   private isAlive(pid: number): boolean {

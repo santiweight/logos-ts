@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -7,6 +7,7 @@ import { PassThrough } from "node:stream"
 import { afterEach, describe, it, expect } from "vitest"
 import { buildElementContext, buildGoalLine, selectNextGoal } from "./prompt.js"
 import { WorkspaceManager, type AddGoalResult, type Goal } from "./workspace-manager.js"
+import { LogosRuntimeStore } from "./runtime-store.js"
 
 const LOGOS_TS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const TSX = resolve(LOGOS_TS_ROOT, "node_modules/.bin/tsx")
@@ -54,9 +55,10 @@ function createManager(opts?: { spawned?: FakeAgentProcess[] }): WorkspaceManage
   mkdirSync(projectRoot, { recursive: true })
   writeFileSync(join(projectRoot, "package.json"), "{}")
   const sessions = createSessions()
+  const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
 
   return new WorkspaceManager({
-    wsDir: join(root, ".workspaces"),
+    store,
     runsDir: join(root, ".agent-runs"),
     logosTsSrc: join(LOGOS_TS_ROOT, "src"),
     logosTsRoot: LOGOS_TS_ROOT,
@@ -481,29 +483,32 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.nextPendingGoal(secondArch.id)?.id).toBe("pending")
   })
 
-  it("migrates saved workspaces without an explicit kind to code workspaces", async () => {
+  it("persists workspace state in the runtime database", async () => {
     const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
     tempDirs.push(root)
     const projectRoot = join(root, "project")
-    const wsDir = join(root, ".workspaces")
-    const legacyFork = join(root, "legacy-fork")
     mkdirSync(projectRoot, { recursive: true })
-    mkdirSync(wsDir, { recursive: true })
-    mkdirSync(legacyFork, { recursive: true })
     writeFileSync(join(projectRoot, "package.json"), "{}")
-    writeFileSync(join(wsDir, "legacy.json"), JSON.stringify({
-      id: "legacy",
-      name: "legacy",
-      parentId: null,
-      createdAt: 1000,
-      forkDir: legacyFork,
-      goals: [],
-      index: {},
-    }))
+    const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
 
     const mgr = new WorkspaceManager({
-      wsDir,
       runsDir: join(root, ".agent-runs"),
+      store,
+      logosTsSrc: join(LOGOS_TS_ROOT, "src"),
+      logosTsRoot: LOGOS_TS_ROOT,
+      projectRoot,
+      caps: { root: projectRoot, nodeModulesDirs: [] },
+      sbManager: { get: () => null, shutdown: () => undefined } as any,
+      sessions: { deleteByWorkspace: () => undefined } as any,
+      tsx: TSX,
+      getIndex: async () => ({ root: projectRoot, files: [] }),
+    })
+    const created = await mgr.create({ kind: "arch", name: "db-backed" })
+    expect(existsSync(join(root, ".workspaces"))).toBe(false)
+
+    const restored = new WorkspaceManager({
+      runsDir: join(root, ".agent-runs"),
+      store,
       logosTsSrc: join(LOGOS_TS_ROOT, "src"),
       logosTsRoot: LOGOS_TS_ROOT,
       projectRoot,
@@ -514,13 +519,12 @@ describe("WorkspaceManager workspace kinds", () => {
       getIndex: async () => ({ root: projectRoot, files: [] }),
     })
 
-    expect(mgr.get("legacy")).toMatchObject({
-      id: "legacy",
-      kind: "code",
-      forkDir: legacyFork,
-      activeInstanceId: "inst-legacy-active",
-      baseInstanceId: "inst-legacy-active",
+    expect(restored.get(created.id)).toMatchObject({
+      id: created.id,
+      name: "db-backed",
+      kind: "arch",
+      activeInstanceId: created.activeInstanceId,
+      baseInstanceId: created.baseInstanceId,
     })
-    expect(mgr.list()).toHaveLength(1)
   })
 })

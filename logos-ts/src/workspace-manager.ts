@@ -13,7 +13,7 @@
 // to an arch workspace join its queue unless the caller explicitly asks to fork.
 // Each architecture workspace runs at most one architecture agent at a time.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync, readdirSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, symlinkSync } from "node:fs"
 import { resolve, relative, join, dirname, basename } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
 import { promisify } from "node:util"
@@ -22,6 +22,10 @@ const execFileAsync = promisify(execFile)
 import type { StorybookManager } from "./storybook-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
+import type {
+  LogosRuntimeStore,
+  WorkspaceKind,
+} from "./runtime-store.js"
 
 export interface Goal {
   id: string
@@ -37,7 +41,7 @@ export interface Goal {
   sessionId?: string | null
 }
 
-export type WorkspaceKind = "code" | "arch"
+export type { WorkspaceKind }
 
 export interface WorkspaceInstance {
   id: string
@@ -90,19 +94,9 @@ export type AddGoalResult =
   | { error: string; status: number }
 
 export type WorkspacePolicyEventType =
-  | "arch_goal_redirected"
-  | "goal_rejected"
-  | "arch_agent_blocked"
+  import("./runtime-store.js").WorkspacePolicyEventType
 
-export interface WorkspacePolicyEvent {
-  seq: number
-  type: WorkspacePolicyEventType
-  createdAt: number
-  workspaceId: string
-  goalId?: string
-  message: string
-  details?: Record<string, unknown>
-}
+export type WorkspacePolicyEvent = import("./runtime-store.js").StoredWorkspacePolicyEvent
 
 export interface AgentEvent {
   type: string
@@ -123,7 +117,7 @@ export class WorkspaceManager {
   private workspaces = new Map<string, WorkspaceRecord>()
   private runningAgents = new Map<string, ChildProcess>() // goalId → child
   private workspaceSeq = 0
-  private wsDir: string
+  private store: LogosRuntimeStore
   private runsDir: string
   private logosTsSrc: string
   private logosTsRoot: string
@@ -133,13 +127,11 @@ export class WorkspaceManager {
   private sessions: ClaudeSessionManager
   private tsx: string
   private getIndex: (() => Promise<unknown>) | null
-  private policyEvents: WorkspacePolicyEvent[] = []
-  private policyEventSeq = 0
   private goalSubscribers = new Map<string, Set<AgentEventCallback>>()
   private spawnAgent: AgentSpawner
 
   constructor(opts: {
-    wsDir: string
+    store: LogosRuntimeStore
     runsDir: string
     logosTsSrc: string
     logosTsRoot: string
@@ -151,7 +143,7 @@ export class WorkspaceManager {
     getIndex?: () => Promise<unknown>
     spawnAgent?: AgentSpawner
   }) {
-    this.wsDir = opts.wsDir
+    this.store = opts.store
     this.runsDir = opts.runsDir
     this.logosTsSrc = opts.logosTsSrc
     this.logosTsRoot = opts.logosTsRoot
@@ -163,51 +155,16 @@ export class WorkspaceManager {
     this.getIndex = opts.getIndex ?? null
     this.spawnAgent = opts.spawnAgent ?? spawn
 
-    mkdirSync(this.wsDir, { recursive: true })
     this.loadAll()
   }
 
   private loadAll(): void {
-    if (!existsSync(this.wsDir)) return
-    for (const f of readdirSync(this.wsDir).filter((f) => f.endsWith(".json"))) {
-      try {
-        const raw = JSON.parse(readFileSync(resolve(this.wsDir, f), "utf8")) as any
-        const ws = this.normalizeWorkspace(raw)
-        if (ws.kind !== "code" && ws.kind !== "arch") continue
-        this.workspaces.set(ws.id, ws)
-      } catch { /* corrupt file */ }
-    }
-  }
-
-  private normalizeWorkspace(raw: any): WorkspaceRecord {
-    if (raw?.instances && raw?.activeInstanceId && raw?.baseInstanceId) {
-      return raw as WorkspaceRecord
-    }
-    const id = String(raw.id)
-    const instanceId = raw.activeInstanceId ?? `inst-${id}-active`
-    const instance: WorkspaceInstance = {
-      id: instanceId,
-      workspaceId: id,
-      materializedRoot: String(raw.forkDir),
-      mutability: "writable",
-      createdAt: Number(raw.createdAt ?? Date.now()),
-      index: raw.index,
-    }
-    return {
-      id,
-      name: String(raw.name ?? "workspace"),
-      kind: raw.kind === "arch" ? "arch" : "code",
-      parentId: raw.parentId ?? null,
-      createdAt: Number(raw.createdAt ?? Date.now()),
-      baseInstanceId: instanceId,
-      activeInstanceId: instanceId,
-      goals: raw.goals ?? [],
-      instances: { [instanceId]: instance },
-    }
+    this.workspaces.clear()
+    for (const ws of this.store.listWorkspaces()) this.workspaces.set(ws.id, ws)
   }
 
   private save(ws: WorkspaceRecord): void {
-    writeFileSync(resolve(this.wsDir, `${ws.id}.json`), JSON.stringify(ws))
+    this.store.saveWorkspace(ws)
   }
 
   private async snapshotIndex(root = this.projectRoot): Promise<unknown> {
@@ -302,25 +259,11 @@ export class WorkspaceManager {
   }
 
   listPolicyEvents(opts?: { workspaceId?: string; limit?: number }): WorkspacePolicyEvent[] {
-    const limit = opts?.limit ?? 200
-    const events = opts?.workspaceId
-      ? this.policyEvents.filter((event) => (
-          event.workspaceId === opts.workspaceId ||
-          event.details?.["sourceWorkspaceId"] === opts.workspaceId ||
-          event.details?.["targetWorkspaceId"] === opts.workspaceId
-        ))
-      : this.policyEvents
-    return events.slice(-limit)
+    return this.store.listPolicyEvents(opts)
   }
 
   private recordPolicyEvent(event: Omit<WorkspacePolicyEvent, "seq" | "createdAt">): void {
-    this.policyEvents.push({
-      ...event,
-      seq: this.policyEventSeq,
-      createdAt: Date.now(),
-    })
-    this.policyEventSeq += 1
-    if (this.policyEvents.length > 500) this.policyEvents = this.policyEvents.slice(-500)
+    this.store.addPolicyEvent(event)
   }
 
   reindex(id: string): WorkspaceState | undefined {
@@ -406,8 +349,8 @@ export class WorkspaceManager {
       rmSync(inst.materializedRoot, { recursive: true, force: true })
     }
 
-    // Remove workspace file and state
-    rmSync(resolve(this.wsDir, `${id}.json`), { force: true })
+    // Remove workspace state
+    this.store.deleteWorkspace(id)
     this.workspaces.delete(id)
   }
 
@@ -420,11 +363,9 @@ export class WorkspaceManager {
     this.sessions.deleteAll()
     rmSync(this.runsDir, { recursive: true, force: true })
     mkdirSync(this.runsDir, { recursive: true })
-    rmSync(this.wsDir, { recursive: true, force: true })
-    mkdirSync(this.wsDir, { recursive: true })
+    this.store.deleteAllWorkspaces()
+    this.store.deleteAllPolicyEvents()
     this.workspaces.clear()
-    this.policyEvents = []
-    this.policyEventSeq = 0
   }
 
   async addGoal(wsId: string, goal: Omit<Goal, "status">, opts?: { fork?: boolean }): Promise<AddGoalResult> {

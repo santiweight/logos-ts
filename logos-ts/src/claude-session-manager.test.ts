@@ -9,7 +9,7 @@ let tmpDir: string
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "csm-test-"))
-  mgr = new ClaudeSessionManager(join(tmpDir, "sessions.db"))
+  mgr = new ClaudeSessionManager(join(tmpDir, "runtime.db"))
 })
 
 afterEach(() => {

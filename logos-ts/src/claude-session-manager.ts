@@ -1,6 +1,7 @@
 import { createRequire } from "node:module"
 import { mkdirSync } from "node:fs"
 import { dirname } from "node:path"
+import type { LogosRuntimeStore } from "./runtime-store.js"
 
 const require = createRequire(import.meta.url)
 
@@ -21,11 +22,18 @@ export interface SessionEvent {
 
 export class ClaudeSessionManager {
   private db: import("node:sqlite").DatabaseSync
+  private ownsDb: boolean
 
-  constructor(dbPath: string) {
-    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite")
-    mkdirSync(dirname(dbPath), { recursive: true })
-    this.db = new DatabaseSync(dbPath)
+  constructor(dbPathOrStore: string | LogosRuntimeStore) {
+    if (typeof dbPathOrStore === "string") {
+      const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite")
+      mkdirSync(dirname(dbPathOrStore), { recursive: true })
+      this.db = new DatabaseSync(dbPathOrStore)
+      this.ownsDb = true
+    } else {
+      this.db = dbPathOrStore.database
+      this.ownsDb = false
+    }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
@@ -120,7 +128,7 @@ export class ClaudeSessionManager {
   }
 
   close(): void {
-    this.db.close()
+    if (this.ownsDb) this.db.close()
   }
 }
 

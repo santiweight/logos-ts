@@ -40,9 +40,9 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
   const goalLine = buildGoalLine({
     label: c.comment.label ?? c.comment.target,
     text: c.comment.text,
-    component: c.comment.component,
-    storyId: c.comment.storyId,
-    selector: c.comment.selector,
+    ...(c.comment.component ? { component: c.comment.component } : {}),
+    ...(c.comment.storyId ? { storyId: c.comment.storyId } : {}),
+    ...(c.comment.selector ? { selector: c.comment.selector } : {}),
   })
 
   const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
@@ -117,8 +117,13 @@ function runCase(casePath: string) {
   const results: Record<string, boolean> = {}
   for (const [name, check] of Object.entries(c.checks)) {
     if (check.oracle) copyFileSync(resolve(caseDir, check.oracle), join(work, check.cwd, basename(check.oracle)))
+    const [cmd, ...args] = check.cmd
+    if (!cmd) {
+      results[name] = false
+      continue
+    }
     try {
-      execFileSync(check.cmd[0], check.cmd.slice(1), { cwd: join(work, check.cwd), encoding: "utf8" })
+      execFileSync(cmd, args, { cwd: join(work, check.cwd), encoding: "utf8" })
       results[name] = true
     } catch {
       results[name] = false

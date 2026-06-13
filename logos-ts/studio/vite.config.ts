@@ -73,12 +73,14 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     { StorybookManager },
     { WorkspaceManager },
     { ClaudeSessionManager },
+    { LogosRuntimeStore },
     { createPortableStoryResolver },
   ] = await Promise.all([
     import("../src/detect-project"),
     import("../src/storybook-manager"),
     import("../src/workspace-manager"),
     import("../src/claude-session-manager"),
+    import("../src/runtime-store"),
     import("../src/portable-stories"),
   ])
 
@@ -89,6 +91,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   console.log(`[logos] tests: ${caps.tests ? caps.tests.command.join(" ") : "not found"}`)
   const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
   const studioPortFile = resolve(projectRoot, ".logos", "studio-port")
+  const runtimeStore = new LogosRuntimeStore(resolve(projectRoot, ".logos", "runtime.db"))
 
   const indexReady: Promise<StudioIndex> = new Promise((res, rej) => {
     const t0 = Date.now()
@@ -102,16 +105,12 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     })
   })
 
-  const sbManager = new StorybookManager(
-    resolve(projectRoot, ".logos", "storybooks.json"),
-    resolve(LOGOS_TS, "src"),
-    projectRoot,
-  )
+  const sbManager = new StorybookManager(runtimeStore, resolve(LOGOS_TS, "src"), projectRoot)
 
-  const sessionMgr = new ClaudeSessionManager(resolve(projectRoot, ".logos", "sessions.db"))
+  const sessionMgr = new ClaudeSessionManager(runtimeStore)
 
   const wsMgr = new WorkspaceManager({
-    wsDir: resolve(projectRoot, ".workspaces"),
+    store: runtimeStore,
     runsDir: resolve(LOGOS_TS, ".agent-runs"),
     logosTsSrc: resolve(LOGOS_TS, "src"),
     logosTsRoot: LOGOS_TS,
@@ -246,7 +245,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         const states = sbManager.allStates()
         const urls: Record<string, string> = {}
         for (const id of Object.keys(entries)) urls[id] = publicStorybookUrl(id)
-        res.end(JSON.stringify({ urls, states }))
+        res.end(JSON.stringify({ urls, states, entries }))
       })
 
       server.middlewares.use("/api/workspace-policy-events", (req, res) => {
@@ -542,7 +541,7 @@ export default defineConfig(async ({ command }) => {
       port: Number(process.env.PORT) || 0,
       strictPort: Boolean(process.env.PORT),
       hmr: process.env.LOGOS_DISABLE_HMR === "1" ? false : undefined,
-      watch: { ignored: ["**/.workspaces/**", "**/.agent-runs/**"] },
+      watch: { ignored: ["**/.agent-runs/**"] },
     },
     resolve: {
       alias: {

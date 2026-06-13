@@ -8,18 +8,16 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { spawn, execSync, type ChildProcess } from "node:child_process"
 import { resolve, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "../..")
-const WS_DIR = resolve(STUDIO, "../.workspaces")
 const AGENT_RUNS = resolve(LOGOS_TS, ".agent-runs")
 
 let server: ChildProcess
 let baseUrl: string
 let projectRoot: string
-let sessionRoot: string
 let sbPid: number | null = null
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
@@ -64,8 +62,6 @@ async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<st
     let buf = ""
     proc.stdout?.on("data", (d: Buffer) => {
       buf += d.toString()
-      const copied = buf.match(/\[logos\] copied .+ → (.+)/)
-      if (copied?.[1] != null) sessionRoot = copied[1].trim()
       // The studio binds host 127.0.0.1 explicitly, so vite prints that, not "localhost".
       const m = buf.replace(ANSI_RE, "").match(/Local:\s+(http:\/\/(?:localhost|127\.0\.0\.1):\d+)/)
       if (m?.[1] != null) {
@@ -85,7 +81,8 @@ async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<st
 
 async function getStorybookUrls(): Promise<Record<string, string>> {
   const res = await api("/api/storybooks")
-  const data = await res.json() as { urls: Record<string, string> }
+  const data = await res.json() as { urls: Record<string, string>; entries?: Record<string, { pid?: number }> }
+  latestStorybookEntries = data.entries ?? {}
   return data.urls
 }
 
@@ -101,14 +98,14 @@ async function pollFor<T>(fn: () => Promise<T | null>, timeoutMs: number): Promi
 
 /** Pid of the storybook process spawned for a workspace, if running. */
 function storybookPid(wsId: string): number | null {
-  try {
-    const registryRoot = sessionRoot || projectRoot
-    const registry = JSON.parse(readFileSync(join(registryRoot, ".logos", "storybooks.json"), "utf8")) as Record<string, { pid?: number }>
-    const pid = registry[wsId]?.pid ?? null
-    return Number.isNaN(pid) ? null : pid
-  } catch {
-    return null
-  }
+  return getStorybookEntryPid(wsId)
+}
+
+let latestStorybookEntries: Record<string, { pid?: number }> = {}
+
+function getStorybookEntryPid(wsId: string): number | null {
+  const pid = latestStorybookEntries[wsId]?.pid ?? null
+  return pid == null || Number.isNaN(pid) ? null : pid
 }
 
 function isLiveProcess(pid: number | null): boolean {
@@ -122,7 +119,6 @@ function isLiveProcess(pid: number | null): boolean {
 }
 
 function cleanup() {
-  try { rmSync(WS_DIR, { recursive: true, force: true }) } catch {}
   try { rmSync(AGENT_RUNS, { recursive: true, force: true }) } catch {}
   if (projectRoot) {
     try { rmSync(projectRoot, { recursive: true, force: true }) } catch {}
