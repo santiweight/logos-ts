@@ -30,6 +30,7 @@ type StudioRuntime = {
   indexReady: Promise<StudioIndex>
   sbManager: import("../src/storybook-manager").StorybookManager
   wsMgr: import("../src/workspace-manager").WorkspaceManager
+  portableStories: import("../src/portable-stories").PortableStoryResolver
 }
 
 async function copyProject(src: string): Promise<string> {
@@ -72,11 +73,13 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     { StorybookManager },
     { WorkspaceManager },
     { ClaudeSessionManager },
+    { createPortableStoryResolver },
   ] = await Promise.all([
     import("../src/detect-project"),
     import("../src/storybook-manager"),
     import("../src/workspace-manager"),
     import("../src/claude-session-manager"),
+    import("../src/portable-stories"),
   ])
 
   const projectRoot = await copyProject(SOURCE_PROJECT)
@@ -120,7 +123,16 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     getIndex: () => indexReady,
   })
 
-  return { projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, wsMgr }
+  const portableStories = createPortableStoryResolver({
+    projectRoot,
+    storybook: caps.storybook,
+    workspaceRoot: (id) => {
+      if (!id) return projectRoot
+      return wsMgr.get(id)?.forkDir ?? null
+    },
+  })
+
+  return { projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, wsMgr, portableStories }
 }
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
@@ -468,6 +480,27 @@ function studioApi(runtime: StudioRuntime): Plugin {
   }
 }
 
+function portableStoriesPlugin(runtime: StudioRuntime): Plugin {
+  const prefix = "virtual:logos-portable-story"
+  const resolvedPrefix = `\0${prefix}`
+  return {
+    name: "logos-portable-stories",
+    resolveId(id) {
+      if (id.startsWith(prefix)) return `\0${id}`
+      return null
+    },
+    load(id) {
+      if (!id.startsWith(resolvedPrefix)) return null
+      return runtime.portableStories.moduleFor(id.slice(1))
+    },
+    handleHotUpdate(ctx) {
+      if (/\.stories\.(t|j)sx?$/.test(ctx.file) || /[/\\]\.storybook[/\\]preview\.(t|j)sx?$/.test(ctx.file)) {
+        runtime.portableStories.clearCache()
+      }
+    },
+  }
+}
+
 function autoStorybook(runtime: StudioRuntime): Plugin {
   return {
     name: "auto-storybook",
@@ -499,7 +532,7 @@ export default defineConfig(async ({ command }) => {
   return {
     cacheDir: process.env.LOGOS_VITE_CACHE_DIR || undefined,
     plugins: runtime
-      ? [authPlugin(), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), autoStorybook(runtime)]
+      ? [authPlugin(), portableStoriesPlugin(runtime), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), autoStorybook(runtime)]
       : [react()],
     server: {
       // Bind a concrete address: the default "localhost" can end up IPv6-only,

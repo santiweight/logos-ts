@@ -24,6 +24,8 @@ function renderStory(storybookRenderKey: string) {
     <ContentPanel
       file={file}
       selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
+      workspaceId="ws-1"
+      storyRenderer="storybook"
       storybookUrl="/storybooks/ws-1"
       storybookState={{ status: "ready", startedAt: 1000, logs: [] }}
       storybookRenderKey={storybookRenderKey}
@@ -38,6 +40,31 @@ function renderStory(storybookRenderKey: string) {
 }
 
 describe("ContentPanel", () => {
+  it("renders portable stories through the portable story frame", () => {
+    render(
+      <ContentPanel
+        file={file}
+        selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
+        workspaceId="ws-1"
+        storyRenderer="portable"
+        storybookUrl=""
+        storybookState={null}
+        storybookRenderKey="inst-1:1000"
+        onRetryStorybook={() => {}}
+        onView={() => {}}
+        onCapture={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+      />
+    )
+
+    expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
+      "src",
+      "/portable-story.html?storyId=jobcard--default&logosReload=inst-1%3A1000&workspaceId=ws-1"
+    )
+  })
+
   it("changes the Storybook iframe URL when the workspace render key changes", () => {
     const { rerender } = renderStory("inst-1:1000")
     const iframe = screen.getByTitle("jobcard--default")
@@ -50,6 +77,8 @@ describe("ContentPanel", () => {
       <ContentPanel
         file={file}
         selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
+        workspaceId="ws-1"
+        storyRenderer="storybook"
         storybookUrl="/storybooks/ws-1"
         storybookState={{ status: "ready", startedAt: 2000, logs: [] }}
         storybookRenderKey="inst-2:2000"

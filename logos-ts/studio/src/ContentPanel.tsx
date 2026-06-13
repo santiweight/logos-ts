@@ -3,9 +3,13 @@ import { CommentCtx, DiffCtx, Row } from "./arch"
 import { GraphView } from "./GraphView"
 import type { GoalApi, DiffStatus, FileEntry, FileItem, SbState, Selection, View } from "./types"
 
+export type StoryRenderer = "portable" | "storybook"
+
 interface Props {
   file: FileEntry
   selection: Selection
+  workspaceId: string | null
+  storyRenderer: StoryRenderer
   storybookUrl: string
   storybookState: SbState | null
   storybookRenderKey: string
@@ -20,6 +24,8 @@ interface Props {
 export function ContentPanel({
   file,
   selection,
+  workspaceId,
+  storyRenderer,
   storybookUrl,
   storybookState,
   storybookRenderKey,
@@ -75,6 +81,8 @@ export function ContentPanel({
           {selection.view === "story" && comp && (
             <StoryView
               {...(selection.storyId != null ? { storyId: selection.storyId } : {})}
+              workspaceId={workspaceId}
+              storyRenderer={storyRenderer}
               storybookUrl={storybookUrl}
               storybookState={storybookState}
               storybookRenderKey={storybookRenderKey}
@@ -83,7 +91,14 @@ export function ContentPanel({
             />
           )}
           {selection.view === "captured" && comp && (
-            <CapturedView component={comp} {...(selection.exportName != null ? { exportName: selection.exportName } : {})} storybookUrl={storybookUrl} storybookRenderKey={storybookRenderKey} />
+            <CapturedView
+              component={comp}
+              workspaceId={workspaceId}
+              storyRenderer={storyRenderer}
+              {...(selection.exportName != null ? { exportName: selection.exportName } : {})}
+              storybookUrl={storybookUrl}
+              storybookRenderKey={storybookRenderKey}
+            />
           )}
           {selection.view === "code" && symbol && <SymbolView item={symbol} />}
           {selection.view === "code" && !symbol && comp && <ComponentCodeView component={comp} />}
@@ -259,6 +274,8 @@ function Elapsed({ since }: { since: number }) {
 
 function StoryView({
   storyId,
+  workspaceId,
+  storyRenderer,
   storybookUrl,
   storybookState,
   storybookRenderKey,
@@ -266,6 +283,8 @@ function StoryView({
   onCapture,
 }: {
   storyId?: string
+  workspaceId: string | null
+  storyRenderer: StoryRenderer
   storybookUrl: string
   storybookState: SbState | null
   storybookRenderKey: string
@@ -285,6 +304,32 @@ function StoryView({
   }, [shouldAutoStart, onRetryStorybook])
 
   if (!storyId) return <div className="empty">No story selected.</div>
+
+  if (storyRenderer === "portable") {
+    const params = new URLSearchParams({ storyId, logosReload: storybookRenderKey })
+    if (workspaceId) params.set("workspaceId", workspaceId)
+    const src = `/portable-story.html?${params.toString()}`
+    return (
+      <div className="pane">
+        <div className="pane-path">
+          <span>⟨portable⟩ {storyId}</span>
+          <button className="capture-btn" onClick={() => onCapture(storyId)}>
+            📸 Capture as test
+          </button>
+        </div>
+        <iframe
+          className="story-frame"
+          key={src}
+          sandbox="allow-scripts allow-forms allow-same-origin"
+          src={src}
+          title={storyId}
+        />
+        <div className="hint">
+          Rendered through Portable Stories; no Storybook dev server is required for this view.
+        </div>
+      </div>
+    )
+  }
 
   if (!storybookUrl) {
     if (storybookState?.status === "failed") {
@@ -391,7 +436,21 @@ function diffLines(a: string, b: string): { type: "same" | "add" | "del"; text: 
 
 type SnapTab = "rendered" | "source" | "diff"
 
-function SnapshotIframe({ html, storybookUrl, storybookRenderKey, storyId }: { html: string; storybookUrl: string; storybookRenderKey: string; storyId?: string }) {
+function SnapshotIframe({
+  html,
+  workspaceId,
+  storyRenderer,
+  storybookUrl,
+  storybookRenderKey,
+  storyId,
+}: {
+  html: string
+  workspaceId: string | null
+  storyRenderer: StoryRenderer
+  storybookUrl: string
+  storybookRenderKey: string
+  storyId?: string
+}) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const htmlRef = useRef(html)
   htmlRef.current = html
@@ -410,7 +469,11 @@ function SnapshotIframe({ html, storybookUrl, storybookRenderKey, storyId }: { h
   }, [html, inject])
 
   const id = storyId ?? ""
-  const src = `${storybookUrl}/iframe.html?id=${encodeURIComponent(id)}&viewMode=story&logosReload=${encodeURIComponent(storybookRenderKey)}`
+  const params = new URLSearchParams({ storyId: id, logosReload: storybookRenderKey })
+  if (workspaceId) params.set("workspaceId", workspaceId)
+  const src = storyRenderer === "portable"
+    ? `/portable-story.html?${params.toString()}`
+    : `${storybookUrl}/iframe.html?id=${encodeURIComponent(id)}&viewMode=story&logosReload=${encodeURIComponent(storybookRenderKey)}`
   return (
     <iframe
       ref={iframeRef}
@@ -425,11 +488,15 @@ function SnapshotIframe({ html, storybookUrl, storybookRenderKey, storyId }: { h
 function CapturedView({
   component,
   exportName,
+  workspaceId,
+  storyRenderer,
   storybookUrl,
   storybookRenderKey,
 }: {
   component: NonNullable<FileEntry["component"]>
   exportName?: string
+  workspaceId: string | null
+  storyRenderer: StoryRenderer
   storybookUrl: string
   storybookRenderKey: string
 }) {
@@ -466,10 +533,17 @@ function CapturedView({
           >{t.label}</button>
         ))}
       </div>
-      {tab === "rendered" && storybookUrl && (
-        <SnapshotIframe html={html} storybookUrl={storybookUrl} storybookRenderKey={storybookRenderKey} {...(component.stories[0]?.id != null ? { storyId: component.stories[0].id } : {})} />
+      {tab === "rendered" && (storybookUrl || storyRenderer === "portable") && (
+        <SnapshotIframe
+          html={html}
+          workspaceId={workspaceId}
+          storyRenderer={storyRenderer}
+          storybookUrl={storybookUrl}
+          storybookRenderKey={storybookRenderKey}
+          {...(component.stories[0]?.id != null ? { storyId: component.stories[0].id } : {})}
+        />
       )}
-      {tab === "rendered" && !storybookUrl && (
+      {tab === "rendered" && !storybookUrl && storyRenderer === "storybook" && (
         <div className="empty">Waiting for Storybook to start…</div>
       )}
       {tab === "source" && (
