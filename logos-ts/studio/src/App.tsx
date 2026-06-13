@@ -102,6 +102,7 @@ export function App() {
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
   const activeGoals = activeWs?.goals ?? []
+  const activeStorybookRenderKey = `${activeWs?.activeInstanceId ?? ""}:${activeStorybookState?.startedAt ?? 0}`
 
   const goalsByTarget = useMemo(() => {
     const m: Record<string, Goal[]> = {}
@@ -305,7 +306,7 @@ export function App() {
             es.close()
             esRefs.current.delete(goalId)
             setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-            Promise.all([refreshWorkspaces(), refreshTests()]).then(() => openWorkspace(wsId))
+            Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks()]).then(() => openWorkspace(wsId))
           }
         }
         es.onerror = () => {
@@ -325,12 +326,12 @@ export function App() {
             [goalId]: [...(prev[goalId] ?? []), { type: "error", message: "agent stream disconnected" }],
           }))
           setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-          Promise.all([refreshWorkspaces(), refreshTests()]).then(() => openWorkspace(wsId))
+          Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks()]).then(() => openWorkspace(wsId))
         }
       }
       openStream(0)
     },
-    [refreshWorkspaces, refreshTests, openWorkspace]
+    [refreshWorkspaces, refreshTests, refreshStorybooks, openWorkspace]
   )
   const closeAgent = useCallback(() => setAgentOpen(false), [])
 
@@ -575,6 +576,7 @@ export function App() {
               selection={selection}
               storybookUrl={activeStorybookUrl}
               storybookState={activeStorybookState}
+              storybookRenderKey={activeStorybookRenderKey}
               onRetryStorybook={retryStorybook}
               onView={setView}
               onCapture={onCapture}

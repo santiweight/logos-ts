@@ -8,6 +8,7 @@ interface Props {
   selection: Selection
   storybookUrl: string
   storybookState: SbState | null
+  storybookRenderKey: string
   onRetryStorybook: (() => void) | null
   onView: (view: View) => void
   onCapture: (storyId: string) => void
@@ -21,6 +22,7 @@ export function ContentPanel({
   selection,
   storybookUrl,
   storybookState,
+  storybookRenderKey,
   onRetryStorybook,
   onView,
   onCapture,
@@ -75,12 +77,13 @@ export function ContentPanel({
               {...(selection.storyId != null ? { storyId: selection.storyId } : {})}
               storybookUrl={storybookUrl}
               storybookState={storybookState}
+              storybookRenderKey={storybookRenderKey}
               onRetryStorybook={onRetryStorybook}
               onCapture={onCapture}
             />
           )}
           {selection.view === "captured" && comp && (
-            <CapturedView component={comp} {...(selection.exportName != null ? { exportName: selection.exportName } : {})} storybookUrl={storybookUrl} />
+            <CapturedView component={comp} {...(selection.exportName != null ? { exportName: selection.exportName } : {})} storybookUrl={storybookUrl} storybookRenderKey={storybookRenderKey} />
           )}
           {selection.view === "code" && symbol && <SymbolView item={symbol} />}
           {selection.view === "code" && !symbol && comp && <ComponentCodeView component={comp} />}
@@ -258,12 +261,14 @@ function StoryView({
   storyId,
   storybookUrl,
   storybookState,
+  storybookRenderKey,
   onRetryStorybook,
   onCapture,
 }: {
   storyId?: string
   storybookUrl: string
   storybookState: SbState | null
+  storybookRenderKey: string
   onRetryStorybook: (() => void) | null
   onCapture: (storyId: string) => void
 }) {
@@ -318,7 +323,7 @@ function StoryView({
     )
   }
 
-  const src = `${storybookUrl}/iframe.html?id=${storyId}&viewMode=story`
+  const src = `${storybookUrl}/iframe.html?id=${storyId}&viewMode=story&logosReload=${encodeURIComponent(storybookRenderKey)}`
   return (
     <div className="pane">
       <div className="pane-path">
@@ -386,7 +391,7 @@ function diffLines(a: string, b: string): { type: "same" | "add" | "del"; text: 
 
 type SnapTab = "rendered" | "source" | "diff"
 
-function SnapshotIframe({ html, storybookUrl, storyId }: { html: string; storybookUrl: string; storyId?: string }) {
+function SnapshotIframe({ html, storybookUrl, storybookRenderKey, storyId }: { html: string; storybookUrl: string; storybookRenderKey: string; storyId?: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const htmlRef = useRef(html)
   htmlRef.current = html
@@ -405,7 +410,7 @@ function SnapshotIframe({ html, storybookUrl, storyId }: { html: string; storybo
   }, [html, inject])
 
   const id = storyId ?? ""
-  const src = `${storybookUrl}/iframe.html?id=${encodeURIComponent(id)}&viewMode=story`
+  const src = `${storybookUrl}/iframe.html?id=${encodeURIComponent(id)}&viewMode=story&logosReload=${encodeURIComponent(storybookRenderKey)}`
   return (
     <iframe
       ref={iframeRef}
@@ -421,10 +426,12 @@ function CapturedView({
   component,
   exportName,
   storybookUrl,
+  storybookRenderKey,
 }: {
   component: NonNullable<FileEntry["component"]>
   exportName?: string
   storybookUrl: string
+  storybookRenderKey: string
 }) {
   const [tab, setTab] = useState<SnapTab>("rendered")
   const cap = component.captured.find((c) => c.exportName === exportName) ?? component.captured[0]
@@ -460,7 +467,7 @@ function CapturedView({
         ))}
       </div>
       {tab === "rendered" && storybookUrl && (
-        <SnapshotIframe html={html} storybookUrl={storybookUrl} {...(component.stories[0]?.id != null ? { storyId: component.stories[0].id } : {})} />
+        <SnapshotIframe html={html} storybookUrl={storybookUrl} storybookRenderKey={storybookRenderKey} {...(component.stories[0]?.id != null ? { storyId: component.stories[0].id } : {})} />
       )}
       {tab === "rendered" && !storybookUrl && (
         <div className="empty">Waiting for Storybook to start…</div>

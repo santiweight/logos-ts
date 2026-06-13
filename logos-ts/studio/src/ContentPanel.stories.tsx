@@ -62,6 +62,7 @@ const meta: Meta<typeof ContentPanel> = {
     selection: { file: "src/components/JobCard.tsx", view: "code" },
     storybookUrl: "",
     storybookState: null,
+    storybookRenderKey: "story-render-key",
     onView: noop,
     onCapture: noop,
     comments: {},
