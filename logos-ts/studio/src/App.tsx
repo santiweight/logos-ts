@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unnecessary-condition, no-restricted-syntax */
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { SidebarTree } from "./SidebarTree"
-import { ContentPanel, type StoryRenderer } from "./ContentPanel"
+import { ContentPanel } from "./ContentPanel"
 import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
 import { svgIcon } from "./icons"
@@ -55,7 +55,6 @@ export function App() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
-  const [storyRenderer, setStoryRenderer] = useState<StoryRenderer>("portable")
 
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
 
@@ -561,13 +560,6 @@ export function App() {
           <button className={reviewOpen ? "active" : ""} onClick={() => setReviewOpen(true)}>
             Review{reviewCount > 0 ? ` ${reviewCount}` : ""}
           </button>
-          <button
-            className="renderer-toggle"
-            title="Toggle story rendering implementation"
-            onClick={() => setStoryRenderer((renderer) => renderer === "portable" ? "storybook" : "portable")}
-          >
-            Renderer: {storyRenderer === "portable" ? "Portable" : "Storybook"}
-          </button>
         </nav>
         <div className="main-view">
           {reviewOpen ? (
@@ -583,7 +575,7 @@ export function App() {
               file={currentFile}
               selection={selection}
               workspaceId={activeWorkspaceId}
-              storyRenderer={storyRenderer}
+              storyRenderer="portable"
               storybookUrl={activeStorybookUrl}
               storybookState={activeStorybookState}
               storybookRenderKey={activeStorybookRenderKey}
