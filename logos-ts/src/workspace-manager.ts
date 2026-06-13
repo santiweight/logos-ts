@@ -289,14 +289,6 @@ export class WorkspaceManager {
     const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
     const instance = await this.createInstance(id, sourceRoot, parentInst?.index)
 
-    // Start Storybook before awaiting the index — it only needs the fork dir,
-    // and on a cold server the index build would otherwise delay it by ~15s.
-    if (this.caps.storybook) {
-      this.startStorybook(id, instance.materializedRoot).catch((e: any) => {
-        console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
-      })
-    }
-
     const ws: WorkspaceRecord = {
       id,
       name: opts?.name ?? "workspace",
@@ -310,6 +302,12 @@ export class WorkspaceManager {
     }
     this.workspaces.set(id, ws)
     this.save(ws)
+
+    if (this.caps.storybook) {
+      this.startStorybook(id, instance.materializedRoot).catch((e: any) => {
+        console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
+      })
+    }
 
     return this.toMeta(ws)
   }

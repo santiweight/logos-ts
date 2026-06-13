@@ -17,6 +17,7 @@ export type SbStatus = "starting" | "ready" | "failed"
 export interface SbState {
   status: SbStatus
   startedAt: number
+  updatedAt: number
   logs: string[]
   error?: string
 }
@@ -28,6 +29,7 @@ const MAX_LOG_LINES = 50
 export class StorybookManager {
   private registry: Registry = {}
   private live = new Map<string, ChildProcess>()
+  private stopping = new Set<string>()
   private states = new Map<string, SbState>()
   private store: LogosRuntimeStore
   private logosSrc: string
@@ -38,10 +40,28 @@ export class StorybookManager {
     this.logosSrc = logosSrc
     this.projectRoot = projectRoot
     this.registry = this.store.listStorybooks()
+    this.states = new Map(Object.entries(this.store.listStorybookStates()))
   }
 
   private save(): void {
     this.store.saveStorybooks(this.registry)
+  }
+
+  private saveState(id: string): void {
+    const state = this.states.get(id)
+    if (!state) return
+    this.store.saveStorybookState({ id, ...state })
+  }
+
+  private setState(id: string, state: SbState): SbState {
+    this.states.set(id, state)
+    this.saveState(id)
+    return state
+  }
+
+  private clearState(id: string): void {
+    this.states.delete(id)
+    this.store.deleteStorybookState(id)
   }
 
   private isAlive(pid: number): boolean {
@@ -58,9 +78,24 @@ export class StorybookManager {
     for (const [id, entry] of Object.entries(this.registry)) {
       if (this.isAlive(entry.pid)) {
         console.log(`[storybook-mgr] reconnected ${id} on port ${entry.port} (pid ${entry.pid})`)
+        if (!this.states.get(id)) {
+          this.setState(id, {
+            status: "ready",
+            startedAt: entry.startedAt,
+            updatedAt: Date.now(),
+            logs: [],
+          })
+        }
       } else {
         console.log(`[storybook-mgr] purging stale ${id} (pid ${entry.pid} dead)`)
         delete this.registry[id]
+        this.setState(id, {
+          status: "failed",
+          startedAt: entry.startedAt,
+          updatedAt: Date.now(),
+          logs: [],
+          error: `storybook process ${entry.pid} is no longer running`,
+        })
       }
     }
     this.save()
@@ -74,6 +109,14 @@ export class StorybookManager {
       delete this.registry[id]
       this.live.delete(id)
       this.save()
+      const state = this.states.get(id)
+      this.setState(id, {
+        status: "failed",
+        startedAt: state?.startedAt ?? entry.startedAt,
+        updatedAt: Date.now(),
+        logs: state?.logs ?? [],
+        error: `storybook process ${entry.pid} is no longer running`,
+      })
       return null
     }
     return entry.url
@@ -101,6 +144,8 @@ export class StorybookManager {
     if (!s) return
     s.logs.push(line)
     if (s.logs.length > MAX_LOG_LINES) s.logs.shift()
+    s.updatedAt = Date.now()
+    this.saveState(id)
   }
 
   /**
@@ -112,8 +157,7 @@ export class StorybookManager {
     const existing = this.get(id)
     if (existing) return Promise.resolve(existing)
 
-    const state: SbState = { status: "starting", startedAt: Date.now(), logs: [] }
-    this.states.set(id, state)
+    const state = this.setState(id, { status: "starting", startedAt: Date.now(), updatedAt: Date.now(), logs: [] })
 
     return new Promise((resolve_, reject) => {
       const npx = resolve(frontendDir, "node_modules/.bin/storybook")
@@ -142,6 +186,8 @@ export class StorybookManager {
       const fail = (error: string) => {
         state.status = "failed"
         state.error = error
+        state.updatedAt = Date.now()
+        this.saveState(id)
         if (!resolved) {
           resolved = true
           if (timeout) clearTimeout(timeout)
@@ -200,7 +246,10 @@ export class StorybookManager {
           }
           this.registry[id] = entry
           state.status = "ready"
+          delete state.error
+          state.updatedAt = Date.now()
           this.save()
+          this.saveState(id)
           console.log(`[storybook-mgr] ${id} ready on ${url} (pid ${child.pid})`)
           resolve_(url)
         }
@@ -211,6 +260,7 @@ export class StorybookManager {
         delete this.registry[id]
         this.live.delete(id)
         this.save()
+        if (this.stopping.delete(id)) return
         fail(`storybook for ${id} exited with code ${code}`)
       })
     })
@@ -220,15 +270,19 @@ export class StorybookManager {
   shutdown(id: string): void {
     const entry = this.registry[id]
     if (entry) {
+      this.stopping.add(id)
       try { process.kill(entry.pid, "SIGTERM") } catch {}
       delete this.registry[id]
       this.save()
+      this.clearState(id)
     }
     const child = this.live.get(id)
     if (child) {
+      this.stopping.add(id)
       try { child.kill() } catch {}
       this.live.delete(id)
     }
+    this.clearState(id)
   }
 
   /** Kill all tracked Storybook processes. */

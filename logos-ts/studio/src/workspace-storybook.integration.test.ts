@@ -81,8 +81,13 @@ async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<st
 
 async function getStorybookUrls(): Promise<Record<string, string>> {
   const res = await api("/api/storybooks")
-  const data = await res.json() as { urls: Record<string, string>; entries?: Record<string, { pid?: number }> }
+  const data = await res.json() as {
+    urls: Record<string, string>
+    entries?: Record<string, { pid?: number }>
+    states?: Record<string, { status: string; logs: string[]; error?: string }>
+  }
   latestStorybookEntries = data.entries ?? {}
+  latestStorybookStates = data.states ?? {}
   return data.urls
 }
 
@@ -102,6 +107,7 @@ function storybookPid(wsId: string): number | null {
 }
 
 let latestStorybookEntries: Record<string, { pid?: number }> = {}
+let latestStorybookStates: Record<string, { status: string; logs: string[]; error?: string }> = {}
 
 function getStorybookEntryPid(wsId: string): number | null {
   const pid = latestStorybookEntries[wsId]?.pid ?? null
@@ -170,6 +176,8 @@ describe("workspace + storybook integration", () => {
 
     const sbRes = await fetch(`${baseUrl}${url!}`)
     expect(sbRes.ok).toBe(true)
+    expect(latestStorybookStates[wsId]).toMatchObject({ status: "ready" })
+    expect(latestStorybookStates[wsId]?.logs.some((line) => line.includes("http://localhost:"))).toBe(true)
   }, 180_000)
 
   it("the spawned storybook carries ownership tags", () => {

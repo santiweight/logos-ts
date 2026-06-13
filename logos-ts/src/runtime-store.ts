@@ -66,6 +66,17 @@ export interface StoredStorybookEntry {
   startedAt: number
 }
 
+export type StoredStorybookStatus = "starting" | "ready" | "failed"
+
+export interface StoredStorybookState {
+  id: string
+  status: StoredStorybookStatus
+  startedAt: number
+  updatedAt: number
+  logs: string[]
+  error?: string
+}
+
 export class LogosRuntimeStore {
   private db: import("node:sqlite").DatabaseSync
 
@@ -73,11 +84,20 @@ export class LogosRuntimeStore {
     const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite")
     mkdirSync(dirname(dbPath), { recursive: true })
     this.db = new DatabaseSync(dbPath)
+    this.configureConnection()
     this.ensureSchema()
   }
 
   get database(): import("node:sqlite").DatabaseSync {
     return this.db
+  }
+
+  private configureConnection(): void {
+    this.db.exec(`
+      PRAGMA foreign_keys = ON;
+      PRAGMA busy_timeout = 5000;
+      PRAGMA journal_mode = WAL;
+    `)
   }
 
   private ensureSchema(): void {
@@ -125,16 +145,25 @@ export class LogosRuntimeStore {
         workspace_id TEXT NOT NULL,
         goal_id TEXT,
         message TEXT NOT NULL,
-        details_json TEXT
+        details_json TEXT,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_policy_events_workspace ON workspace_policy_events(workspace_id, seq);
       CREATE TABLE IF NOT EXISTS storybooks (
-        id TEXT PRIMARY KEY,
+        id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
         pid INTEGER NOT NULL,
         port INTEGER NOT NULL,
         url TEXT NOT NULL,
         cwd TEXT NOT NULL,
         started_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS storybook_states (
+        id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        logs_json TEXT NOT NULL,
+        error TEXT
       );
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
@@ -144,7 +173,7 @@ export class LogosRuntimeStore {
       );
       CREATE TABLE IF NOT EXISTS session_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL REFERENCES sessions(id),
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON UPDATE CASCADE ON DELETE CASCADE,
         seq INTEGER NOT NULL,
         type TEXT NOT NULL,
         payload TEXT NOT NULL
@@ -237,6 +266,9 @@ export class LogosRuntimeStore {
     this.transaction(() => {
       this.db.prepare(`DELETE FROM goals WHERE workspace_id = ?`).run(id)
       this.db.prepare(`DELETE FROM workspace_instances WHERE workspace_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM storybooks WHERE id = ?`).run(id)
+      this.db.prepare(`DELETE FROM storybook_states WHERE id = ?`).run(id)
+      this.db.prepare(`DELETE FROM workspace_policy_events WHERE workspace_id = ?`).run(id)
       this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id)
     })
   }
@@ -245,6 +277,9 @@ export class LogosRuntimeStore {
     this.transaction(() => {
       this.db.prepare(`DELETE FROM goals`).run()
       this.db.prepare(`DELETE FROM workspace_instances`).run()
+      this.db.prepare(`DELETE FROM storybooks`).run()
+      this.db.prepare(`DELETE FROM storybook_states`).run()
+      this.db.prepare(`DELETE FROM workspace_policy_events`).run()
       this.db.prepare(`DELETE FROM workspaces`).run()
     })
   }
@@ -310,6 +345,42 @@ export class LogosRuntimeStore {
 
   deleteAllStorybooks(): void {
     this.db.prepare(`DELETE FROM storybooks`).run()
+  }
+
+  listStorybookStates(): Record<string, StoredStorybookState> {
+    const rows = this.db.prepare(`SELECT * FROM storybook_states ORDER BY id`).all() as Record<string, unknown>[]
+    return Object.fromEntries(rows.map((row) => {
+      const state = mapStorybookState(row)
+      return [state.id, state]
+    }))
+  }
+
+  saveStorybookState(state: StoredStorybookState): void {
+    this.db.prepare(`
+      INSERT INTO storybook_states (id, status, started_at, updated_at, logs_json, error)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        status = excluded.status,
+        started_at = excluded.started_at,
+        updated_at = excluded.updated_at,
+        logs_json = excluded.logs_json,
+        error = excluded.error
+    `).run(
+      state.id,
+      state.status,
+      state.startedAt,
+      state.updatedAt,
+      JSON.stringify(state.logs),
+      state.error ?? null,
+    )
+  }
+
+  deleteStorybookState(id: string): void {
+    this.db.prepare(`DELETE FROM storybook_states WHERE id = ?`).run(id)
+  }
+
+  deleteAllStorybookStates(): void {
+    this.db.prepare(`DELETE FROM storybook_states`).run()
   }
 
   close(): void {
@@ -384,4 +455,17 @@ function mapStorybook(row: Record<string, unknown>): StoredStorybookEntry {
     cwd: row["cwd"] as string,
     startedAt: row["started_at"] as number,
   }
+}
+
+function mapStorybookState(row: Record<string, unknown>): StoredStorybookState {
+  const state: StoredStorybookState = {
+    id: row["id"] as string,
+    status: row["status"] as StoredStorybookStatus,
+    startedAt: row["started_at"] as number,
+    updatedAt: row["updated_at"] as number,
+    logs: JSON.parse(row["logs_json"] as string),
+  }
+  const error = nullableString(row["error"])
+  if (error) state.error = error
+  return state
 }
