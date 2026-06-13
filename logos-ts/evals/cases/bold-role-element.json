@@ -32,5 +32,6 @@
   },
   "tier": "deterministic",
   "repeat": 3,
-  "timeoutMs": 60000
+  "timeoutMs": 60000,
+  "contextBudget": 5000
 }

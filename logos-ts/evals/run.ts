@@ -43,6 +43,7 @@ interface EvalCase {
   repeat?: number
   timeoutMs?: number
   skipTestRunner?: boolean
+  contextBudget?: number
   checks: Record<string, Check>
 }
 interface AgentTestRuns {
@@ -94,9 +95,9 @@ function fork(codebase: string, work: string) {
 
 // ---- pipeline pieces ----
 
-async function buildContext(work: string, targets: string[], log: (m: string) => void): Promise<string> {
+async function buildContext(work: string, targets: string[], log: (m: string) => void, budget = 40000): Promise<string> {
   try {
-    const { stdout } = await execFileAsync(tsx, [resolve(logosTsRoot, "src/context.ts"), work, "40000", ...targets], {
+    const { stdout } = await execFileAsync(tsx, [resolve(logosTsRoot, "src/context.ts"), work, String(budget), ...targets], {
       cwd: logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
     })
     return stdout
@@ -259,7 +260,7 @@ async function runTrial(c: EvalCase, caseDir: string, trial: number, modelOverri
     say("stripping to architecture view…")
     await archmode("strip", work, bodiesFile, log)
     say("building context…")
-    const archContext = await buildContext(work, targets, log)
+    const archContext = await buildContext(work, targets, log, c.contextBudget)
     say(`context: ${archContext.length} chars; running architecture agent…`)
     const a1 = await runAgent(buildArchPrompt(archContext, sandboxNote(work), goalLine), work, timeoutMs, agentLog, mcpConfigPath, model)
     if (!a1.ok) say(`architecture agent: ${a1.note}`)
@@ -269,7 +270,7 @@ async function runTrial(c: EvalCase, caseDir: string, trial: number, modelOverri
     // Phase 2: implementation agent fills in new stubs + satisfies the goal.
     const stubs = findDeclareStubs(work)
     say(`implementation pass (${stubs.length} stub file(s))…`)
-    const implContext = await buildContext(work, targets, log)
+    const implContext = await buildContext(work, targets, log, c.contextBudget)
     const archHandoff =
       `\n\nAn architecture pass already restructured the signatures for this change.` +
       (stubs.length
@@ -284,7 +285,7 @@ async function runTrial(c: EvalCase, caseDir: string, trial: number, modelOverri
     agentNote = [a1.ok ? null : `arch: ${a1.note}`, a2.ok ? null : `impl: ${a2.note}`].filter(Boolean).join("; ") || undefined
   } else {
     say("building context…")
-    const context = await buildContext(work, targets, log)
+    const context = await buildContext(work, targets, log, c.contextBudget)
     say(`context: ${context.length} chars; running implementation agent…`)
     const a = await runAgent(buildImplPrompt(context, sandboxNote(work), goalLine, verifyNote), work, timeoutMs, agentLog, mcpConfigPath, model)
     agentOk = a.ok
