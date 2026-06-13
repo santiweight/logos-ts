@@ -42,6 +42,7 @@ interface EvalCase {
   model?: string
   repeat?: number
   timeoutMs?: number
+  skipTestRunner?: boolean
   checks: Record<string, Check>
 }
 interface AgentTestRuns {
@@ -245,8 +246,9 @@ async function runTrial(c: EvalCase, caseDir: string, trial: number, modelOverri
   const agentLog = join(slot, "agent.log")
   const model = modelOverride ?? c.model ?? "sonnet"
   const caps = detectProject(work)
-  const mcpConfigPath = writeMcpConfig(slot, work, caps.tests)
-  const verifyNote = buildVerifyNote(!!caps.tests)
+  const tests = c.skipTestRunner ? null : caps.tests
+  const mcpConfigPath = writeMcpConfig(slot, work, tests)
+  const verifyNote = buildVerifyNote(!!tests)
 
   let agentOk = true
   let agentNote: string | undefined

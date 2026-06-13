@@ -1,0 +1,37 @@
+{
+  "name": "bold-no-mcp",
+  "codebase": "../../../../hn-jobs",
+  "comment": {
+    "target": "component:JobRow",
+    "text": "Make this text bold",
+    "component": "JobRow",
+    "storyId": "components-jobtable--default",
+    "selector": ":scope > table > tbody > tr:nth-of-type(1) > td:nth-of-type(2) > div > div:nth-of-type(1)",
+    "label": "div \u00b7 Senior Engineer"
+  },
+  "agent": "implementation",
+  "checks": {
+    "typecheck": {
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ]
+    },
+    "behavior": {
+      "oracle": "../../checks/bold-role-element.check.test.tsx",
+      "cwd": "frontend",
+      "cmd": [
+        "npx",
+        "vitest",
+        "run",
+        "bold-role-element.check.test.tsx"
+      ]
+    }
+  },
+  "tier": "deterministic",
+  "repeat": 3,
+  "timeoutMs": 60000,
+  "skipTestRunner": true
+}
