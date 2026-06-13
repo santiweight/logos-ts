@@ -4,6 +4,7 @@
 //   npx tsx evals/run.ts                                # all cases, once each
 //   npx tsx evals/run.ts bold-role-element              # one case by name
 //   npx tsx evals/run.ts --tier deterministic --repeat 5
+//   npx tsx evals/run.ts --model haiku bold-role-element
 //   npx tsx evals/run.ts evals/cases/fuzzy-search-arch.json
 //
 // Tiers:
@@ -38,6 +39,7 @@ interface EvalCase {
   comment: { target: string; text: string; label?: string; component?: string; storyId?: string; selector?: string }
   agent: "implementation" | "architecture" | "testing"
   tier?: "deterministic" | "capability"
+  model?: string
   repeat?: number
   timeoutMs?: number
   checks: Record<string, Check>
@@ -62,6 +64,7 @@ interface CaseResult {
   name: string
   tier: "deterministic" | "capability"
   agent: EvalCase["agent"]
+  model: string
   trials: TrialResult[]
 }
 
@@ -115,10 +118,10 @@ async function archmode(cmd: "strip" | "splice", work: string, bodiesFile: strin
   }
 }
 
-function runAgent(prompt: string, cwd: string, timeoutMs: number, logPath: string, mcpConfigPath: string): Promise<{ ok: boolean; note?: string }> {
+function runAgent(prompt: string, cwd: string, timeoutMs: number, logPath: string, mcpConfigPath: string, model: string): Promise<{ ok: boolean; note?: string }> {
   return new Promise((res) => {
     const out = createWriteStream(logPath, { flags: "a" })
-    const child = spawn("claude", ["-p", prompt, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath], {
+    const child = spawn("claude", ["-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath], {
       cwd, stdio: ["ignore", "pipe", "pipe"],
     })
     child.stdout.pipe(out)
@@ -217,7 +220,7 @@ async function runChecks(c: EvalCase, caseDir: string, work: string, log: (m: st
 
 // ---- trial ----
 
-async function runTrial(c: EvalCase, caseDir: string, trial: number): Promise<TrialResult> {
+async function runTrial(c: EvalCase, caseDir: string, trial: number, modelOverride?: string): Promise<TrialResult> {
   const started = Date.now()
   const slot = resolve(caseDir, "runs", c.name, `t${trial}`)
   const work = join(slot, "work")
@@ -240,6 +243,7 @@ async function runTrial(c: EvalCase, caseDir: string, trial: number): Promise<Tr
   })
   const timeoutMs = c.timeoutMs ?? DEFAULT_TIMEOUT[c.agent]
   const agentLog = join(slot, "agent.log")
+  const model = modelOverride ?? c.model ?? "sonnet"
   const caps = detectProject(work)
   const mcpConfigPath = writeMcpConfig(slot, work, caps.tests)
   const verifyNote = buildVerifyNote(!!caps.tests)
@@ -255,7 +259,7 @@ async function runTrial(c: EvalCase, caseDir: string, trial: number): Promise<Tr
     say("building context…")
     const archContext = await buildContext(work, targets, log)
     say(`context: ${archContext.length} chars; running architecture agent…`)
-    const a1 = await runAgent(buildArchPrompt(archContext, sandboxNote(work), goalLine), work, timeoutMs, agentLog, mcpConfigPath)
+    const a1 = await runAgent(buildArchPrompt(archContext, sandboxNote(work), goalLine), work, timeoutMs, agentLog, mcpConfigPath, model)
     if (!a1.ok) say(`architecture agent: ${a1.note}`)
     say("splicing implementations…")
     await archmode("splice", work, bodiesFile, log)
@@ -272,7 +276,7 @@ async function runTrial(c: EvalCase, caseDir: string, trial: number): Promise<Tr
       ` Test files may contain stub tests that throw "not implemented" — implement those and make them pass.`
     const a2 = await runAgent(
       buildImplPrompt(implContext, sandboxNote(work), goalLine, verifyNote) + archHandoff,
-      work, timeoutMs, agentLog, mcpConfigPath,
+      work, timeoutMs, agentLog, mcpConfigPath, model,
     )
     agentOk = a1.ok && a2.ok
     agentNote = [a1.ok ? null : `arch: ${a1.note}`, a2.ok ? null : `impl: ${a2.note}`].filter(Boolean).join("; ") || undefined
@@ -280,7 +284,7 @@ async function runTrial(c: EvalCase, caseDir: string, trial: number): Promise<Tr
     say("building context…")
     const context = await buildContext(work, targets, log)
     say(`context: ${context.length} chars; running implementation agent…`)
-    const a = await runAgent(buildImplPrompt(context, sandboxNote(work), goalLine, verifyNote), work, timeoutMs, agentLog, mcpConfigPath)
+    const a = await runAgent(buildImplPrompt(context, sandboxNote(work), goalLine, verifyNote), work, timeoutMs, agentLog, mcpConfigPath, model)
     agentOk = a.ok
     agentNote = a.note
     if (!a.ok) say(`agent: ${a.note}`)
@@ -329,13 +333,15 @@ async function main() {
   const args = process.argv.slice(2)
   const positional: string[] = []
   let repeat: number | undefined
-  let concurrency = 2
+  let concurrency = Infinity
   let tier: string | undefined
+  let modelOverride: string | undefined
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!
     if (a === "--repeat") repeat = Number(args[++i])
     else if (a === "--concurrency") concurrency = Number(args[++i])
     else if (a === "--tier") tier = args[++i]
+    else if (a === "--model") modelOverride = args[++i]
     else positional.push(a)
   }
 
@@ -343,13 +349,13 @@ async function main() {
   if (!cases.length) { console.error("no cases matched"); process.exit(2) }
 
   const caseResults: CaseResult[] = cases.map(({ c }) => ({
-    name: c.name, tier: c.tier ?? "capability", agent: c.agent, trials: [],
+    name: c.name, tier: c.tier ?? "capability", agent: c.agent, model: modelOverride ?? c.model ?? "sonnet", trials: [],
   }))
   const thunks: (() => Promise<void>)[] = []
   cases.forEach(({ c, caseDir }, ci) => {
     const n = repeat ?? c.repeat ?? 1
     for (let t = 1; t <= n; t++)
-      thunks.push(async () => { caseResults[ci]!.trials.push(await runTrial(c, caseDir, t)) })
+      thunks.push(async () => { caseResults[ci]!.trials.push(await runTrial(c, caseDir, t, modelOverride)) })
   })
   await pool(thunks, concurrency)
 
@@ -363,7 +369,7 @@ async function main() {
     const perCheck = checkNames.map((n) => `${n} ${r.trials.filter((t) => t.checks[n]).length}/${r.trials.length}`).join(", ")
     const required = r.tier === "deterministic"
     if (required) deterministicFailures += r.trials.length - passed
-    console.log(`${passed === r.trials.length ? "✅" : required ? "❌" : "⚠️ "} ${r.name} [${r.tier}/${r.agent}] ${passed}/${r.trials.length} trials (${perCheck})`)
+    console.log(`${passed === r.trials.length ? "✅" : required ? "❌" : "⚠️ "} ${r.name} [${r.tier}/${r.agent}/${r.model}] ${passed}/${r.trials.length} trials (${perCheck})`)
     for (const t of r.trials.filter((t) => !t.agentOk)) console.log(`     t${t.trial} agent: ${t.agentNote}`)
     const tr = r.trials.map((t) => t.agentTestRuns).filter((x): x is AgentTestRuns => !!x)
     if (tr.length) {

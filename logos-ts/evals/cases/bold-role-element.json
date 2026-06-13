@@ -2,9 +2,9 @@
   "name": "bold-role-element",
   "codebase": "../../../hn-jobs",
   "comment": {
-    "target": "component:JobTable",
+    "target": "component:JobRow",
     "text": "Make this text bold",
-    "component": "JobTable",
+    "component": "JobRow",
     "storyId": "components-jobtable--default",
     "selector": ":scope > table > tbody > tr:nth-of-type(1) > td:nth-of-type(2) > div > div:nth-of-type(1)",
     "label": "div · Senior Engineer"
