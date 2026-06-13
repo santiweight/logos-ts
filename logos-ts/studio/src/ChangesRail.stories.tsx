@@ -44,6 +44,8 @@ const ws1: WorkspaceMeta = {
   kind: "code",
   parentId: null,
   createdAt: Date.now() - 300_000,
+  baseInstanceId: "inst-1",
+  activeInstanceId: "inst-1",
   goals: [goal1, goal2],
 }
 
@@ -53,6 +55,8 @@ const ws2: WorkspaceMeta = {
   kind: "code",
   parentId: "ws-1",
   createdAt: Date.now() - 60_000,
+  baseInstanceId: "inst-2",
+  activeInstanceId: "inst-2",
   goals: [],
 }
 

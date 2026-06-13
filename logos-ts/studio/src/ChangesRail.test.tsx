@@ -31,8 +31,8 @@ describe("ChangesRail", () => {
 
   it("shows workspace list when loaded with workspaces", () => {
     const workspaces = [
-      { id: "ws-1", name: "feature-branch", kind: "code" as const, parentId: null, createdAt: 1000, goals: [] },
-      { id: "ws-2", name: "bugfix", kind: "code" as const, parentId: null, createdAt: 2000, goals: [] },
+      { id: "ws-1", name: "feature-branch", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-2", name: "bugfix", kind: "code" as const, parentId: null, createdAt: 2000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={false} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
@@ -42,7 +42,7 @@ describe("ChangesRail", () => {
 
   it("hides loading indicator once workspaces arrive", () => {
     const workspaces = [
-      { id: "ws-1", name: "my-workspace", kind: "code" as const, parentId: null, createdAt: 1000, goals: [] },
+      { id: "ws-1", name: "my-workspace", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={true} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
@@ -62,6 +62,8 @@ describe("ChangesRail", () => {
         kind: "code" as const,
         parentId: null,
         createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
         goals: [
           { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "running" as const },
         ],
@@ -86,6 +88,8 @@ describe("ChangesRail", () => {
         kind: "code" as const,
         parentId: null,
         createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
         goals: [
           { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "done" as const },
         ],
@@ -110,6 +114,8 @@ describe("ChangesRail", () => {
         kind: "code" as const,
         parentId: null,
         createdAt: 2000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
         goals: [
           { id: "g-1", text: "running goal", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "running" as const },
         ],
@@ -120,6 +126,8 @@ describe("ChangesRail", () => {
         kind: "code" as const,
         parentId: null,
         createdAt: 1000,
+        baseInstanceId: "inst-2",
+        activeInstanceId: "inst-2",
         goals: [
           { id: "g-2", text: "done goal", label: "span", target: "component:Y", mode: "code" as const, createdAt: 1000, status: "done" as const },
         ],

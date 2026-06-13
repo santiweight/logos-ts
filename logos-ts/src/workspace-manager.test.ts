@@ -1,10 +1,15 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
 import { afterEach, describe, it, expect } from "vitest"
 import { buildElementContext, buildGoalLine, selectNextGoal } from "./prompt.js"
 import { WorkspaceManager, type AddGoalResult, type Goal } from "./workspace-manager.js"
 
+const LOGOS_TS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+const TSX = resolve(LOGOS_TS_ROOT, "node_modules/.bin/tsx")
 const tempDirs: string[] = []
 
 function goal(id: string, mode: Goal["mode"], status: Goal["status"] = "pending"): Goal {
@@ -19,25 +24,73 @@ function goal(id: string, mode: Goal["mode"], status: Goal["status"] = "pending"
   }
 }
 
-function createManager(): WorkspaceManager {
+class FakeAgentProcess extends EventEmitter {
+  stdout = new PassThrough()
+  stderr = new PassThrough()
+  killed = false
+
+  kill(): boolean {
+    this.killed = true
+    return true
+  }
+}
+
+function createSessions() {
+  const events: { sessionId: string; type: string; payload: unknown }[] = []
+  return {
+    events,
+    create: (goalId: string, workspaceId: string) => ({ id: `session-${goalId}`, goalId, workspaceId }),
+    addEvent: (sessionId: string, type: string, payload: unknown) => { events.push({ sessionId, type, payload }) },
+    setClaudeId: () => undefined,
+    deleteByWorkspace: () => undefined,
+    deleteAll: () => undefined,
+  }
+}
+
+function createManager(opts?: { spawned?: FakeAgentProcess[] }): WorkspaceManager {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
   tempDirs.push(root)
   const projectRoot = join(root, "project")
   mkdirSync(projectRoot, { recursive: true })
   writeFileSync(join(projectRoot, "package.json"), "{}")
+  const sessions = createSessions()
 
   return new WorkspaceManager({
     wsDir: join(root, ".workspaces"),
     runsDir: join(root, ".agent-runs"),
-    logosTsSrc: join(root, "src"),
-    logosTsRoot: root,
+    logosTsSrc: join(LOGOS_TS_ROOT, "src"),
+    logosTsRoot: LOGOS_TS_ROOT,
     projectRoot,
     caps: { root: projectRoot, nodeModulesDirs: [] },
     sbManager: { get: () => null, shutdown: () => undefined } as any,
-    sessions: { deleteByWorkspace: () => undefined } as any,
-    tsx: "tsx",
+    sessions: sessions as any,
+    tsx: TSX,
     getIndex: async () => ({ root: projectRoot, files: [] }),
+    ...(opts?.spawned
+      ? {
+          spawnAgent: () => {
+            const child = new FakeAgentProcess()
+            opts.spawned!.push(child)
+            return child as any
+          },
+        }
+      : {}),
   })
+}
+
+async function waitFor(assertion: () => void, timeoutMs = 5000): Promise<void> {
+  const start = Date.now()
+  let lastError: unknown
+  while (Date.now() - start < timeoutMs) {
+    try {
+      assertion()
+      return
+    } catch (e) {
+      lastError = e
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+  }
+  throw lastError
 }
 
 afterEach(() => {
@@ -318,6 +371,79 @@ describe("WorkspaceManager workspace kinds", () => {
     ])
   })
 
+  it("queues a requested pending goal while another goal owns the workspace", async () => {
+    const mgr = createManager()
+    const code = await mgr.create({ kind: "code" })
+    const running = expectGoal(await mgr.addGoal(code.id, goal("running", "code"))).goal
+    const pending = expectGoal(await mgr.addGoal(code.id, goal("pending", "code"))).goal
+    running.status = "running"
+
+    const events: { type: string; message?: unknown; goalId?: unknown; runningGoalId?: unknown }[] = []
+    const result = mgr.processById(code.id, pending.id, (event) => events.push(event))
+
+    expect(result).toBe(pending.id)
+    expect(mgr.goalsForWorkspace(code.id).map((g) => [g.id, g.status])).toEqual([
+      ["running", "running"],
+      ["pending", "pending"],
+    ])
+    expect(events).toEqual([
+      {
+        type: "queued",
+        goalId: "pending",
+        runningGoalId: "running",
+        message: "goal queued behind running agent",
+      },
+    ])
+  })
+
+  it("streams a queued requested goal when it starts after the active agent finishes", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    const first = expectGoal(await mgr.addGoal(code.id, goal("first", "code"))).goal
+    const second = expectGoal(await mgr.addGoal(code.id, goal("second", "code"))).goal
+    const firstEvents: { type: string; message?: unknown; goalId?: unknown; event?: unknown }[] = []
+    const secondEvents: { type: string; message?: unknown; goalId?: unknown; event?: unknown }[] = []
+
+    expect(mgr.processById(code.id, first.id, (event) => firstEvents.push(event))).toBe(first.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    expect(mgr.goalsForWorkspace(code.id).map((g) => [g.id, g.status])).toEqual([
+      ["first", "running"],
+      ["second", "pending"],
+    ])
+
+    expect(mgr.processById(code.id, second.id, (event) => secondEvents.push(event))).toBe(second.id)
+    expect(secondEvents).toEqual([
+      {
+        type: "queued",
+        goalId: "second",
+        runningGoalId: "first",
+        message: "goal queued behind running agent",
+      },
+    ])
+
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(spawned).toHaveLength(2))
+    await waitFor(() => {
+      expect(mgr.goalsForWorkspace(code.id).map((g) => [g.id, g.status])).toEqual([
+        ["first", "done"],
+        ["second", "running"],
+      ])
+    })
+
+    spawned[1]!.stdout.write(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "second is running" }] } }) + "\n")
+    await waitFor(() => expect(secondEvents.some((event) => event.type === "event")).toBe(true))
+    expect(firstEvents.some((event) => event.type === "event")).toBe(false)
+
+    spawned[1]!.emit("close", 0)
+    await waitFor(() => {
+      expect(mgr.goalsForWorkspace(code.id).map((g) => [g.id, g.status])).toEqual([
+        ["first", "done"],
+        ["second", "done"],
+      ])
+    })
+  })
+
   it("reports a missing requested goal without starting another queued goal", async () => {
     const mgr = createManager()
     const code = await mgr.create({ kind: "code" })
@@ -355,7 +481,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.nextPendingGoal(secondArch.id)?.id).toBe("pending")
   })
 
-  it("ignores saved workspaces without an explicit kind", async () => {
+  it("migrates saved workspaces without an explicit kind to code workspaces", async () => {
     const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
     tempDirs.push(root)
     const projectRoot = join(root, "project")
@@ -378,17 +504,23 @@ describe("WorkspaceManager workspace kinds", () => {
     const mgr = new WorkspaceManager({
       wsDir,
       runsDir: join(root, ".agent-runs"),
-      logosTsSrc: join(root, "src"),
-      logosTsRoot: root,
+      logosTsSrc: join(LOGOS_TS_ROOT, "src"),
+      logosTsRoot: LOGOS_TS_ROOT,
       projectRoot,
       caps: { root: projectRoot, nodeModulesDirs: [] },
       sbManager: { get: () => null, shutdown: () => undefined } as any,
       sessions: { deleteByWorkspace: () => undefined } as any,
-      tsx: "tsx",
+      tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
     })
 
-    expect(mgr.get("legacy")).toBeUndefined()
-    expect(mgr.list()).toEqual([])
+    expect(mgr.get("legacy")).toMatchObject({
+      id: "legacy",
+      kind: "code",
+      forkDir: legacyFork,
+      activeInstanceId: "inst-legacy-active",
+      baseInstanceId: "inst-legacy-active",
+    })
+    expect(mgr.list()).toHaveLength(1)
   })
 })

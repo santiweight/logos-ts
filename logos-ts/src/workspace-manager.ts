@@ -2,10 +2,11 @@
 // WorkspaceManager: owns workspace lifecycle, goal queue, and agent sequencing.
 //
 // Ontology:
-//   Workspace  — a forked project codebase on disk, typed as code or architecture
+//   Workspace  — user-facing intent container, typed as code or architecture
+//   Instance   — a materialized project tree on disk
 //   Goal       — a change request to be achieved in a workspace
 //   GoalQueue  — the ordered list of goals for a workspace (one per workspace)
-//   AgentRun   — executes one goal in a workspace's fork directory
+//   AgentRun   — executes one goal in a workspace instance directory
 //
 // Code and architecture work are isolated by workspace kind. Arch goals posted
 // to a code workspace fork into a dedicated arch workspace. Arch goals posted
@@ -38,15 +39,39 @@ export interface Goal {
 
 export type WorkspaceKind = "code" | "arch"
 
+export interface WorkspaceInstance {
+  id: string
+  workspaceId: string
+  materializedRoot: string
+  mutability: "writable" | "immutable"
+  createdAt: number
+  index: unknown
+}
+
+interface WorkspaceRecord {
+  id: string
+  name: string
+  kind: WorkspaceKind
+  parentId: string | null
+  createdAt: number
+  baseInstanceId: string
+  activeInstanceId: string
+  goals: Goal[]
+  instances: Record<string, WorkspaceInstance>
+}
+
 export interface WorkspaceState {
   id: string
   name: string
   kind: WorkspaceKind
   parentId: string | null
   createdAt: number
+  baseInstanceId: string
+  activeInstanceId: string
   forkDir: string
-  goals: Goal[]
   index: unknown
+  goals: Goal[]
+  instances: Record<string, WorkspaceInstance>
 }
 
 export interface WorkspaceMeta {
@@ -55,6 +80,8 @@ export interface WorkspaceMeta {
   kind: WorkspaceKind
   parentId: string | null
   createdAt: number
+  baseInstanceId: string
+  activeInstanceId: string
   goals: Goal[]
 }
 
@@ -83,6 +110,7 @@ export interface AgentEvent {
 }
 
 type AgentEventCallback = (event: AgentEvent) => void
+type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
 
 interface ProjectCaps {
   root: string
@@ -92,7 +120,7 @@ interface ProjectCaps {
 }
 
 export class WorkspaceManager {
-  private workspaces = new Map<string, WorkspaceState>()
+  private workspaces = new Map<string, WorkspaceRecord>()
   private runningAgents = new Map<string, ChildProcess>() // goalId → child
   private workspaceSeq = 0
   private wsDir: string
@@ -107,6 +135,8 @@ export class WorkspaceManager {
   private getIndex: (() => Promise<unknown>) | null
   private policyEvents: WorkspacePolicyEvent[] = []
   private policyEventSeq = 0
+  private goalSubscribers = new Map<string, Set<AgentEventCallback>>()
+  private spawnAgent: AgentSpawner
 
   constructor(opts: {
     wsDir: string
@@ -119,6 +149,7 @@ export class WorkspaceManager {
     sessions: ClaudeSessionManager
     tsx: string
     getIndex?: () => Promise<unknown>
+    spawnAgent?: AgentSpawner
   }) {
     this.wsDir = opts.wsDir
     this.runsDir = opts.runsDir
@@ -130,6 +161,7 @@ export class WorkspaceManager {
     this.sessions = opts.sessions
     this.tsx = opts.tsx
     this.getIndex = opts.getIndex ?? null
+    this.spawnAgent = opts.spawnAgent ?? spawn
 
     mkdirSync(this.wsDir, { recursive: true })
     this.loadAll()
@@ -139,28 +171,56 @@ export class WorkspaceManager {
     if (!existsSync(this.wsDir)) return
     for (const f of readdirSync(this.wsDir).filter((f) => f.endsWith(".json"))) {
       try {
-        const ws = JSON.parse(readFileSync(resolve(this.wsDir, f), "utf8")) as WorkspaceState
+        const raw = JSON.parse(readFileSync(resolve(this.wsDir, f), "utf8")) as any
+        const ws = this.normalizeWorkspace(raw)
         if (ws.kind !== "code" && ws.kind !== "arch") continue
         this.workspaces.set(ws.id, ws)
       } catch { /* corrupt file */ }
     }
   }
 
-  private save(ws: WorkspaceState): void {
+  private normalizeWorkspace(raw: any): WorkspaceRecord {
+    if (raw?.instances && raw?.activeInstanceId && raw?.baseInstanceId) {
+      return raw as WorkspaceRecord
+    }
+    const id = String(raw.id)
+    const instanceId = raw.activeInstanceId ?? `inst-${id}-active`
+    const instance: WorkspaceInstance = {
+      id: instanceId,
+      workspaceId: id,
+      materializedRoot: String(raw.forkDir),
+      mutability: "writable",
+      createdAt: Number(raw.createdAt ?? Date.now()),
+      index: raw.index,
+    }
+    return {
+      id,
+      name: String(raw.name ?? "workspace"),
+      kind: raw.kind === "arch" ? "arch" : "code",
+      parentId: raw.parentId ?? null,
+      createdAt: Number(raw.createdAt ?? Date.now()),
+      baseInstanceId: instanceId,
+      activeInstanceId: instanceId,
+      goals: raw.goals ?? [],
+      instances: { [instanceId]: instance },
+    }
+  }
+
+  private save(ws: WorkspaceRecord): void {
     writeFileSync(resolve(this.wsDir, `${ws.id}.json`), JSON.stringify(ws))
   }
 
-  private async snapshotIndex(): Promise<unknown> {
-    if (this.getIndex) return this.getIndex()
-    const args = [resolve(this.logosTsRoot, "src/build-index.ts"), this.projectRoot, "-"]
+  private async snapshotIndex(root = this.projectRoot): Promise<unknown> {
+    if (root === this.projectRoot && this.getIndex) return this.getIndex()
+    const args = [resolve(this.logosTsRoot, "src/build-index.ts"), root, "-"]
     return JSON.parse(
       execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8" })
     )
   }
 
-  private createFork(wsId: string, sourceRoot = this.projectRoot): string {
+  private createMaterializedRoot(instanceId: string, sourceRoot = this.projectRoot): string {
     mkdirSync(this.runsDir, { recursive: true })
-    const dir = resolve(this.runsDir, wsId)
+    const dir = resolve(this.runsDir, instanceId)
     if (!existsSync(dir)) {
       cpSync(sourceRoot, dir, {
         recursive: true,
@@ -176,26 +236,69 @@ export class WorkspaceManager {
     return dir
   }
 
+  private activeInstance(ws: WorkspaceRecord): WorkspaceInstance {
+    const inst = ws.instances[ws.activeInstanceId]
+    if (!inst) throw new Error(`active instance not found for workspace ${ws.id}: ${ws.activeInstanceId}`)
+    return inst
+  }
+
   private nextWorkspaceId(): string {
     this.workspaceSeq += 1
     return `ws-${Date.now()}-${this.workspaceSeq}`
   }
 
-  // --- public API ---
-
-  list(): WorkspaceMeta[] {
-    return [...this.workspaces.values()].map((ws) => ({
+  private toState(ws: WorkspaceRecord): WorkspaceState {
+    const inst = this.activeInstance(ws)
+    return {
       id: ws.id,
       name: ws.name,
       kind: ws.kind,
       parentId: ws.parentId,
       createdAt: ws.createdAt,
+      baseInstanceId: ws.baseInstanceId,
+      activeInstanceId: ws.activeInstanceId,
+      forkDir: inst.materializedRoot,
+      index: inst.index,
       goals: ws.goals,
-    }))
+      instances: ws.instances,
+    }
+  }
+
+  private toMeta(ws: WorkspaceRecord): WorkspaceMeta {
+    return {
+      id: ws.id,
+      name: ws.name,
+      kind: ws.kind,
+      parentId: ws.parentId,
+      createdAt: ws.createdAt,
+      baseInstanceId: ws.baseInstanceId,
+      activeInstanceId: ws.activeInstanceId,
+      goals: ws.goals,
+    }
+  }
+
+  private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
+    const id = `inst-${Date.now()}-${Math.round(Math.random() * 1e6)}`
+    const materializedRoot = this.createMaterializedRoot(id, sourceRoot)
+    return {
+      id,
+      workspaceId,
+      materializedRoot,
+      mutability: "writable",
+      createdAt: Date.now(),
+      index: index ?? await this.snapshotIndex(materializedRoot),
+    }
+  }
+
+  // --- public API ---
+
+  list(): WorkspaceMeta[] {
+    return [...this.workspaces.values()].map((ws) => this.toMeta(ws))
   }
 
   get(id: string): WorkspaceState | undefined {
-    return this.workspaces.get(id)
+    const ws = this.workspaces.get(id)
+    return ws ? this.toState(ws) : undefined
   }
 
   listPolicyEvents(opts?: { workspaceId?: string; limit?: number }): WorkspacePolicyEvent[] {
@@ -223,14 +326,15 @@ export class WorkspaceManager {
   reindex(id: string): WorkspaceState | undefined {
     const ws = this.workspaces.get(id)
     if (!ws) return undefined
-    const args = [resolve(this.logosTsRoot, "src/build-index.ts"), ws.forkDir, "-"]
+    const inst = this.activeInstance(ws)
+    const args = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
     const wsSbUrl = this.sbManager.get(ws.id)
     if (wsSbUrl) args.push(wsSbUrl)
-    ws.index = JSON.parse(
+    inst.index = JSON.parse(
       execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8" })
     )
     this.save(ws)
-    return ws
+    return this.toState(ws)
   }
 
   async create(opts?: { name?: string; fromWorkspaceId?: string; kind?: WorkspaceKind }): Promise<WorkspaceMeta> {
@@ -238,32 +342,33 @@ export class WorkspaceManager {
     const parentId = opts?.fromWorkspaceId ?? null
     const parentWs = parentId ? this.workspaces.get(parentId) : null
     const kind = opts?.kind ?? "code"
-    const forkDir = this.createFork(id, parentWs?.forkDir ?? this.projectRoot)
+    const parentInst = parentWs ? this.activeInstance(parentWs) : null
+    const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
+    const instance = await this.createInstance(id, sourceRoot, parentInst?.index)
 
     // Start Storybook before awaiting the index — it only needs the fork dir,
     // and on a cold server the index build would otherwise delay it by ~15s.
     if (this.caps.storybook) {
-      this.startStorybook(id, forkDir).catch((e: any) => {
+      this.startStorybook(id, instance.materializedRoot).catch((e: any) => {
         console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
       })
     }
 
-    const index = parentWs ? parentWs.index : await this.snapshotIndex()
-
-    const ws: WorkspaceState = {
+    const ws: WorkspaceRecord = {
       id,
       name: opts?.name ?? "workspace",
       kind,
       parentId,
       createdAt: Date.now(),
-      forkDir,
+      baseInstanceId: instance.id,
+      activeInstanceId: instance.id,
       goals: [],
-      index,
+      instances: { [instance.id]: instance },
     }
     this.workspaces.set(id, ws)
     this.save(ws)
 
-    return { id: ws.id, name: ws.name, kind: ws.kind, parentId: ws.parentId, createdAt: ws.createdAt, goals: ws.goals }
+    return this.toMeta(ws)
   }
 
   private startStorybook(id: string, forkDir: string): Promise<string> {
@@ -276,7 +381,7 @@ export class WorkspaceManager {
   ensureStorybook(wsId: string): Promise<string> {
     const ws = this.workspaces.get(wsId)
     if (!ws) return Promise.reject(new Error("no such workspace"))
-    return this.startStorybook(wsId, ws.forkDir)
+    return this.startStorybook(wsId, this.activeInstance(ws).materializedRoot)
   }
 
   delete(id: string): void {
@@ -296,8 +401,10 @@ export class WorkspaceManager {
     // Remove sessions
     this.sessions.deleteByWorkspace(id)
 
-    // Remove fork directory
-    rmSync(ws.forkDir, { recursive: true, force: true })
+    // Remove materialized instance directories
+    for (const inst of Object.values(ws.instances)) {
+      rmSync(inst.materializedRoot, { recursive: true, force: true })
+    }
 
     // Remove workspace file and state
     rmSync(resolve(this.wsDir, `${id}.json`), { force: true })
@@ -397,26 +504,79 @@ export class WorkspaceManager {
     return this.processGoal(wsId, goalId, onEvent)
   }
 
+  unsubscribeGoalEvents(goalId: string, onEvent: AgentEventCallback): void {
+    const subscribers = this.goalSubscribers.get(goalId)
+    if (!subscribers) return
+    subscribers.delete(onEvent)
+    if (subscribers.size === 0) this.goalSubscribers.delete(goalId)
+  }
+
+  private subscribeGoalEvents(goalId: string, onEvent: AgentEventCallback): void {
+    const subscribers = this.goalSubscribers.get(goalId) ?? new Set<AgentEventCallback>()
+    subscribers.add(onEvent)
+    this.goalSubscribers.set(goalId, subscribers)
+  }
+
+  private publishGoalEvent(goalId: string, event: AgentEvent, source: AgentEventCallback): void {
+    const subscribers = this.goalSubscribers.get(goalId)
+    if (!subscribers) return
+    for (const subscriber of subscribers) {
+      if (subscriber !== source) subscriber(event)
+    }
+    if (event.type === "done" || event.type === "error") this.goalSubscribers.delete(goalId)
+  }
+
+  private runningGoal(ws: WorkspaceRecord): Goal | undefined {
+    return ws.goals.find((g) => g.status === "running" || this.runningAgents.has(g.id))
+  }
+
   private processGoal(wsId: string, goalId: string | null, onEvent: AgentEventCallback): string | null {
     const ws = this.workspaces.get(wsId)
     if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return null }
-    if (ws.kind === "arch" && ws.goals.some((g) => g.status === "running" || this.runningAgents.has(g.id))) {
-      const runningGoal = ws.goals.find((g) => g.status === "running" || this.runningAgents.has(g.id))
+    const requestedGoal = goalId ? ws.goals.find((g) => g.id === goalId) : null
+    if (goalId && !requestedGoal) {
+      onEvent({ type: "error", message: "goal not found" })
+      return null
+    }
+    const runningGoal = this.runningGoal(ws)
+    if (runningGoal) {
+      if (requestedGoal?.id === runningGoal.id || (requestedGoal && this.runningAgents.has(requestedGoal.id))) {
+        this.subscribeGoalEvents(requestedGoal.id, onEvent)
+        onEvent({ type: "status", goalId: requestedGoal.id, message: "attached to running agent" })
+        return requestedGoal.id
+      }
+      if (requestedGoal && requestedGoal.status !== "pending") {
+        onEvent({ type: "error", message: `goal is ${requestedGoal.status}` })
+        return null
+      }
+      if (requestedGoal?.status === "pending" && requestedGoal.mode === ws.kind && !this.runningAgents.has(requestedGoal.id)) {
+        this.subscribeGoalEvents(requestedGoal.id, onEvent)
+        onEvent({
+          type: "queued",
+          goalId: requestedGoal.id,
+          runningGoalId: runningGoal.id,
+          message: "goal queued behind running agent",
+        })
+        return requestedGoal.id
+      }
+
       const runningDetails: Record<string, unknown> = { workspaceKind: ws.kind }
-      if (runningGoal) runningDetails["runningGoalId"] = runningGoal.id
-      this.recordPolicyEvent({
-        type: "arch_agent_blocked",
-        workspaceId: ws.id,
-        message: "architecture workspace already has a running agent",
-        ...(runningGoal ? { goalId: runningGoal.id } : {}),
-        details: runningDetails,
-      })
-      onEvent({ type: "error", message: "architecture workspace already has a running agent" })
+      runningDetails["runningGoalId"] = runningGoal.id
+      if (ws.kind === "arch") {
+        this.recordPolicyEvent({
+          type: "arch_agent_blocked",
+          workspaceId: ws.id,
+          message: "architecture workspace already has a running agent",
+          goalId: runningGoal.id,
+          details: runningDetails,
+        })
+      }
+      onEvent({ type: "error", message: ws.kind === "arch" ? "architecture workspace already has a running agent" : "workspace already has a running agent" })
       return null
     }
 
     const goal = goalId
-      ? ws.goals.find((g) => g.id === goalId)
+      ? requestedGoal
       : selectNextGoal(ws.goals, this.runningAgents)
     if (!goal) {
       onEvent({ type: "error", message: goalId ? "goal not found" : "no pending goals" })
@@ -442,8 +602,27 @@ export class WorkspaceManager {
     return goal.id
   }
 
-  private async runGoalAgent(ws: WorkspaceState, goal: Goal, onEvent: AgentEventCallback): Promise<void> {
-    const dir = ws.forkDir
+  private maybeStartNextQueued(wsId: string): void {
+    const ws = this.workspaces.get(wsId)
+    if (!ws || this.runningGoal(ws)) return
+    const goal = selectNextGoal(ws.goals, this.runningAgents)
+    if (!goal || goal.mode !== ws.kind) return
+
+    goal.status = "running"
+    this.save(ws)
+    this.runGoalAgent(ws, goal, () => undefined).catch((e) => {
+      goal.status = "error"
+      this.save(ws)
+      console.error(`[workspace] failed to start queued goal ${goal.id}:`, e)
+    })
+  }
+
+  private async runGoalAgent(ws: WorkspaceRecord, goal: Goal, onEvent: AgentEventCallback): Promise<void> {
+    const baseInst = this.activeInstance(ws)
+    const workingInst = await this.createInstance(ws.id, baseInst.materializedRoot, baseInst.index)
+    ws.instances[workingInst.id] = workingInst
+    this.save(ws)
+    const dir = workingInst.materializedRoot
 
     // Architecture mode: strip bodies for this single architecture agent.
     const mode = goal.mode
@@ -517,9 +696,10 @@ export class WorkspaceManager {
       }
 
       onEvent(evt)
+      this.publishGoalEvent(goal.id, evt, onEvent)
     }
 
-    const child = spawn(
+    const child = this.spawnAgent(
       "claude",
       ["-p", prompt, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
       {
@@ -532,7 +712,7 @@ export class WorkspaceManager {
     this.runningAgents.set(goal.id, child)
 
     let buf = ""
-    child.stdout.on("data", (d) => {
+    child.stdout?.on("data", (d) => {
       buf += d.toString()
       let i
       while ((i = buf.indexOf("\n")) >= 0) {
@@ -542,7 +722,7 @@ export class WorkspaceManager {
         try { recordAndEmit({ type: "event", event: JSON.parse(line) }) } catch { recordAndEmit({ type: "raw", line }) }
       }
     })
-    child.stderr.on("data", (d) => recordAndEmit({ type: "stderr", message: d.toString() }))
+    child.stderr?.on("data", (d) => recordAndEmit({ type: "stderr", message: d.toString() }))
     child.on("error", (e) => recordAndEmit({ type: "error", message: String(e) }))
     child.on("close", async (code) => {
       this.runningAgents.delete(goal.id)
@@ -560,7 +740,7 @@ export class WorkspaceManager {
 
       // Collect base snapshots before re-indexing so we can populate previousSnapshot
       const baseSnapshots = new Map<string, string | null>()
-      const oldIndex = ws.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null }[] } }[] } | null
+      const oldIndex = baseInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null }[] } }[] } | null
       if (oldIndex?.files) {
         for (const f of oldIndex.files) {
           if (!f.component?.captured) continue
@@ -576,9 +756,9 @@ export class WorkspaceManager {
         const wsSbUrl = this.sbManager.get(ws.id)
         if (wsSbUrl) reindexArgs.push(wsSbUrl)
         const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
-        ws.index = JSON.parse(stdout)
+        workingInst.index = JSON.parse(stdout)
         // Merge previousSnapshot from the base index
-        const newIndex = ws.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] } }[] }
+        const newIndex = workingInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] } }[] }
         if (newIndex.files) {
           for (const f of newIndex.files) {
             if (!f.component?.captured) continue
@@ -591,9 +771,19 @@ export class WorkspaceManager {
       } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
 
       goal.status = code === 0 ? "done" : "error"
+      if (code === 0) {
+        ws.activeInstanceId = workingInst.id
+        this.sbManager.shutdown(ws.id)
+        if (this.caps.storybook) {
+          this.startStorybook(ws.id, workingInst.materializedRoot).catch((e: any) => {
+            console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
+          })
+        }
+      }
       this.save(ws)
       rmSync(mcpConfigPath, { force: true })
       recordAndEmit({ type: "done", code })
+      this.maybeStartNextQueued(ws.id)
     })
   }
 

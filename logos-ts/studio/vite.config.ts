@@ -373,26 +373,33 @@ function studioApi(runtime: StudioRuntime): Plugin {
         res.setHeader("connection", "keep-alive")
         let closed = false
         let ended = false
-        req.on("close", () => { closed = true })
+        let activeGoalId: string | null = null
+        let activeHandler: ((evt: { type: string; [key: string]: unknown }) => void) | null = null
+        const cleanup = () => {
+          if (activeGoalId && activeHandler) wsMgr.unsubscribeGoalEvents(activeGoalId, activeHandler)
+          activeGoalId = null
+          activeHandler = null
+        }
+        req.on("close", () => { closed = true; cleanup() })
         const send = (o: unknown) => {
           if (!closed) res.write(`data: ${JSON.stringify(o)}\n\n`)
         }
         const end = () => {
           if (!closed && !ended) {
             ended = true
+            cleanup()
             res.end()
           }
         }
 
+        activeHandler = (evt) => {
+          send(evt)
+          if (evt.type === "done" || evt.type === "error") end()
+        }
         const goalId = requestedGoalId
-          ? wsMgr.processById(wsId, requestedGoalId, (evt) => {
-              send(evt)
-              if (evt.type === "done" || evt.type === "error") end()
-            })
-          : wsMgr.processNext(wsId, (evt) => {
-              send(evt)
-              if (evt.type === "done" || evt.type === "error") end()
-            })
+          ? wsMgr.processById(wsId, requestedGoalId, activeHandler)
+          : wsMgr.processNext(wsId, activeHandler)
+        activeGoalId = goalId
         if (!goalId) end()
       })
 

@@ -4,8 +4,10 @@ import type { Goal } from "./types"
 
 // Each streamed message from the agent-run SSE.
 export interface AgentMsg {
-  type: "status" | "event" | "stderr" | "raw" | "error" | "done"
+  type: "status" | "event" | "stderr" | "raw" | "error" | "done" | "queued"
   message?: string
+  goalId?: string
+  runningGoalId?: string
   line?: string
   code?: number
   event?: any
@@ -24,6 +26,7 @@ function Line({ m }: { m: AgentMsg }) {
   if (m.type === "status") return <div className="ag-line ag-status">▸ {m.message}</div>
   if (m.type === "stderr") return <div className="ag-line ag-err">{m.message}</div>
   if (m.type === "error") return <div className="ag-line ag-err">✗ {m.message}</div>
+  if (m.type === "queued") return <div className="ag-line ag-status">▸ {m.message}</div>
   if (m.type === "done")
     return <div className="ag-line ag-done">● agent finished{m.code ? ` (exit ${m.code})` : ""}</div>
   if (m.type === "raw") return <div className="ag-line ag-dim">{m.line}</div>

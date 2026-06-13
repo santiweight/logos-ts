@@ -251,8 +251,18 @@ export function App() {
   const [agentGoalId, setAgentGoalId] = useState<string | null>(null)
   const esRefs = useRef<Map<string, EventSource>>(new Map())
 
+  const effectiveRunningGoals = useMemo(() => {
+    const next = new Set(runningGoals)
+    for (const ws of workspaces) {
+      for (const goal of ws.goals ?? []) {
+        if (goal.status === "running") next.add(goal.id)
+      }
+    }
+    return next
+  }, [runningGoals, workspaces])
+
   const agentEvents = agentGoalId ? goalEvents[agentGoalId] ?? [] : []
-  const agentRunning = agentGoalId ? runningGoals.has(agentGoalId) : false
+  const agentRunning = agentGoalId ? effectiveRunningGoals.has(agentGoalId) : false
 
   const loadSessionForGoal = useCallback(async (goalId: string) => {
     if (goalEvents[goalId]?.length) {
@@ -526,7 +536,7 @@ export function App() {
         onSelectGoal={(id) => { setSelected({ type: "goal", id }); loadSessionForGoal(id) }}
         onDeleteWorkspace={deleteWorkspace}
         onDeleteGoal={deleteGoal}
-        runningGoals={runningGoals}
+        runningGoals={effectiveRunningGoals}
       />
 
       <aside className="sidebar">

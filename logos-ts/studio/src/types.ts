@@ -125,8 +125,11 @@ export interface WorkspaceMeta {
   kind: WorkspaceKind
   parentId: string | null
   createdAt: number
+  baseInstanceId: string
+  activeInstanceId: string
   goals: Goal[]
 }
 export interface Workspace extends WorkspaceMeta {
+  forkDir: string
   index: StudioIndex
 }
