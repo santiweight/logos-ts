@@ -329,6 +329,17 @@ body {
 }
 .main-nav button:hover { color: var(--text); }
 .main-nav button.active { color: #fff; border-bottom-color: var(--accent); }
+.main-nav .renderer-toggle {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px 3px;
+  background: #202028;
+  color: var(--text);
+}
+.main-nav .renderer-toggle:hover {
+  border-color: var(--accent);
+}
 .main-view { flex: 1; min-height: 0; overflow: hidden; }
 
 .content { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }

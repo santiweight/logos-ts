@@ -562,10 +562,11 @@ export function App() {
             Review{reviewCount > 0 ? ` ${reviewCount}` : ""}
           </button>
           <button
+            className="renderer-toggle"
             title="Toggle story rendering implementation"
             onClick={() => setStoryRenderer((renderer) => renderer === "portable" ? "storybook" : "portable")}
           >
-            {storyRenderer === "portable" ? "Portable Stories" : "Storybook Server"}
+            Renderer: {storyRenderer === "portable" ? "Portable" : "Storybook"}
           </button>
         </nav>
         <div className="main-view">
