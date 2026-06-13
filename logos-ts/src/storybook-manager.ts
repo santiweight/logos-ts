@@ -168,7 +168,7 @@ export class StorybookManager {
       // cacheDir (node_modules/.vite) would be shared by every concurrent
       // instance — point each instance at its own cache inside the fork.
       const cacheDir = resolve(frontendDir, ".vite-logos")
-      const child = spawn(npx, ["dev", "--ci", "--no-open"], {
+      const child = spawn(npx, ["dev", "--ci", "--no-open", "--host", "127.0.0.1"], {
         cwd: frontendDir,
         stdio: ["ignore", "pipe", "pipe"],
         env: {
@@ -228,12 +228,12 @@ export class StorybookManager {
       child.stdout.on("data", (d: Buffer) => {
         bufferLines(d)
         stdoutBuf += d.toString()
-        const m = stdoutBuf.match(/https?:\/\/localhost:(\d+)/)
+        const m = stdoutBuf.match(/https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/)
         if (m != null && m[1] != null && !resolved) {
           resolved = true
           clearTimeout(timeout)
           const port = parseInt(m[1], 10)
-          const url = `http://localhost:${port}`
+          const url = `http://127.0.0.1:${port}`
           const pid = child.pid
           if (pid == null) {
             fail(`failed to get pid from storybook child process`)

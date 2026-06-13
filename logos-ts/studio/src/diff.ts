@@ -1,13 +1,16 @@
 import type { StudioIndex, DiffStatus } from "./types"
 
+const componentsOf = (file: StudioIndex["files"][number]) =>
+  file.components?.length ? file.components : file.component ? [file.component] : []
+
 function collectNodes(index: StudioIndex): Map<string, string> {
   const m = new Map<string, string>()
   const SEP = " "
   for (const f of index.files) {
     m.set(`file:${f.file}`, f.code)
-    if (f.component) {
-      m.set(`component:${f.component.name}`, f.component.signature + SEP + f.component.componentCode)
-      if (f.component.propsName) m.set(`props:${f.component.propsName}`, f.component.propsCode ?? "")
+    for (const component of componentsOf(f)) {
+      m.set(`component:${component.name}`, component.signature + SEP + component.componentCode)
+      if (component.propsName) m.set(`props:${component.propsName}`, component.propsCode ?? "")
     }
     for (const it of f.items) {
       if (it.kind === "function") {

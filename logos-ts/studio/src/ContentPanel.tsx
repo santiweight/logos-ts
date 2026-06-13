@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { GraphView } from "./GraphView"
-import type { GoalApi, DiffStatus, FileEntry, FileItem, SbState, Selection, View } from "./types"
+import type { ComponentEntry, GoalApi, DiffStatus, FileEntry, FileItem, SbState, Selection, View } from "./types"
 
 export type StoryRenderer = "portable" | "storybook"
 
@@ -36,7 +36,12 @@ export function ContentPanel({
   onComment,
   diff,
 }: Props) {
-  const comp = file.component
+  const comps = componentsOf(file)
+  const comp = selection.component
+    ? comps.find((candidate) => candidate.name === selection.component) ?? comps[0]
+    : selection.storyId
+      ? comps.find((candidate) => candidate.stories.some((story) => story.id === selection.storyId)) ?? comps[0]
+      : comps[0]
   const symbol = selection.symbol
     ? file.items.find((it) => it.name === selection.symbol)
     : null
@@ -110,11 +115,15 @@ export function ContentPanel({
   )
 }
 
-function storyExport(c: NonNullable<FileEntry["component"]>, storyId?: string): string {
+function componentsOf(file: FileEntry): ComponentEntry[] {
+  return file.components?.length ? file.components : file.component ? [file.component] : []
+}
+
+function storyExport(c: ComponentEntry, storyId?: string): string {
   return c.stories.find((s) => s.id === storyId)?.exportName ?? c.stories[0]?.exportName ?? "—"
 }
 
-function ComponentCodeView({ component }: { component: NonNullable<FileEntry["component"]> }) {
+function ComponentCodeView({ component }: { component: ComponentEntry }) {
   const fieldsDesc = component.propsFields.map((f) => `${f.name}: ${f.type}`).join("\n")
   return (
     <div className="content-body">
@@ -493,7 +502,7 @@ function CapturedView({
   storybookUrl,
   storybookRenderKey,
 }: {
-  component: NonNullable<FileEntry["component"]>
+  component: ComponentEntry
   exportName?: string
   workspaceId: string | null
   storyRenderer: StoryRenderer

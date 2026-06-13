@@ -3,10 +3,10 @@ import react from "@vitejs/plugin-react"
 import { execFile, execFileSync } from "node:child_process"
 import { writeFileSync, mkdirSync, watch, cpSync, existsSync, symlinkSync, readdirSync, mkdtempSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { basename, dirname, resolve, join, relative } from "node:path"
+import { basename, dirname, resolve, join, relative, sep } from "node:path"
 import type { StudioIndex } from "../src/build-index"
 import { authPlugin } from "./server/auth"
-import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
+import { storybookProxyPlugin } from "./server/storybook-proxy"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -245,7 +245,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         const entries = sbManager.all()
         const states = sbManager.allStates()
         const urls: Record<string, string> = {}
-        for (const id of Object.keys(entries)) urls[id] = publicStorybookUrl(id)
+        for (const [id, entry] of Object.entries(entries)) urls[id] = entry.url
         res.end(JSON.stringify({ urls, states, entries }))
       })
 
@@ -531,6 +531,55 @@ function portableStoriesPlugin(runtime: StudioRuntime): Plugin {
   }
 }
 
+function stripViteQuery(path: string): string {
+  return path.replace(/[?#].*$/, "")
+}
+
+function containsPath(root: string, file: string): boolean {
+  const rel = relative(root, file)
+  return rel === "" || (!!rel && !rel.startsWith("..") && !rel.startsWith(sep) && !/^[A-Za-z]:/.test(rel))
+}
+
+function resolveSourceAlias(root: string, source: string): string | null {
+  const base = resolve(root, source.slice(2))
+  const candidates = [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}.js`,
+    `${base}.jsx`,
+    `${base}.json`,
+    join(base, "index.ts"),
+    join(base, "index.tsx"),
+    join(base, "index.js"),
+    join(base, "index.jsx"),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+function workspaceAliasPlugin(runtime: StudioRuntime): Plugin {
+  const workspaceRoots = () => {
+    const roots = [runtime.projectRoot]
+    for (const ws of runtime.wsMgr.list()) {
+      const state = runtime.wsMgr.get(ws.id)
+      if (state) roots.push(state.forkDir)
+    }
+    return roots
+  }
+
+  return {
+    name: "logos-workspace-source-alias",
+    enforce: "pre",
+    resolveId(source, importer) {
+      if (!source.startsWith("@/") || !importer) return null
+      const importerPath = resolve(stripViteQuery(importer))
+      const root = workspaceRoots().find((candidate) => containsPath(candidate, importerPath))
+      if (!root) return null
+      return resolveSourceAlias(root, source)
+    },
+  }
+}
+
 function autoStorybook(runtime: StudioRuntime): Plugin {
   return {
     name: "auto-storybook",
@@ -542,7 +591,7 @@ function autoStorybook(runtime: StudioRuntime): Plugin {
         if (!sbManager.get(wsMeta.id) && caps.storybook) {
           const ws = wsMgr.get(wsMeta.id)
           if (!ws) continue
-          const wsFrontend = join(ws.forkDir, "frontend")
+          const wsFrontend = join(ws.forkDir, relative(runtime.projectRoot, caps.storybook.frontendDir))
           sbManager.ensure(wsMeta.id, wsFrontend).catch((e: any) =>
             console.error(`[storybook-mgr] failed to restart ${wsMeta.id}:`, e.message)
           )
@@ -562,7 +611,7 @@ export default defineConfig(async ({ command }) => {
   return {
     cacheDir: process.env.LOGOS_VITE_CACHE_DIR || undefined,
     plugins: runtime
-      ? [authPlugin(), portableStoriesPlugin(runtime), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), autoStorybook(runtime)]
+      ? [authPlugin(), workspaceAliasPlugin(runtime), portableStoriesPlugin(runtime), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), autoStorybook(runtime)]
       : [react()],
     server: {
       // Bind a concrete address: the default "localhost" can end up IPv6-only,

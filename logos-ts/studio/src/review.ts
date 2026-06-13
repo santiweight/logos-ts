@@ -1,5 +1,8 @@
 import type { StudioIndex, Workspace } from "./types"
 
+const componentsOf = (file: StudioIndex["files"][number]) =>
+  file.components?.length ? file.components : file.component ? [file.component] : []
+
 export type CaptureChangeStatus = "added" | "changed" | "removed"
 
 export interface CaptureChange {
@@ -33,18 +36,18 @@ export function selectWorkspaceReviewBaseIndex(projectIndex: StudioIndex, worksp
 function captureMap(index: StudioIndex): Map<string, IndexedCapture> {
   const captures = new Map<string, IndexedCapture>()
   for (const file of index.files) {
-    const component = file.component
-    if (!component) continue
-    for (const capture of component.captured) {
-      const story = component.stories.find((candidate) => candidate.exportName === capture.exportName)
-      const id = `${capture.testFile}::${capture.exportName}`
-      captures.set(id, {
-        component: component.name,
-        exportName: capture.exportName,
-        testFile: capture.testFile,
-        storyId: story?.id ?? null,
-        snapshot: capture.snapshot,
-      })
+    for (const component of componentsOf(file)) {
+      for (const capture of component.captured) {
+        const story = component.stories.find((candidate) => candidate.exportName === capture.exportName)
+        const id = `${capture.testFile}::${capture.exportName}`
+        captures.set(id, {
+          component: component.name,
+          exportName: capture.exportName,
+          testFile: capture.testFile,
+          storyId: story?.id ?? null,
+          snapshot: capture.snapshot,
+        })
+      }
     }
   }
   return captures

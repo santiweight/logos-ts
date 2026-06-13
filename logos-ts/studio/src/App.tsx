@@ -12,7 +12,9 @@ import { capturedTestChanges, selectReviewBaseIndex, selectWorkspaceReviewBaseIn
 import { indexToArchText } from "./arch-text"
 import type {
   Goal,
+  ComponentEntry,
   DiffStatus,
+  FileEntry,
   SbState,
   Selection,
   StudioIndex,
@@ -42,6 +44,11 @@ function branchNameFromWorkspace(name: string): string {
     .replace(/[^a-z0-9._/-]+/g, "-")
     .replace(/^-+|-+$/g, "")
   return slug ? `logos/${slug}` : "logos/workspace"
+}
+
+function componentsOf(file: FileEntry | undefined): ComponentEntry[] {
+  if (!file) return []
+  return file.components?.length ? file.components : file.component ? [file.component] : []
 }
 
 export function App() {
@@ -87,6 +94,7 @@ export function App() {
   const activeStorybookState = activeWorkspaceId
     ? storybookStates[activeWorkspaceId] ?? null
     : null
+  const activeStoryRenderer = activeStorybookUrl ? "storybook" : "portable"
   const retryStorybook = useCallback(async () => {
     if (!activeWorkspaceId) return
     try {
@@ -514,28 +522,36 @@ export function App() {
 
   function setView(viewName: View) {
     if (!currentFile) return
-    const comp = currentFile.component
+    const components = componentsOf(currentFile)
+    const comp = selection.component
+      ? components.find((candidate) => candidate.name === selection.component) ?? components[0]
+      : selection.storyId
+        ? components.find((candidate) => candidate.stories.some((story) => story.id === selection.storyId)) ?? components[0]
+        : components[0]
     if (viewName === "story" && comp) {
       const storyId = selection.storyId ?? comp.stories[0]?.id
-      setSelection({ file: currentFile.file, view: viewName, ...(storyId != null ? { storyId } : {}) })
+      setSelection({ file: currentFile.file, component: comp.name, view: viewName, ...(storyId != null ? { storyId } : {}) })
     } else if (viewName === "captured" && comp) {
       const exportName = selection.exportName ?? comp.captured[0]?.exportName
       setSelection({
         file: currentFile.file,
+        component: comp.name,
         view: viewName,
         ...(exportName != null ? { exportName } : {}),
       })
     } else {
-      setSelection({ file: currentFile.file, view: viewName })
+      setSelection({ file: currentFile.file, ...(comp ? { component: comp.name } : {}), view: viewName })
     }
   }
 
   const onCapture = useCallback(
     async (storyId: string) => {
-      const fe = view.files.find((f) => f.component?.stories.some((s) => s.id === storyId))
-      const story = fe?.component?.stories.find((s) => s.id === storyId)
-      if (!fe || !story) return
-      setBusy(`capturing ${fe.component!.name}/${story.exportName}…`)
+      const found = view.files.flatMap((file) =>
+        componentsOf(file).map((component) => ({ file, component }))
+      ).find(({ component }) => component.stories.some((s) => s.id === storyId))
+      const story = found?.component.stories.find((s) => s.id === storyId)
+      if (!found || !story) return
+      setBusy(`capturing ${found.component.name}/${story.exportName}…`)
       setCaptureError(null)
       try {
         const res = await fetch("/api/capture", {
@@ -545,7 +561,7 @@ export function App() {
         })
         if (res.ok) {
           await reindexWorkspace(activeWorkspaceId)
-          setSelection({ file: fe.file, view: "captured", exportName: story.exportName })
+          setSelection({ file: found.file.file, component: found.component.name, view: "captured", exportName: story.exportName })
         } else {
           const data = await res.json().catch(() => null) as { error?: string } | null
           setCaptureError(data?.error ? `Capture failed: ${data.error}` : `Capture failed (${res.status})`)
@@ -559,7 +575,7 @@ export function App() {
     [view.files, activeWorkspaceId, reindexWorkspace]
   )
 
-  const nComps = view.files.filter((f) => f.component).length
+  const nComps = view.files.reduce((n, f) => n + componentsOf(f).length, 0)
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
   const captureReviewCount = captureChanges.length
   const reviewCount = captureReviewCount + (
@@ -628,7 +644,7 @@ export function App() {
               file={currentFile}
               selection={selection}
               workspaceId={activeWorkspaceId}
-              storyRenderer="portable"
+              storyRenderer={activeStoryRenderer}
               storybookUrl={activeStorybookUrl}
               storybookState={activeStorybookState}
               storybookRenderKey={activeStorybookRenderKey}

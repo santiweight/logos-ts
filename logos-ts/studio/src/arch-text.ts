@@ -1,11 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return */
 import type { StudioIndex } from "./types"
 
+const componentsOf = (file: StudioIndex["files"][number]) =>
+  file.components?.length ? file.components : file.component ? [file.component] : []
+
 export function indexToArchText(index: StudioIndex): string {
   const lines: string[] = []
 
   for (const f of index.files) {
-    const hasItems = f.items.length > 0 || f.component
+    const components = componentsOf(f)
+    const hasItems = f.items.length > 0 || components.length > 0
     if (!hasItems) continue
 
     lines.push(`// ${f.file}`)
@@ -21,11 +25,11 @@ export function indexToArchText(index: StudioIndex): string {
       }
     }
 
-    if (f.component) {
-      lines.push(`declare function ${f.component.signature}`)
-      if (f.component.propsName) {
-        lines.push(`interface ${f.component.propsName} {`)
-        for (const p of f.component.propsFields) lines.push(`  ${p.name}: ${p.type}`)
+    for (const component of components) {
+      lines.push(`declare function ${component.signature}`)
+      if (component.propsName) {
+        lines.push(`interface ${component.propsName} {`)
+        for (const p of component.propsFields) lines.push(`  ${p.name}: ${p.type}`)
         lines.push(`}`)
       }
     }

@@ -14,6 +14,16 @@ export interface CapturedNode {
   snapshot: string | null
   previousSnapshot: string | null
 }
+export interface ComponentEntry {
+  name: string
+  signature: string
+  componentCode: string
+  propsName?: string
+  propsCode?: string
+  propsFields: { name: string; type: string }[]
+  stories: StoryNode[]
+  captured: CapturedNode[]
+}
 export interface BackendMethod {
   name: string
   signature: string
@@ -44,17 +54,9 @@ export interface FileEntry {
   file: string
   code: string
   items: FileItem[]
-  // component enrichment (present when a Storybook story targets a symbol in this file)
-  component?: {
-    name: string
-    signature: string
-    componentCode: string
-    propsName?: string
-    propsCode?: string
-    propsFields: { name: string; type: string }[]
-    stories: StoryNode[]
-    captured: CapturedNode[]
-  }
+  components?: ComponentEntry[]
+  // Compatibility alias for older consumers; prefer components.
+  component?: ComponentEntry
 }
 
 export interface StudioIndex {
@@ -67,6 +69,7 @@ export type View = "code" | "arch" | "story" | "captured"
 export interface Selection {
   file: string
   symbol?: string
+  component?: string
   view: View
   storyId?: string
   exportName?: string

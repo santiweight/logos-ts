@@ -118,6 +118,10 @@ export interface AgentEvent {
 type AgentEventCallback = (event: AgentEvent) => void
 type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
 
+function indexComponents(file: { component?: { captured?: unknown[] }; components?: { captured?: unknown[] }[] }): { captured?: unknown[] }[] {
+  return file.components?.length ? file.components : file.component ? [file.component] : []
+}
+
 interface ProjectCaps {
   root: string
   storybook?: { configDir: string; frontendDir: string }
@@ -951,9 +955,11 @@ export class WorkspaceManager {
       const oldIndex = baseInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null }[] } }[] } | null
       if (oldIndex?.files) {
         for (const f of oldIndex.files) {
-          if (!f.component?.captured) continue
-          for (const c of f.component.captured) {
+          for (const component of indexComponents(f)) {
+          if (!component.captured) continue
+          for (const c of component.captured as { exportName: string; testFile: string; snapshot: string | null }[]) {
             baseSnapshots.set(`${c.testFile}::${c.exportName}`, c.snapshot)
+          }
           }
         }
       }
@@ -966,13 +972,15 @@ export class WorkspaceManager {
         const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
         workingInst.index = JSON.parse(stdout)
         // Merge previousSnapshot from the base index
-        const newIndex = workingInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] } }[] }
+        const newIndex = workingInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }; components?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[] }[] }
         if (newIndex.files) {
           for (const f of newIndex.files) {
-            if (!f.component?.captured) continue
-            for (const c of f.component.captured) {
+            for (const component of indexComponents(f) as { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[]) {
+            if (!component.captured) continue
+            for (const c of component.captured) {
               const prev = baseSnapshots.get(`${c.testFile}::${c.exportName}`) ?? null
               c.previousSnapshot = prev !== c.snapshot ? prev : null
+            }
             }
           }
         }

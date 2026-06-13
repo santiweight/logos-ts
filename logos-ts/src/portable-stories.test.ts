@@ -1,6 +1,6 @@
 /* eslint-disable functional/no-let */
 import { describe, expect, it } from "vitest"
-import { mkdtempSync, cpSync, writeFileSync, rmSync } from "node:fs"
+import { mkdtempSync, cpSync, writeFileSync, rmSync, renameSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createPortableStoryResolver, storybookDirsForRoot } from "./portable-stories.js"
@@ -60,6 +60,30 @@ describe("portable story resolver", () => {
       rmSync(workspace, { recursive: true, force: true })
     }
   })
+
+  it("accepts a TypeScript Storybook preview file", () => {
+    const root = copyFixture()
+    try {
+      renameSync(
+        join(root, "frontend/.storybook/preview.tsx"),
+        join(root, "frontend/.storybook/preview.ts"),
+      )
+      const resolver = createPortableStoryResolver({
+        projectRoot: root,
+        storybook: {
+          frontendDir: join(root, "frontend"),
+          configDir: join(root, "frontend/.storybook"),
+        },
+        workspaceRoot: () => root,
+      })
+
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=views-directoryview--default")
+      expect(mod).toContain(".storybook/preview.ts")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
 
   it("invalidates cached story indexes when an existing story file changes", async () => {
     const root = copyFixture()

@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { ICONS } from "./icons"
 import { Tree, type NodeApi, type NodeRendererProps } from "react-arborist"
 import type {
+  ComponentEntry,
   Goal,
   DiffStatus,
   FileEntry,
@@ -57,6 +58,9 @@ const testsOf = (it: FileItem): number =>
   it.kind === "class"
     ? it.tests.length + it.methods.reduce((n, m) => n + m.tests.length, 0)
     : it.tests.length
+
+const componentsOf = (file: FileEntry): ComponentEntry[] =>
+  file.components?.length ? file.components : file.component ? [file.component] : []
 
 function rollUpTestStatus(children: SNode[] | undefined): "pass" | "fail" | undefined {
   if (!children) return undefined
@@ -147,15 +151,17 @@ function buildData(
     const baseName = stripExt(rawName)
     const target = `file:${f.file}`
 
-    if (f.component) {
-      const comp = f.component
+    const components = componentsOf(f)
+    if (components.length > 0) {
+      const componentNames = new Set(components.map((component) => component.name))
+      const componentNode = (comp: ComponentEntry): SNode => {
       const compTarget = `component:${comp.name}`
       const componentStatus = diff[compTarget] ?? (comp.propsName ? diff[`props:${comp.propsName}`] : undefined)
       const storyNodes: SNode[] = comp.stories.map((s) => ({
         id: `story:${s.id}`,
         name: s.exportName,
         kind: "story" as Kind,
-        sel: { file: f.file, view: "story" as View, storyId: s.id },
+        sel: { file: f.file, component: comp.name, view: "story" as View, storyId: s.id },
       }))
       const capturedNodes: SNode[] = comp.captured.map((cap) => {
         const capStatus: "pass" | "fail" | undefined = failingFiles
@@ -168,46 +174,39 @@ function buildData(
           kind: "captured" as Kind,
           ...(status ? { status } : {}),
           ...(capStatus ? { testStatus: capStatus } : {}),
-          sel: { file: f.file, view: "captured" as View, exportName: cap.exportName },
+          sel: { file: f.file, component: comp.name, view: "captured" as View, exportName: cap.exportName },
         }
       })
       const status = combineDiffStatus(componentStatus, rollUpDiffStatus(capturedNodes))
+      const compNodeChildren = [...storyNodes, ...capturedNodes]
+      const compTestStatus = rollUpTestStatus(capturedNodes)
+      return {
+        id: `comp:${f.file}:${comp.name}`,
+        name: comp.name,
+        kind: "comp",
+        target: compTarget,
+        label: comp.name,
+        ...(status ? { status } : {}),
+        stories: comp.stories.length,
+        comments: cCount(compTarget),
+        ...(compTestStatus ? { testStatus: compTestStatus } : {}),
+        sel: { file: f.file, component: comp.name, view: "code" },
+        ...(compNodeChildren.length ? { children: compNodeChildren } : {}),
+      }
+      }
 
-      const otherItems = f.items.filter((it) => it.name !== comp.name)
-      const canInline = otherItems.length === 0
+      const otherItems = f.items.filter((it) => !componentNames.has(it.name))
+      const canInline = components.length === 1 && otherItems.length === 0
 
       if (canInline) {
-        const compChildren = [...storyNodes, ...capturedNodes]
-        const testStatus = rollUpTestStatus(capturedNodes)
-        return {
-          id: `comp:${comp.name}`,
-          name: comp.name,
-          kind: "comp",
-          target: compTarget,
-          label: comp.name,
-          ...(status ? { status } : {}),
-          stories: comp.stories.length,
-          comments: cCount(compTarget) + cCount(target),
-          ...(testStatus ? { testStatus } : {}),
-          sel: { file: f.file, view: "code" },
-          ...(compChildren.length ? { children: compChildren } : {}),
-        }
+        const only = componentNode(components[0]!)
+        only.id = `comp:${components[0]!.name}`
+        only.comments = (only.comments ?? 0) + cCount(target)
+        return only
       }
 
       const children: SNode[] = []
-      const compId = `comp:${comp.name}`
-      const compNodeChildren = [...storyNodes, ...capturedNodes]
-      const compTestStatus = rollUpTestStatus(capturedNodes)
-      children.push({
-        id: compId,
-        name: comp.name,
-        kind: "comp",
-        ...(status ? { status } : {}),
-        stories: comp.stories.length,
-        ...(compTestStatus ? { testStatus: compTestStatus } : {}),
-        sel: { file: f.file, view: "code" },
-        ...(compNodeChildren.length ? { children: compNodeChildren } : {}),
-      })
+      for (const comp of components) children.push(componentNode(comp))
       openIds[`file:${f.file}`] = true
 
       const items = otherItems.slice().sort((a, b) => a.name.localeCompare(b.name))
@@ -223,7 +222,7 @@ function buildData(
         label: baseName,
         ...(fileStatus ? { status: fileStatus } : {}),
         comments: cCount(target),
-        fns: f.items.length + 1,
+        fns: f.items.length + components.length,
         tests: f.items.reduce((n, it) => n + testsOf(it), 0),
         ...(fileTestStatus ? { testStatus: fileTestStatus } : {}),
         ...(children.length ? { children } : {}),
@@ -418,15 +417,20 @@ export function SidebarTree({
       : selection.view === "captured"
         ? (() => {
             const fe = files.find((f) => f.file === selection.file)
-            return fe?.component ? `cap:${fe.component.name}:${selection.exportName}` : null
+            if (!fe) return null
+            const components = componentsOf(fe)
+            const component = components.find((c) => c.name === selection.component) ?? components[0]
+            return component ? `cap:${component.name}:${selection.exportName}` : null
           })()
         : (() => {
             const fe = files.find((f) => f.file === selection.file)
-            if (fe && fe.component) {
-              const others = fe.items.filter((it) => it.name !== fe.component!.name)
-              if (others.length === 0) return `comp:${fe.component.name}`
+            if (fe && selection.component) return `comp:${fe.file}:${selection.component}`
+            if (fe && componentsOf(fe).length === 1) {
+              const component = componentsOf(fe)[0]!
+              const others = fe.items.filter((it) => it.name !== component.name)
+              if (others.length === 0) return `comp:${component.name}`
             }
-            if (fe && !fe.component && fe.items.length === 1) {
+            if (fe && componentsOf(fe).length === 0 && fe.items.length === 1) {
               const baseName = (fe.file.split("/").pop() ?? "").replace(/\.(tsx?|jsx?)$/, "")
               if (fe.items[0]?.name === baseName)
                 return `sym:${fe.file}:${fe.items[0]!.name}`

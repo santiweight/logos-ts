@@ -67,4 +67,52 @@ describe("SidebarTree", () => {
     fireEvent.click(screen.getByText("JobCard"))
     expect(screen.getByText(/captured/).closest(".anode")).toHaveClass("diff-changed")
   })
+
+  it("opens comments from nested component rows with sibling functions", () => {
+    const onComment = vi.fn()
+    render(
+      <SidebarTree
+        files={[{
+          file: "app/admin/taxonomy/page.tsx",
+          code: "",
+          items: [
+            {
+              kind: "function",
+              name: "saveTaxonomy",
+              signature: "saveTaxonomy()",
+              code: "",
+              deps: [],
+              tests: [],
+            },
+            {
+              kind: "function",
+              name: "AdminTaxonomyPage",
+              signature: "AdminTaxonomyPage()",
+              code: "",
+              deps: [],
+              tests: [],
+            },
+          ],
+          component: {
+            name: "AdminTaxonomyPage",
+            signature: "AdminTaxonomyPage(props: { searchParams: SearchParams })",
+            componentCode: "",
+            propsFields: [{ name: "searchParams", type: "SearchParams" }],
+            stories: [],
+            captured: [],
+          },
+        }]}
+        selection={{ file: "app/admin/taxonomy/page.tsx", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={onComment}
+        diff={{}}
+        testState={null}
+      />
+    )
+
+    fireEvent.click(screen.getByText("AdminTaxonomyPage"), { altKey: true, clientX: 10, clientY: 20 })
+
+    expect(onComment).toHaveBeenCalledWith("component:AdminTaxonomyPage", "AdminTaxonomyPage", 10, 20)
+  })
 })

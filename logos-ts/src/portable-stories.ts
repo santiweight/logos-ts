@@ -37,6 +37,14 @@ function storyFilesMtime(frontendDir: string): number {
   }, 0)
 }
 
+function previewFileForConfig(configDir: string): string {
+  for (const name of ["preview.tsx", "preview.ts", "preview.jsx", "preview.js"]) {
+    const file = resolve(configDir, name)
+    if (existsSync(file)) return file
+  }
+  throw new Error(`Storybook preview file not found in ${configDir}`)
+}
+
 export function storybookDirsForRoot(projectRoot: string, caps: StorybookCaps | null | undefined, root: string): StorybookDirs | null {
   if (!caps) return null
   const frontendRel = relative(projectRoot, caps.frontendDir)
@@ -78,8 +86,7 @@ export function createPortableStoryResolver(opts: {
 
     const story = storiesFor(root).find((e) => e.id === storyId)
     if (!story) throw new Error(`story not found: ${storyId}`)
-    const previewFile = resolve(dirs.configDir, "preview.tsx")
-    if (!existsSync(previewFile)) throw new Error(`preview.tsx not found: ${previewFile}`)
+    const previewFile = previewFileForConfig(dirs.configDir)
 
     return `
     import { composeStories, setProjectAnnotations } from "@storybook/react"
