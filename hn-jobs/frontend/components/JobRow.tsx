@@ -41,7 +41,7 @@ export const JobRow: FC<JobRowProps> = ({ job }) => {
       <td>
         {roleLines.length > 0 ? (
           <div className="line-list role-list">
-            {roleLines.map((role) => <div key={role}>{role}</div>)}
+            {roleLines.map((role) => <div key={role} style={{ fontWeight: "bold" }}>{role}</div>)}
           </div>
         ) : (
           <span className="muted-2">—</span>
