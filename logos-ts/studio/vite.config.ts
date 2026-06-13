@@ -544,5 +544,11 @@ export default defineConfig(async ({ command }) => {
       hmr: process.env.LOGOS_DISABLE_HMR === "1" ? false : undefined,
       watch: { ignored: ["**/.workspaces/**", "**/.agent-runs/**"] },
     },
+    resolve: {
+      alias: {
+        "@logos-studio": resolve(STUDIO, "src"),
+        "@logos-src": resolve(LOGOS_TS, "src"),
+      },
+    },
   }
 })
