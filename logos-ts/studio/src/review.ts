@@ -1,4 +1,4 @@
-import type { StudioIndex } from "./types"
+import type { StudioIndex, Workspace } from "./types"
 
 export type CaptureChangeStatus = "added" | "changed" | "removed"
 
@@ -19,6 +19,15 @@ interface IndexedCapture {
   testFile: string
   storyId: string | null
   snapshot: string | null
+}
+
+export function selectReviewBaseIndex(projectIndex: StudioIndex, parentWorkspaceIndex: StudioIndex | null): StudioIndex {
+  return parentWorkspaceIndex ?? projectIndex
+}
+
+export function selectWorkspaceReviewBaseIndex(projectIndex: StudioIndex, workspace: Workspace | null): StudioIndex {
+  if (!workspace) return projectIndex
+  return workspace.instances[workspace.baseInstanceId]?.index ?? projectIndex
 }
 
 function captureMap(index: StudioIndex): Map<string, IndexedCapture> {
@@ -86,7 +95,7 @@ export function extractSnapshotHtml(snapshot: string | null): string | null {
       const parsed: unknown = JSON.parse(payload)
       return typeof parsed === "string" ? parsed : null
     } catch {
-      return null
+      return payload.slice(1, -1)
     }
   }
   return payload

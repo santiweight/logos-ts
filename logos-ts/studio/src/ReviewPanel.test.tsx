@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { ReviewPanel } from "./ReviewPanel"
 import type { FileEntry, StudioIndex } from "./types"
 
@@ -132,5 +132,41 @@ describe("ReviewPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Snapshot diff" }))
     expect(screen.getByText("<div>Engineer</div>")).toBeInTheDocument()
     expect(screen.getByText("<div>Platform Engineer</div>")).toBeInTheDocument()
+  })
+
+  it("starts Storybook from review when captured visual comparison needs it", async () => {
+    const base = index([capturedFile("JobRow", "<div>Engineer</div>")])
+    const workspace = index([capturedFile("JobRow", "<div>Platform Engineer</div>")])
+    const onRetryStorybook = vi.fn()
+
+    render(
+      <ReviewPanel
+        base={base}
+        workspace={workspace}
+        storybookUrl=""
+        storybookState={null}
+        onRetryStorybook={onRetryStorybook}
+      />
+    )
+
+    await waitFor(() => expect(onRetryStorybook).toHaveBeenCalledTimes(1))
+  })
+
+  it("re-requests Storybook from review when startup state has no URL yet", async () => {
+    const base = index([capturedFile("JobRow", "<div>Engineer</div>")])
+    const workspace = index([capturedFile("JobRow", "<div>Platform Engineer</div>")])
+    const onRetryStorybook = vi.fn()
+
+    render(
+      <ReviewPanel
+        base={base}
+        workspace={workspace}
+        storybookUrl=""
+        storybookState={{ status: "starting", startedAt: Date.now(), logs: [] }}
+        onRetryStorybook={onRetryStorybook}
+      />
+    )
+
+    await waitFor(() => expect(onRetryStorybook).toHaveBeenCalledTimes(1))
   })
 })

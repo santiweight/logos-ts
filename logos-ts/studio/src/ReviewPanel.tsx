@@ -385,6 +385,18 @@ function VisualComparison({
   storybookState: SbState | null
   onRetryStorybook: () => void
 }) {
+  const autoStartRequestedRef = useRef(false)
+  const shouldAutoStart = !storybookUrl && storybookState?.status !== "failed"
+  useEffect(() => {
+    if (!shouldAutoStart) {
+      autoStartRequestedRef.current = false
+      return
+    }
+    if (autoStartRequestedRef.current) return
+    autoStartRequestedRef.current = true
+    onRetryStorybook()
+  }, [shouldAutoStart, onRetryStorybook])
+
   if (!storybookUrl) {
     return (
       <div className="capture-preview-unavailable">
@@ -438,30 +450,37 @@ function SnapshotPreview({
   storybookUrl: string
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null)
+  const revealTimerRef = useRef<number | null>(null)
+  const [snapshotReady, setSnapshotReady] = useState(false)
   const src = `${storybookUrl}/iframe.html?id=${encodeURIComponent(storyId ?? "")}&viewMode=story`
-  const sendSnapshot = () => {
+  const sendSnapshot = (reveal = false) => {
     frameRef.current?.contentWindow?.postMessage({ type: "logos:render-snapshot", html }, "*")
+    if (!reveal) return
+    if (revealTimerRef.current != null) window.clearTimeout(revealTimerRef.current)
+    revealTimerRef.current = window.setTimeout(() => setSnapshotReady(true), 80)
   }
 
   useEffect(() => {
-    sendSnapshot()
-    const first = window.setTimeout(sendSnapshot, 400)
-    const second = window.setTimeout(sendSnapshot, 1200)
+    setSnapshotReady(false)
+    const first = window.setTimeout(() => sendSnapshot(), 400)
+    const second = window.setTimeout(() => sendSnapshot(), 1200)
     return () => {
       window.clearTimeout(first)
       window.clearTimeout(second)
+      if (revealTimerRef.current != null) window.clearTimeout(revealTimerRef.current)
     }
   }, [html, src])
 
   return (
     <div className="capture-preview">
       <div className="capture-preview-label">{label}</div>
+      {!snapshotReady && <div className="capture-preview-loading">Loading snapshot...</div>}
       <iframe
         ref={frameRef}
-        className="capture-preview-frame"
+        className={`capture-preview-frame ${snapshotReady ? "ready" : "loading"}`}
         src={src}
         title={`${label} ${storyId ?? "captured story"}`}
-        onLoad={sendSnapshot}
+        onLoad={() => sendSnapshot(true)}
       />
     </div>
   )

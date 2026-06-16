@@ -1,0 +1,255 @@
+// @vitest-environment node
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { spawn, type ChildProcess } from "node:child_process"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { chromium, type Browser } from "playwright"
+import type { FileEntry, StudioIndex, TestState, Workspace, WorkspaceMeta } from "./types"
+
+const STUDIO_SRC = dirname(fileURLToPath(import.meta.url))
+const STUDIO = resolve(STUDIO_SRC, "..")
+const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
+
+let projectRoot: string
+let server: ChildProcess
+let baseUrl: string
+let browser: Browser
+
+function createProject(): string {
+  const root = mkdtempSync(join(tmpdir(), "logos-review-ui-project-"))
+  mkdirSync(join(root, "src"), { recursive: true })
+  writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }))
+  writeFileSync(join(root, "src", "index.ts"), "export const fixture = true\n")
+  return root
+}
+
+async function waitForServer(proc: ChildProcess, timeoutMs = 90_000): Promise<string> {
+  return new Promise((resolveUrl, reject) => {
+    let buf = ""
+    const timeout = setTimeout(() => reject(new Error(`server did not start\n${buf}`)), timeoutMs)
+    const onData = (d: Buffer) => {
+      buf += d.toString()
+      const m = buf.replace(ANSI_RE, "").match(/Local:\s+(http:\/\/(?:127\.0\.0\.1|localhost):\d+)/)
+      if (m?.[1]) {
+        clearTimeout(timeout)
+        resolveUrl(m[1])
+      }
+    }
+    proc.stdout?.on("data", onData)
+    proc.stderr?.on("data", onData)
+    proc.on("close", (code) => {
+      clearTimeout(timeout)
+      reject(new Error(`server exited with code ${code}\n${buf}`))
+    })
+  })
+}
+
+function vitestSnapshot(html: string): string {
+  return [
+    "// Vitest Snapshot v1",
+    "",
+    `exports[\`captured: JobRow/Default 1\`] = \`"${html}"\`;`,
+  ].join("\n")
+}
+
+function indexWithCapture(snapshot: string | null): StudioIndex {
+  const file: FileEntry = {
+    file: "frontend/src/JobRow.tsx",
+    code: "export function JobRow() { return null }\n",
+    items: [],
+    component: {
+      name: "JobRow",
+      signature: "JobRow()",
+      componentCode: "export function JobRow() { return null }\n",
+      propsFields: [],
+      stories: [{ id: "jobrow--default", exportName: "Default" }],
+      captured: [{
+        exportName: "Default",
+        testFile: "frontend/src/JobRow.captured.test.tsx",
+        snapshot,
+        previousSnapshot: null,
+      }],
+    },
+  }
+  return { root: "/mock/project", files: [file] }
+}
+
+function createWorkspace(base: StudioIndex, active: StudioIndex): Workspace {
+  return {
+    id: "ws-review",
+    name: "Review fixture",
+    kind: "code",
+    parentId: null,
+    createdAt: 1,
+    baseInstanceId: "inst-base",
+    activeInstanceId: "inst-active",
+    goals: [],
+    forkDir: "/mock/workspace",
+    index: active,
+    instances: {
+      "inst-base": {
+        id: "inst-base",
+        workspaceId: "ws-review",
+        materializedRoot: "/mock/workspace/base",
+        mutability: "immutable",
+        createdAt: 1,
+        index: base,
+      },
+      "inst-active": {
+        id: "inst-active",
+        workspaceId: "ws-review",
+        materializedRoot: "/mock/workspace/active",
+        mutability: "writable",
+        createdAt: 2,
+        index: active,
+      },
+    },
+  }
+}
+
+function workspaceMeta(workspace: Workspace): WorkspaceMeta {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    kind: workspace.kind,
+    parentId: workspace.parentId,
+    createdAt: workspace.createdAt,
+    baseInstanceId: workspace.baseInstanceId,
+    activeInstanceId: workspace.activeInstanceId,
+    goals: workspace.goals,
+  }
+}
+
+function idleTests(): TestState {
+  return { status: "idle", results: null, runningSince: null }
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  throw new Error("timed out waiting for condition")
+}
+
+describe("review UI", () => {
+  beforeAll(async () => {
+    projectRoot = createProject()
+    server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
+      cwd: STUDIO,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+      env: { ...process.env, LOGOS_PROJECT: projectRoot },
+    })
+    baseUrl = await waitForServer(server)
+    browser = await chromium.launch({ headless: true })
+  }, 120_000)
+
+  afterAll(async () => {
+    await browser?.close()
+    if (server?.pid) {
+      try { process.kill(-server.pid, "SIGTERM") } catch {}
+    }
+    server?.kill()
+    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+  })
+
+  it("shows captured snapshot diffs against the workspace base instance", async () => {
+    const projectIndex = indexWithCapture(vitestSnapshot('<article class="job-row">Original index</article>'))
+    const baseIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><span>Senior Engineer</span></article>'))
+    const activeIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><strong>Senior Engineer</strong></article>'))
+    const workspace = createWorkspace(baseIndex, activeIndex)
+    const page = await browser.newPage()
+
+    await page.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname
+      const json = (body: unknown) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      })
+
+      if (path === "/api/index") return json(projectIndex)
+      if (path === "/api/test-results") return json(idleTests())
+      if (path === "/api/storybooks") return json({ urls: {}, states: {} })
+      if (path === "/api/workspaces") return json([workspaceMeta(workspace)])
+      if (path === "/api/workspaces/ws-review") return json(workspace)
+
+      return json({})
+    })
+
+    try {
+      await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
+      await page.waitForFunction(() => document.body.innerText.includes("Review 1"))
+      await page.getByRole("button", { name: "Review 1" }).click()
+      await page.waitForFunction(() => document.body.innerText.includes("Captured tests 1"))
+
+      let bodyText = await page.locator("body").innerText()
+      expect(bodyText).toContain("JobRow / Default")
+      expect(bodyText).not.toContain("No captured tests changed in this workspace.")
+
+      await page.getByRole("button", { name: "Snapshot diff" }).click()
+      await page.waitForFunction(() => document.body.innerText.includes("<strong>Senior Engineer</strong>"))
+
+      bodyText = await page.locator("body").innerText()
+      expect(bodyText).toContain('<span>Senior Engineer</span>')
+      expect(bodyText).toContain('<strong>Senior Engineer</strong>')
+      expect(bodyText).not.toContain("Original index")
+    } finally {
+      await page.close()
+    }
+  }, 60_000)
+
+  it("requests Storybook startup when review opens with a starting state but no URL", async () => {
+    const projectIndex = indexWithCapture(vitestSnapshot('<article class="job-row">Original index</article>'))
+    const baseIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><span>Senior Engineer</span></article>'))
+    const activeIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><strong>Senior Engineer</strong></article>'))
+    const workspace = createWorkspace(baseIndex, activeIndex)
+    const page = await browser.newPage()
+    let storybookStarts = 0
+
+    await page.route("**/api/**", async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      const json = (body: unknown) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      })
+
+      if (path === "/api/index") return json(projectIndex)
+      if (path === "/api/test-results") return json(idleTests())
+      if (path === "/api/storybooks") {
+        return json({
+          urls: {},
+          states: {
+            "ws-review": { status: "starting", startedAt: Date.now(), logs: [] },
+          },
+        })
+      }
+      if (path === "/api/workspaces") return json([workspaceMeta(workspace)])
+      if (path === "/api/workspaces/ws-review/storybook" && request.method() === "POST") {
+        storybookStarts += 1
+        return json({ ok: true })
+      }
+      if (path === "/api/workspaces/ws-review") return json(workspace)
+
+      return json({})
+    })
+
+    try {
+      await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
+      await page.waitForFunction(() => document.body.innerText.includes("Review 1"))
+      await page.getByRole("button", { name: "Review 1" }).click()
+      await page.waitForFunction(() => document.body.innerText.includes("Starting Storybook"))
+
+      await waitFor(() => storybookStarts > 0)
+      expect(storybookStarts).toBe(1)
+    } finally {
+      await page.close()
+    }
+  }, 60_000)
+})

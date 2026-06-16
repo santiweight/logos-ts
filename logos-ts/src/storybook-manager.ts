@@ -31,6 +31,7 @@ export class StorybookManager {
   private live = new Map<string, ChildProcess>()
   private stopping = new Set<string>()
   private states = new Map<string, SbState>()
+  private pending = new Map<string, Promise<string>>()
   private store: LogosRuntimeStore
   private logosSrc: string
   private projectRoot: string
@@ -156,10 +157,12 @@ export class StorybookManager {
   ensure(id: string, frontendDir: string): Promise<string> {
     const existing = this.get(id)
     if (existing) return Promise.resolve(existing)
+    const pending = this.pending.get(id)
+    if (pending) return pending
 
     const state = this.setState(id, { status: "starting", startedAt: Date.now(), updatedAt: Date.now(), logs: [] })
 
-    return new Promise((resolve_, reject) => {
+    const promise = new Promise<string>((resolve_, reject) => {
       const npx = resolve(frontendDir, "node_modules/.bin/storybook")
       // node_modules is symlinked to the shared install, so Vite's default
       // cacheDir (node_modules/.vite) would be shared by every concurrent
@@ -264,6 +267,12 @@ export class StorybookManager {
         fail(`storybook for ${id} exited with code ${code}`)
       })
     })
+    this.pending.set(id, promise)
+    promise.then(
+      () => this.pending.delete(id),
+      () => this.pending.delete(id)
+    )
+    return promise
   }
 
   /** Kill a specific workspace's Storybook. */
@@ -276,6 +285,7 @@ export class StorybookManager {
       this.save()
       this.clearState(id)
     }
+    this.pending.delete(id)
     const child = this.live.get(id)
     if (child) {
       this.stopping.add(id)

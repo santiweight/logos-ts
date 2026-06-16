@@ -787,6 +787,7 @@ body {
   min-height: 0;
   flex-direction: column;
   border-right: 1px solid var(--border);
+  position: relative;
 }
 .capture-preview:last-child { border-right: 0; }
 .capture-preview-label {
@@ -805,6 +806,23 @@ body {
   flex: 1;
   background: #fff;
   border: 0;
+}
+.capture-preview-frame.loading {
+  visibility: hidden;
+}
+.capture-preview-frame.ready {
+  visibility: visible;
+}
+.capture-preview-loading {
+  position: absolute;
+  inset: 25px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: #131316;
+  font-size: 11px;
+  z-index: 1;
 }
 .capture-preview-unavailable {
   display: flex;

@@ -129,7 +129,18 @@ export interface WorkspaceMeta {
   activeInstanceId: string
   goals: Goal[]
 }
+
+export interface WorkspaceInstance {
+  id: string
+  workspaceId: string
+  materializedRoot: string
+  mutability: "writable" | "immutable"
+  createdAt: number
+  index: StudioIndex
+}
+
 export interface Workspace extends WorkspaceMeta {
   forkDir: string
   index: StudioIndex
+  instances: Record<string, WorkspaceInstance>
 }

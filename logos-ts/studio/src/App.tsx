@@ -8,7 +8,7 @@ import { svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { ReviewPanel } from "./ReviewPanel"
 import { diffIndex } from "./diff"
-import { capturedTestChanges } from "./review"
+import { capturedTestChanges, selectReviewBaseIndex, selectWorkspaceReviewBaseIndex } from "./review"
 import { indexToArchText } from "./arch-text"
 import type {
   Goal,
@@ -63,9 +63,11 @@ export function App() {
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
+  const [workspaceBaselineIndex, setWorkspaceBaselineIndex] = useState<StudioIndex | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
 
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
+  const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
 
   const [storybookUrls, setStorybookUrls] = useState<Record<string, string>>({})
   const [storybookStates, setStorybookStates] = useState<Record<string, SbState>>({})
@@ -94,20 +96,20 @@ export function App() {
   }, [activeWorkspaceId, refreshStorybooks])
 
   const captureChanges = useMemo(
-    () => workspaceIndex ? capturedTestChanges(index, workspaceIndex) : [],
-    [index, workspaceIndex]
+    () => workspaceIndex ? capturedTestChanges(reviewBaseIndex, workspaceIndex) : [],
+    [reviewBaseIndex, workspaceIndex]
   )
 
   const diff = useMemo(() => {
     if (!activeWorkspaceId || !workspaceIndex) return {}
-    const next: Record<string, DiffStatus> = { ...diffIndex(index, workspaceIndex) }
+    const next: Record<string, DiffStatus> = { ...diffIndex(reviewBaseIndex, workspaceIndex) }
     for (const change of captureChanges) {
       next[`capture:${change.testFile}::${change.exportName}`] = change.status
       const componentTarget = `component:${change.component}`
       next[componentTarget] = combineDiffStatus(next[componentTarget], change.status) ?? change.status
     }
     return next
-  }, [activeWorkspaceId, captureChanges, workspaceIndex, index])
+  }, [activeWorkspaceId, captureChanges, workspaceIndex, reviewBaseIndex])
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
   const activeGoals = activeWs?.goals ?? []
@@ -148,10 +150,11 @@ export function App() {
       if (res.ok) {
         const ws = (await res.json()) as Workspace
         setWorkspaceIndex(ws.index)
+        setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
         setActiveWorkspaceId(id)
       }
     } catch {}
-  }, [])
+  }, [index])
 
   const reindexWorkspace = useCallback(async (id?: string | null) => {
     const wsId = id ?? activeWorkspaceId
@@ -394,6 +397,7 @@ export function App() {
     setSelected(null)
     setReviewOpen(false)
     setWorkspaceIndex(null)
+    setWorkspaceBaselineIndex(null)
     setActiveWorkspaceId(null)
 
     try {
@@ -407,6 +411,7 @@ export function App() {
       if (wsRes.ok) {
         const ws = await wsRes.json() as Workspace
         setWorkspaceIndex(ws.index)
+        setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
         setActiveWorkspaceId(ws.id)
         setSelection({ file: ws.index.files[0]?.file ?? "", view: "code" })
       }
@@ -558,7 +563,7 @@ export function App() {
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
   const captureReviewCount = captureChanges.length
   const reviewCount = captureReviewCount + (
-    workspaceIndex && indexToArchText(index) !== indexToArchText(workspaceIndex) ? 1 : 0
+    workspaceIndex && indexToArchText(reviewBaseIndex) !== indexToArchText(workspaceIndex) ? 1 : 0
   )
 
   if (!activeWorkspaceId || !workspaceIndex) {
@@ -612,7 +617,7 @@ export function App() {
         <div className="main-view">
           {reviewOpen ? (
             <ReviewPanel
-              base={index}
+              base={reviewBaseIndex}
               workspace={workspaceIndex}
               storybookUrl={activeStorybookUrl}
               storybookState={activeStorybookState}
