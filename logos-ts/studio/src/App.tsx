@@ -484,20 +484,7 @@ export function App() {
     [activeWorkspaceId, createWorkspace, refreshWorkspaces, runAgent]
   )
 
-  // Listen for story comments from Storybook iframe
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      if (e.data?.type !== "logos:story-comment") return
-      const { storyId, component, selector, label, text, mode, fork } = e.data
-      const target = component ? `component:${component}` : `story:${storyId}`
-      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component })
-    }
-    window.addEventListener("message", onMsg)
-    return () => window.removeEventListener("message", onMsg)
-  }, [addGoal])
-
-  // Push goals to Storybook iframes so they can render pins
-  useEffect(() => {
+  const storyGoalsMessage = useMemo(() => {
     const storyGoals = activeGoals
       .filter((g) => g.storyId)
       .map((g) => ({
@@ -512,11 +499,39 @@ export function App() {
         mode: g.mode,
         status: g.status,
       }))
-    const msg = { type: "logos:story-goals", goals: storyGoals, workspaceKind: activeWs?.kind ?? "code" }
-    document.querySelectorAll<HTMLIFrameElement>("iframe.story-frame").forEach((f) => {
-      try { f.contentWindow?.postMessage(msg, "*") } catch {}
-    })
+    return { type: "logos:story-goals", goals: storyGoals, workspaceKind: activeWs?.kind ?? "code" }
   }, [activeGoals, activeWs?.kind])
+
+  const postStoryGoals = useCallback((target?: Window | null) => {
+    if (target) {
+      try { target.postMessage(storyGoalsMessage, "*") } catch {}
+      return
+    }
+    document.querySelectorAll<HTMLIFrameElement>("iframe.story-frame").forEach((f) => {
+      try { f.contentWindow?.postMessage(storyGoalsMessage, "*") } catch {}
+    })
+  }, [storyGoalsMessage])
+
+  // Listen for story comments from Storybook iframe
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === "logos:story-ready") {
+        postStoryGoals(e.source as Window | null)
+        return
+      }
+      if (e.data?.type !== "logos:story-comment") return
+      const { storyId, component, selector, label, text, mode, fork } = e.data
+      const target = component ? `component:${component}` : `story:${storyId}`
+      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component })
+    }
+    window.addEventListener("message", onMsg)
+    return () => window.removeEventListener("message", onMsg)
+  }, [addGoal, postStoryGoals])
+
+  // Push goals to Storybook iframes so they can render pins
+  useEffect(() => {
+    postStoryGoals()
+  }, [postStoryGoals])
 
   const currentFile = view.files.find((f) => f.file === selection.file) ?? view.files[0]
 

@@ -133,6 +133,7 @@ export class WorkspaceManager {
   private workspaces = new Map<string, WorkspaceRecord>()
   private runningAgents = new Map<string, ChildProcess>() // goalId → child
   private workspaceSeq = 0
+  private deletingWorkspaces = new Set<string>()
   private store: LogosRuntimeStore
   private runsDir: string
   private logosTsSrc: string
@@ -601,6 +602,7 @@ export class WorkspaceManager {
   delete(id: string): void {
     const ws = this.workspaces.get(id)
     if (!ws) return
+    this.deletingWorkspaces.add(id)
 
     // Kill any running agents for this workspace's goals
     for (const g of ws.goals) {
@@ -637,6 +639,7 @@ export class WorkspaceManager {
     this.store.deleteAllWorkspaces()
     this.store.deleteAllPolicyEvents()
     this.workspaces.clear()
+    this.deletingWorkspaces.clear()
   }
 
   async addGoal(wsId: string, goal: Omit<Goal, "status">, opts?: { fork?: boolean }): Promise<AddGoalResult> {
@@ -895,7 +898,13 @@ export class WorkspaceManager {
     this.save(ws)
 
     const recordAndEmit = (evt: AgentEvent) => {
-      this.sessions.addEvent(sessionId, evt.type, evt)
+      if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) return
+      try {
+        this.sessions.addEvent(sessionId, evt.type, evt)
+      } catch (error) {
+        if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) return
+        throw error
+      }
 
       if (evt.type === "event") {
         const e = evt["event"] as Record<string, unknown> | undefined
@@ -938,6 +947,10 @@ export class WorkspaceManager {
     child.on("error", (e) => recordAndEmit({ type: "error", message: String(e) }))
     child.on("close", async (code) => {
       this.runningAgents.delete(goal.id)
+      if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) {
+        rmSync(mcpConfigPath, { force: true })
+        return
+      }
 
       if (mode === "arch") {
         recordAndEmit({ type: "status", message: "splicing implementations + inferring imports…" })
