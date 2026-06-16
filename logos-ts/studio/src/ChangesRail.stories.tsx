@@ -38,6 +38,26 @@ const goal2: Goal = {
   status: "pending",
 }
 
+const goalRunning: Goal = {
+  id: "g-3",
+  target: "fn:buildContext",
+  label: "buildContext",
+  text: "Add import-cycle detection and emit a warning",
+  mode: "code",
+  createdAt: Date.now() - 90_000,
+  status: "running",
+}
+
+const goalError: Goal = {
+  id: "g-4",
+  target: "fn:extractArchitecture",
+  label: "extractArchitecture",
+  text: "Return early when no source files are found",
+  mode: "arch",
+  createdAt: Date.now() - 60_000,
+  status: "error",
+}
+
 const ws1: WorkspaceMeta = {
   id: "ws-1",
   name: "workspace-1",
@@ -60,57 +80,169 @@ const ws2: WorkspaceMeta = {
   goals: [],
 }
 
+const wsArch: WorkspaceMeta = {
+  id: "ws-arch",
+  name: "workspace-arch",
+  kind: "arch",
+  parentId: null,
+  createdAt: Date.now() - 180_000,
+  baseInstanceId: "inst-arch",
+  activeInstanceId: "inst-arch",
+  goals: [goal2, goalError],
+}
+
+const baseArgs = {
+  open: true,
+  onToggle: noop,
+  workspaces: [],
+  workspacesLoading: false,
+  activeWorkspaceId: null,
+  selected: null,
+  onNewWorkspace: noop,
+  onResetWorkspaces: noop,
+  onOpenWorkspace: noop,
+  onFork: noop,
+  onCreatePullRequest: noop,
+  onSelectGoal: noop,
+  onDeleteWorkspace: noop,
+  onDeleteGoal: noop,
+  runningGoals: new Set<string>(),
+}
+
 export const Empty: Story = {
-  args: {
-    open: true,
-    onToggle: noop,
-    workspaces: [],
-    workspacesLoading: false,
-    activeWorkspaceId: null,
-    selected: null,
-    onNewWorkspace: noop,
-    onOpenWorkspace: noop,
-    onFork: noop,
-    onSelectGoal: noop,
-    onDeleteWorkspace: noop,
-    onDeleteGoal: noop,
-    runningGoals: new Set<string>(),
-  },
+  args: baseArgs,
 }
 
 export const Collapsed: Story = {
   args: {
-    ...Empty.args,
+    ...baseArgs,
     open: false,
     workspaces: [ws1, ws2],
   },
 }
 
+export const CollapsedEmpty: Story = {
+  args: {
+    ...baseArgs,
+    open: false,
+  },
+}
+
 export const Loading: Story = {
   args: {
-    ...Empty.args,
+    ...baseArgs,
     workspacesLoading: true,
   },
 }
 
 export const WithWorkspaces: Story = {
   args: {
-    ...Empty.args,
+    ...baseArgs,
     workspaces: [ws1, ws2],
     activeWorkspaceId: "ws-1",
   },
 }
 
+export const WorkspaceSelected: Story = {
+  args: {
+    ...baseArgs,
+    workspaces: [ws1, ws2],
+    activeWorkspaceId: "ws-2",
+    selected: { type: "workspace", id: "ws-2" },
+  },
+}
+
 export const AgentRunning: Story = {
   args: {
-    ...WithWorkspaces.args,
+    ...baseArgs,
+    workspaces: [ws1, ws2],
+    activeWorkspaceId: "ws-1",
     runningGoals: new Set(["g-1"]),
   },
 }
 
 export const GoalSelected: Story = {
   args: {
-    ...WithWorkspaces.args,
+    ...baseArgs,
+    workspaces: [ws1, ws2],
+    activeWorkspaceId: "ws-1",
     selected: { type: "goal", id: "g-2" },
+  },
+}
+
+export const AllGoalStatuses: Story = {
+  args: {
+    ...baseArgs,
+    workspaces: [
+      {
+        ...ws1,
+        goals: [goal1, goal2, goalRunning, goalError],
+      },
+    ],
+    activeWorkspaceId: "ws-1",
+    runningGoals: new Set(["g-3"]),
+  },
+}
+
+export const GoalRunning: Story = {
+  args: {
+    ...baseArgs,
+    workspaces: [
+      {
+        ...ws1,
+        goals: [goalRunning],
+      },
+    ],
+    activeWorkspaceId: "ws-1",
+    runningGoals: new Set(["g-3"]),
+  },
+}
+
+export const ArchWorkspace: Story = {
+  args: {
+    ...baseArgs,
+    workspaces: [wsArch],
+    activeWorkspaceId: "ws-arch",
+  },
+}
+
+export const ForkedWorkspace: Story = {
+  args: {
+    ...baseArgs,
+    workspaces: [ws1, ws2],
+    activeWorkspaceId: "ws-2",
+  },
+}
+
+export const ManyWorkspaces: Story = {
+  args: {
+    ...baseArgs,
+    workspaces: [
+      ws1,
+      ws2,
+      wsArch,
+      {
+        id: "ws-3",
+        name: "workspace-3",
+        kind: "code",
+        parentId: null,
+        createdAt: Date.now() - 400_000,
+        baseInstanceId: "inst-3",
+        activeInstanceId: "inst-3",
+        goals: [],
+      },
+      {
+        id: "ws-4",
+        name: "workspace-4",
+        kind: "arch",
+        parentId: "ws-3",
+        createdAt: Date.now() - 10_000,
+        baseInstanceId: "inst-4",
+        activeInstanceId: "inst-4",
+        goals: [goalRunning],
+      },
+    ],
+    activeWorkspaceId: "ws-1",
+    runningGoals: new Set(["g-3"]),
   },
 }

@@ -123,7 +123,6 @@ export function ChangesRail({
                   ×
                 </button>
                 <span className="rail-dot fork">{branchIcon}</span> {w.name}
-                <span className={`cmode ${w.kind}`}>{w.kind}</span>
                 {w.parentId && <span className="rail-status"> · branch</span>}
                 {!isActive && goals.length > 0 && <span className="rail-status"> · {goals.length}</span>}
                 {goals.some((g) => runningGoals.has(g.id)) && (
@@ -172,7 +171,6 @@ export function ChangesRail({
                         </button>
                         <div className="rail-target">
                           {g.label}
-                          <span className={`cmode ${g.mode}`}>{g.mode}</span>
                           <span className={`goal-status ${g.status}`}>{g.status}</span>
                         </div>
                         <div className="rail-comment">{g.text}</div>
