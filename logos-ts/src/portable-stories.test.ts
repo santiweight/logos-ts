@@ -98,8 +98,9 @@ describe("portable story resolver", () => {
         workspaceRoot: () => root,
       })
 
-      expect(() => resolver.moduleFor("virtual:logos-portable-story?storyId=components-valueordash--cache-probe"))
-        .toThrow(/story not found/)
+      const missing = resolver.moduleFor("virtual:logos-portable-story?storyId=components-valueordash--cache-probe")
+      expect(missing).toContain("Story unavailable")
+      expect(missing).toContain("story not found: components-valueordash--cache-probe")
 
       await new Promise((r) => setTimeout(r, 5))
       writeFileSync(storyFile, "\nexport const CacheProbe = { args: { value: \"probe\" } }\n", { flag: "a" })
@@ -113,5 +114,25 @@ describe("portable story resolver", () => {
 
   it("returns null storybook dirs when no storybook config is detected", () => {
     expect(storybookDirsForRoot("/project", null, "/project")).toBeNull()
+  })
+
+  it("renders unavailable story modules for unknown workspace ids", () => {
+    const root = copyFixture()
+    try {
+      const resolver = createPortableStoryResolver({
+        projectRoot: root,
+        storybook: {
+          frontendDir: join(root, "frontend"),
+          configDir: join(root, "frontend/.storybook"),
+        },
+        workspaceRoot: (id) => id === "missing-workspace" ? null : root,
+      })
+
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=directory-jobrow--default&workspaceId=missing-workspace")
+      expect(mod).toContain("Story unavailable")
+      expect(mod).toContain("workspace not found: missing-workspace")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

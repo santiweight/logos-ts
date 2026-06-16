@@ -14,6 +14,10 @@ const storyModule = await import(
 ) as PortableStoryModule
 const { PortableStory, storyId, storyTitle } = storyModule
 
+;(window as typeof window & {
+  __LOGOS_PORTABLE_STORY?: { storyId: string; storyTitle: string }
+}).__LOGOS_PORTABLE_STORY = { storyId, storyTitle }
+
 let snapshotHtml: string | null = null
 
 function applySnapshot(): void {

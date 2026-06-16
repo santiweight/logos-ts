@@ -191,7 +191,7 @@ export class WorkspaceManager {
     if (root === this.projectRoot && this.getIndex) return this.getIndex()
     const args = [resolve(this.logosTsRoot, "src/build-index.ts"), root, "-"]
     return JSON.parse(
-      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8" })
+      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 })
     )
   }
 

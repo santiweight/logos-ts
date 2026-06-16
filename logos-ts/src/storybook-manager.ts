@@ -31,8 +31,8 @@ export class StorybookManager {
   private registry: Registry = {}
   private live = new Map<string, ChildProcess>()
   private stopping = new Set<string>()
-  private states = new Map<string, SbState>()
   private pending = new Map<string, Promise<string>>()
+  private states = new Map<string, SbState>()
   private store: LogosRuntimeStore
   private logosSrc: string
   private projectRoot: string
@@ -298,10 +298,7 @@ export class StorybookManager {
       })
     })
     this.pending.set(id, promise)
-    promise.then(
-      () => this.pending.delete(id),
-      () => this.pending.delete(id)
-    )
+    promise.finally(() => this.pending.delete(id)).catch(() => undefined)
     return promise
   }
 

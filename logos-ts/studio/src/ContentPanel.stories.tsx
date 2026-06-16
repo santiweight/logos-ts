@@ -60,7 +60,7 @@ const meta: Meta<typeof ContentPanel> = {
   args: {
     file,
     selection: { file: "src/components/JobCard.tsx", view: "code" },
-    workspaceId: "ws-story",
+    workspaceId: null,
     storyRenderer: "portable",
     storybookUrl: "",
     storybookState: null,

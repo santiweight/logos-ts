@@ -1,4 +1,5 @@
 import type { Preview } from "@storybook/react-vite"
+import { StorybookCommentLayer } from "../src/storybook-comment-layer"
 import "../src/studio.css"
 
 const preview: Preview = {
@@ -9,9 +10,11 @@ const preview: Preview = {
     },
   },
   decorators: [
-    (Story) => (
+    (Story, context) => (
       <div style={{ background: "#1f1f23", color: "#d4d4d8", minHeight: "100vh" }}>
-        <Story />
+        <StorybookCommentLayer storyId={context.id} component={context.title?.split("/").pop()}>
+          <Story />
+        </StorybookCommentLayer>
       </div>
     ),
   ],

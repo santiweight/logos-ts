@@ -1,6 +1,6 @@
 import React from "react"
 import type { Preview } from "@storybook/react"
-import { CommentLayer } from "./CommentLayer"
+import { StorybookCommentLayer } from "@logos-studio/storybook-comment-layer"
 import "../globals.css"
 
 if (typeof window !== "undefined") {
@@ -32,9 +32,9 @@ const preview: Preview = {
   },
   decorators: [
     (Story, context) => (
-      <CommentLayer storyId={context.id} component={context.title?.split("/").pop()}>
+      <StorybookCommentLayer storyId={context.id} component={context.title?.split("/").pop()}>
         <Story />
-      </CommentLayer>
+      </StorybookCommentLayer>
     ),
   ],
 }

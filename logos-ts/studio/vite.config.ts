@@ -1,16 +1,21 @@
 import { defineConfig, type Plugin, type Connect } from "vite"
 import react from "@vitejs/plugin-react"
 import { execFile, execFileSync } from "node:child_process"
-import { writeFileSync, mkdirSync, watch, cpSync, existsSync, symlinkSync, readdirSync, mkdtempSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync, mkdirSync, watch } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { basename, dirname, resolve, join, relative, sep } from "node:path"
+import { dirname, resolve, join, relative, sep } from "node:path"
 import type { StudioIndex } from "../src/build-index"
 import { authPlugin } from "./server/auth"
 import { storybookProxyPlugin } from "./server/storybook-proxy"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
-const SOURCE_PROJECT = resolve(process.env.LOGOS_PROJECT || resolve(STUDIO, "../../hn-jobs"))
+const DEMO_STATE_FILE = resolve(LOGOS_TS, ".logos", "active-demo.json")
+const DEMOS = [
+  { id: "hn-jobs", name: "HN Jobs (Mini)", root: resolve(STUDIO, "../../hn-jobs") },
+  { id: "logos-studio", name: "Logos Studio", root: LOGOS_TS },
+] as const
+type DemoId = typeof DEMOS[number]["id"]
 const ALLOWED_HOSTS = [
   "logos-ts-santiweight.fly.dev",
   ...(process.env.LOGOS_ALLOWED_HOSTS || "")
@@ -23,6 +28,8 @@ type DetectProject = typeof import("../src/detect-project")["detectProject"]
 type WorkspaceKind = import("../src/workspace-manager").WorkspaceKind
 
 type StudioRuntime = {
+  demoId: DemoId | "custom"
+  sourceProject: string
   projectRoot: string
   caps: ReturnType<DetectProject>
   tsx: string
@@ -33,38 +40,38 @@ type StudioRuntime = {
   portableStories: import("../src/portable-stories").PortableStoryResolver
 }
 
-async function copyProject(src: string): Promise<string> {
-  const { gcDevSessions, writeDevSessionPid } = await import("../src/dev-session-gc")
-  const sessionsDir = resolve(LOGOS_TS, ".dev-sessions")
-  mkdirSync(sessionsDir, { recursive: true })
-  const ephDir = mkdtempSync(resolve(sessionsDir, "session-"))
-  const sessionId = basename(ephDir)
-  const gcResult = gcDevSessions(sessionsDir, { currentSessionId: sessionId })
-  if (gcResult.removed.length > 0) {
-    console.log(`[logos] removed stale sessions: ${gcResult.removed.join(", ")}`)
+function demoById(id: string | null | undefined) {
+  return DEMOS.find((demo) => demo.id === id) ?? null
+}
+
+function demoIdForSource(sourceProject: string): DemoId | "custom" {
+  return DEMOS.find((demo) => resolve(demo.root) === resolve(sourceProject))?.id ?? "custom"
+}
+
+function storedDemoId(): DemoId | null {
+  try {
+    if (!existsSync(DEMO_STATE_FILE)) return null
+    const data = JSON.parse(readFileSync(DEMO_STATE_FILE, "utf8")) as { id?: string }
+    return demoById(data.id)?.id ?? null
+  } catch {
+    return null
   }
-  if (gcResult.failed.length > 0) {
-    console.warn(`[logos] failed to remove stale sessions: ${gcResult.failed.map((f) => f.sessionId).join(", ")}`)
+}
+
+function sourceProjectForStartup(): { demoId: DemoId | "custom"; sourceProject: string } {
+  const envProject = process.env.LOGOS_PROJECT
+  if (envProject) {
+    const sourceProject = resolve(envProject)
+    return { demoId: demoIdForSource(sourceProject), sourceProject }
   }
-  cpSync(src, ephDir, {
-    recursive: true,
-    filter: (s) => !/node_modules|\.logos_cache|\.logos$|\.vite-logos|dist$/.test(s),
-  })
-  writeDevSessionPid(ephDir)
-  for (const entry of readdirSync(src)) {
-    const full = join(src, entry)
-    if (entry === "node_modules" && existsSync(full)) {
-      symlinkSync(full, join(ephDir, entry))
-    }
-  }
-  const frontendNm = join(src, "frontend", "node_modules")
-  if (existsSync(frontendNm)) {
-    mkdirSync(join(ephDir, "frontend"), { recursive: true })
-    symlinkSync(frontendNm, join(ephDir, "frontend", "node_modules"))
-  }
-  console.log(`[logos] session: ${sessionId}`)
-  console.log(`[logos] copied ${src} → ${ephDir}`)
-  return ephDir
+  const stored = demoById(storedDemoId())
+  const demo = stored ?? DEMOS[0]
+  return { demoId: demo.id, sourceProject: demo.root }
+}
+
+function persistDemo(id: DemoId): void {
+  mkdirSync(dirname(DEMO_STATE_FILE), { recursive: true })
+  writeFileSync(DEMO_STATE_FILE, JSON.stringify({ id }, null, 2))
 }
 
 async function createStudioRuntime(): Promise<StudioRuntime> {
@@ -75,6 +82,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     { ClaudeSessionManager },
     { LogosRuntimeStore },
     { createPortableStoryResolver },
+    { createSessionProject },
   ] = await Promise.all([
     import("../src/detect-project"),
     import("../src/storybook-manager"),
@@ -82,10 +90,14 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     import("../src/claude-session-manager"),
     import("../src/runtime-store"),
     import("../src/portable-stories"),
+    import("../src/session-project"),
   ])
 
-  const projectRoot = await copyProject(SOURCE_PROJECT)
+  const { demoId, sourceProject } = sourceProjectForStartup()
+  const projectRoot = createSessionProject(sourceProject, resolve(LOGOS_TS, ".dev-sessions")).root
   const caps = detectProject(projectRoot)
+  console.log(`[logos] source: ${sourceProject}`)
+  console.log(`[logos] demo: ${demoId}`)
   console.log(`[logos] project: ${caps.root}`)
   console.log(`[logos] storybook: ${caps.storybook ? caps.storybook.configDir : "not found"}`)
   console.log(`[logos] tests: ${caps.tests ? caps.tests.command.join(" ") : "not found"}`)
@@ -115,7 +127,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     logosTsSrc: resolve(LOGOS_TS, "src"),
     logosTsRoot: LOGOS_TS,
     projectRoot,
-    sourceProjectRoot: SOURCE_PROJECT,
+    sourceProjectRoot: sourceProject,
     caps,
     sbManager,
     sessions: sessionMgr,
@@ -132,7 +144,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     },
   })
 
-  return { projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, wsMgr, portableStories }
+  return { demoId, sourceProject, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, wsMgr, portableStories }
 }
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
@@ -168,6 +180,39 @@ function studioApi(runtime: StudioRuntime): Plugin {
       server.middlewares.use("/api/index", async (_req, res) => {
         res.setHeader("content-type", "application/json")
         res.end(JSON.stringify(await indexReady))
+      })
+
+      server.middlewares.use("/api/demos", async (req, res) => {
+        res.setHeader("content-type", "application/json")
+        if (req.method === "GET") {
+          res.end(JSON.stringify({
+            active: runtime.demoId,
+            sourceProject: runtime.sourceProject,
+            sessionRoot: runtime.projectRoot,
+            demos: DEMOS,
+          }))
+          return
+        }
+        if (req.method === "POST") {
+          const body = JSON.parse((await readBody(req)) || "{}") as { id?: string }
+          const demo = demoById(body.id)
+          if (!demo) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ ok: false, error: "unknown demo" }))
+            return
+          }
+          persistDemo(demo.id)
+          process.env.LOGOS_PROJECT = demo.root
+          res.end(JSON.stringify({ ok: true, active: demo.id }))
+          setTimeout(() => {
+            try { runtime.wsMgr.abortAll() } catch {}
+            try { runtime.sbManager.shutdownAll() } catch {}
+            void (server as { restart?: () => Promise<void> }).restart?.()
+          }, 50)
+          return
+        }
+        res.statusCode = 405
+        res.end(JSON.stringify({ error: "method not allowed" }))
       })
 
       server.middlewares.use("/api/capabilities", (_req, res) => {
@@ -605,8 +650,15 @@ function autoStorybook(runtime: StudioRuntime): Plugin {
   }
 }
 
+function shouldCreateStudioRuntime(command: string): boolean {
+  if (command !== "serve") return false
+  if (process.env.LOGOS_STORYBOOK_BASE) return false
+  if (process.env.npm_lifecycle_event === "storybook") return false
+  return true
+}
+
 export default defineConfig(async ({ command }) => {
-  const runtime = command === "serve" ? await createStudioRuntime() : null
+  const runtime = shouldCreateStudioRuntime(command) ? await createStudioRuntime() : null
 
   return {
     cacheDir: process.env.LOGOS_VITE_CACHE_DIR || undefined,

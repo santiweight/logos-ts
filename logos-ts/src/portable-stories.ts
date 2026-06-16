@@ -25,6 +25,24 @@ interface StoryCacheEntry {
   entries: StoryEntry[]
 }
 
+function errorModule(storyId: string, message: string): string {
+  return `
+    import React from "react"
+
+    export function PortableStory() {
+      return React.createElement(
+        "main",
+        { style: { padding: 24, fontFamily: "system-ui, sans-serif" } },
+        React.createElement("h1", null, "Story unavailable"),
+        React.createElement("pre", { style: { whiteSpace: "pre-wrap" } }, ${JSON.stringify(message)})
+      )
+    }
+
+    export const storyId = ${JSON.stringify(storyId)}
+    export const storyTitle = ${JSON.stringify(`Unavailable / ${storyId || "unknown"}`)}
+  `
+}
+
 function storyFilesMtime(frontendDir: string): number {
   const storyFiles = readdirSync(frontendDir, { recursive: true })
     .filter((f): f is string => typeof f === "string" && /\.stories\.(t|j)sx?$/.test(f))
@@ -80,13 +98,18 @@ export function createPortableStoryResolver(opts: {
     const storyId = url.searchParams.get("storyId") ?? ""
     const workspaceId = url.searchParams.get("workspaceId")
     const root = opts.workspaceRoot(workspaceId)
-    if (!root) throw new Error(`workspace not found: ${workspaceId}`)
+    if (!root) return errorModule(storyId, `workspace not found: ${workspaceId}`)
     const dirs = storybookDirsForRoot(opts.projectRoot, opts.storybook, root)
-    if (!dirs) throw new Error("Storybook is not configured for this project")
+    if (!dirs) return errorModule(storyId, "Storybook is not configured for this project")
 
     const story = storiesFor(root).find((e) => e.id === storyId)
-    if (!story) throw new Error(`story not found: ${storyId}`)
-    const previewFile = previewFileForConfig(dirs.configDir)
+    if (!story) return errorModule(storyId, `story not found: ${storyId}`)
+    let previewFile: string
+    try {
+      previewFile = previewFileForConfig(dirs.configDir)
+    } catch (e) {
+      return errorModule(storyId, String(e instanceof Error ? e.message : e))
+    }
 
     return `
     import { composeStories, setProjectAnnotations } from "@storybook/react"

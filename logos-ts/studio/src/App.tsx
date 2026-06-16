@@ -28,6 +28,12 @@ import seedData from "./studio-index.json"
 
 const seed = seedData as unknown as StudioIndex
 
+interface DemoOption {
+  id: string
+  name: string
+  root: string
+}
+
 function combineDiffStatus(
   current: DiffStatus | undefined,
   next: DiffStatus | undefined
@@ -63,6 +69,10 @@ export function App() {
   const [popup, setPopup] = useState<{ target: string; label: string; x: number; y: number } | null>(
     null
   )
+  const [demoMenuOpen, setDemoMenuOpen] = useState(false)
+  const [demos, setDemos] = useState<DemoOption[]>([])
+  const [activeDemoId, setActiveDemoId] = useState<string>("")
+  const [demoSwitching, setDemoSwitching] = useState<string | null>(null)
 
   // ---- workspaces (forks) ----
   const [railOpen, setRailOpen] = useState(true)
@@ -149,6 +159,15 @@ export function App() {
     try {
       const res = await fetch("/api/test-results")
       if (res.ok) setTestState((await res.json()) as TestState)
+    } catch {}
+  }, [])
+  const refreshDemos = useCallback(async () => {
+    try {
+      const res = await fetch("/api/demos")
+      if (!res.ok) return
+      const data = await res.json() as { active: string; demos: DemoOption[] }
+      setActiveDemoId(data.active)
+      setDemos(data.demos)
     } catch {}
   }, [])
 
@@ -269,7 +288,7 @@ export function App() {
     if (bootedRef.current) return
     bootedRef.current = true
     ;(async () => {
-      await Promise.all([refresh(), refreshTests(), refreshStorybooks()])
+      await Promise.all([refresh(), refreshTests(), refreshStorybooks(), refreshDemos()])
       const wsRes = await fetch("/api/workspaces").catch(() => null)
       const wsList = wsRes?.ok ? ((await wsRes.json()) as WorkspaceMeta[]) : []
       setWorkspaces(wsList)
@@ -284,6 +303,35 @@ export function App() {
     const iv = setInterval(() => { refreshTests(); refreshStorybooks() }, 2_000)
     return () => clearInterval(iv)
   }, [])
+
+  const openDemo = useCallback(async (id: string) => {
+    if (!id || id === activeDemoId || demoSwitching) {
+      setDemoMenuOpen(false)
+      return
+    }
+    const demo = demos.find((d) => d.id === id)
+    setDemoMenuOpen(false)
+    setDemoSwitching(id)
+    setBusy(`opening ${demo?.name ?? id}…`)
+    for (const es of esRefs.current.values()) es.close()
+    esRefs.current.clear()
+    try {
+      const res = await fetch("/api/demos", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      })
+      if (!res.ok) {
+        setBusy(null)
+        setDemoSwitching(null)
+        return
+      }
+      window.setTimeout(() => window.location.reload(), 1200)
+    } catch {
+      setBusy(null)
+      setDemoSwitching(null)
+    }
+  }, [activeDemoId, demoSwitching, demos])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -596,13 +644,56 @@ export function App() {
   const reviewCount = captureReviewCount + (
     workspaceIndex && indexToArchText(reviewBaseIndex) !== indexToArchText(workspaceIndex) ? 1 : 0
   )
+  const activeDemo = demos.find((d) => d.id === activeDemoId)
+  const demoLabel = demoSwitching
+    ? `Opening ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
+    : activeDemo?.name ?? "Custom"
 
   if (!activeWorkspaceId || !workspaceIndex) {
-    return <div className="studio"><div className="empty">Opening workspace…</div></div>
+    return (
+      <div className="studio">
+        <header className="topbar">
+          <div className="topbar-menu">
+            <button className="topbar-trigger" onClick={() => setDemoMenuOpen((o) => !o)} aria-label="Open menu">
+              ☰
+            </button>
+            <span className="topbar-title">{demoLabel}</span>
+          </div>
+        </header>
+        <div className="empty">Opening workspace…</div>
+      </div>
+    )
   }
 
   return (
     <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`}>
+      <header className="topbar">
+        <div className="topbar-menu">
+          <button
+            className={`topbar-trigger ${demoMenuOpen ? "active" : ""}`}
+            onClick={() => setDemoMenuOpen((o) => !o)}
+            aria-label="Open menu"
+          >
+            ☰
+          </button>
+          <span className="topbar-title">{demoLabel}</span>
+          {demoMenuOpen && (
+            <div className="demo-menu">
+              <div className="demo-menu-title">Open Demo</div>
+              {demos.map((demo) => (
+                <button
+                  key={demo.id}
+                  className={`demo-menu-item ${demo.id === activeDemoId ? "active" : ""}`}
+                  onClick={() => openDemo(demo.id)}
+                >
+                  <span>{demo.name}</span>
+                  {demo.id === activeDemoId && <span className="demo-current">current</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </header>
       <ChangesRail
         open={railOpen}
         onToggle={() => setRailOpen((o) => !o)}
