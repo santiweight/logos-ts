@@ -4,7 +4,7 @@ import { SidebarTree } from "./SidebarTree"
 import { ContentPanel } from "./ContentPanel"
 import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
-import { svgIcon } from "./icons"
+import { ICONS, svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { ReviewPanel } from "./ReviewPanel"
 import { diffIndex } from "./diff"
@@ -76,6 +76,11 @@ export function App() {
 
   // ---- workspaces (forks) ----
   const [railOpen, setRailOpen] = useState(true)
+  const [sidebarFilters, setSidebarFilters] = useState({
+    functions: true,
+    classes: true,
+    components: true,
+  })
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
@@ -716,6 +721,35 @@ export function App() {
       />
 
       <aside className="sidebar">
+        <div className="sidebar-toolbar">
+          <button
+            className={`sidebar-filter fn ${sidebarFilters.functions ? "active" : ""}`}
+            type="button"
+            aria-pressed={sidebarFilters.functions}
+            title={sidebarFilters.functions ? "Hide functions" : "Show functions"}
+            onClick={() => setSidebarFilters((filters) => ({ ...filters, functions: !filters.functions }))}
+          >
+            {ICONS.fn}
+          </button>
+          <button
+            className={`sidebar-filter cls ${sidebarFilters.classes ? "active" : ""}`}
+            type="button"
+            aria-pressed={sidebarFilters.classes}
+            title={sidebarFilters.classes ? "Hide classes" : "Show classes"}
+            onClick={() => setSidebarFilters((filters) => ({ ...filters, classes: !filters.classes }))}
+          >
+            {ICONS.cls}
+          </button>
+          <button
+            className={`sidebar-filter comp ${sidebarFilters.components ? "active" : ""}`}
+            type="button"
+            aria-pressed={sidebarFilters.components}
+            title={sidebarFilters.components ? "Hide React components" : "Show React components"}
+            onClick={() => setSidebarFilters((filters) => ({ ...filters, components: !filters.components }))}
+          >
+            {ICONS.comp}
+          </button>
+        </div>
         <SidebarTree
           files={view.files}
           selection={selection}
@@ -724,6 +758,9 @@ export function App() {
           onComment={openComment}
           diff={diff}
           testState={testState}
+          showFunctions={sidebarFilters.functions}
+          showClasses={sidebarFilters.classes}
+          showComponents={sidebarFilters.components}
         />
       </aside>
 

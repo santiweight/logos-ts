@@ -115,4 +115,156 @@ describe("SidebarTree", () => {
 
     expect(onComment).toHaveBeenCalledWith("component:AdminTaxonomyPage", "AdminTaxonomyPage", 10, 20)
   })
+
+  it("can hide function-only rows while keeping component rows visible", () => {
+    render(
+      <SidebarTree
+        files={[
+          {
+            file: "app/admin/taxonomy/page.tsx",
+            code: "",
+            items: [
+              {
+                kind: "function",
+                name: "saveTaxonomy",
+                signature: "saveTaxonomy()",
+                code: "",
+                deps: [],
+                tests: [],
+              },
+              {
+                kind: "function",
+                name: "AdminTaxonomyPage",
+                signature: "AdminTaxonomyPage()",
+                code: "",
+                deps: [],
+                tests: [],
+              },
+            ],
+            component: {
+              name: "AdminTaxonomyPage",
+              signature: "AdminTaxonomyPage(props: { searchParams: SearchParams })",
+              componentCode: "",
+              propsFields: [],
+              stories: [],
+              captured: [],
+            },
+          },
+          {
+            file: "app/admin/taxonomy/utils.ts",
+            code: "",
+            items: [{
+              kind: "function",
+              name: "normalizeTaxonomy",
+              signature: "normalizeTaxonomy()",
+              code: "",
+              deps: [],
+              tests: [],
+            }],
+          },
+        ]}
+        selection={{ file: "app/admin/taxonomy/page.tsx", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+        testState={null}
+        showFunctions={false}
+      />
+    )
+
+    expect(screen.getByText("AdminTaxonomyPage")).toBeInTheDocument()
+    expect(screen.queryByText("saveTaxonomy")).not.toBeInTheDocument()
+    expect(screen.queryByText("normalizeTaxonomy")).not.toBeInTheDocument()
+  })
+
+  it("keeps classes visible when functions are hidden", () => {
+    render(
+      <SidebarTree
+        files={[{
+          file: "app/admin/taxonomy/store.ts",
+          code: "",
+          items: [
+            {
+              kind: "function",
+              name: "saveTaxonomy",
+              signature: "saveTaxonomy()",
+              code: "",
+              deps: [],
+              tests: [],
+            },
+            {
+              kind: "class",
+              name: "TaxonomyStore",
+              fields: [],
+              methods: [],
+              deps: [],
+              tests: [],
+              code: "",
+            },
+          ],
+        }]}
+        selection={{ file: "app/admin/taxonomy/store.ts", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+        testState={null}
+        showFunctions={false}
+        showClasses={true}
+      />
+    )
+
+    fireEvent.click(screen.getByText("store"))
+
+    expect(screen.getByText("TaxonomyStore")).toBeInTheDocument()
+    expect(screen.queryByText("saveTaxonomy")).not.toBeInTheDocument()
+  })
+
+  it("can hide React components without showing their backing function rows", () => {
+    render(
+      <SidebarTree
+        files={[{
+          file: "app/admin/taxonomy/page.tsx",
+          code: "",
+          items: [
+            {
+              kind: "function",
+              name: "AdminTaxonomyPage",
+              signature: "AdminTaxonomyPage()",
+              code: "",
+              deps: [],
+              tests: [],
+            },
+            {
+              kind: "function",
+              name: "saveTaxonomy",
+              signature: "saveTaxonomy()",
+              code: "",
+              deps: [],
+              tests: [],
+            },
+          ],
+          component: {
+            name: "AdminTaxonomyPage",
+            signature: "AdminTaxonomyPage(props: { searchParams: SearchParams })",
+            componentCode: "",
+            propsFields: [],
+            stories: [],
+            captured: [],
+          },
+        }]}
+        selection={{ file: "app/admin/taxonomy/page.tsx", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+        testState={null}
+        showComponents={false}
+      />
+    )
+
+    expect(screen.getByText("saveTaxonomy")).toBeInTheDocument()
+    expect(screen.queryByText("AdminTaxonomyPage")).not.toBeInTheDocument()
+  })
 })

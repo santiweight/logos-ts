@@ -39,6 +39,9 @@ interface Props {
   onComment: (target: string, label: string, x: number, y: number) => void
   diff: Record<string, DiffStatus>
   testState: TestState | null
+  showFunctions?: boolean
+  showClasses?: boolean
+  showComponents?: boolean
 }
 
 interface Ctx {
@@ -92,7 +95,10 @@ function buildData(
   files: FileEntry[],
   diff: Record<string, DiffStatus>,
   comments: Props["comments"],
-  failingTests: Set<string> | null
+  failingTests: Set<string> | null,
+  showFunctions: boolean,
+  showClasses: boolean,
+  showComponents: boolean
 ): { data: SNode[]; openIds: Record<string, boolean> } {
   const openIds: Record<string, boolean> = {}
   const cCount = (target: string) => comments[target]?.length ?? 0
@@ -145,15 +151,18 @@ function buildData(
   }
 
   const stripExt = (n: string) => n.replace(/\.(tsx?|jsx?)$/, "")
+  const itemVisible = (it: FileItem): boolean =>
+    it.kind === "class" ? showClasses : showFunctions
 
-  const fileNode = (f: FileEntry): SNode => {
+  const fileNode = (f: FileEntry): SNode | null => {
     const rawName = f.file.split("/").pop() ?? f.file
     const baseName = stripExt(rawName)
     const target = `file:${f.file}`
 
-    const components = componentsOf(f)
-    if (components.length > 0) {
-      const componentNames = new Set(components.map((component) => component.name))
+    const allComponents = componentsOf(f)
+    if (allComponents.length > 0) {
+      const components = showComponents ? allComponents : []
+      const componentNames = new Set(allComponents.map((component) => component.name))
       const componentNode = (comp: ComponentEntry): SNode => {
       const compTarget = `component:${comp.name}`
       const componentStatus = diff[compTarget] ?? (comp.propsName ? diff[`props:${comp.propsName}`] : undefined)
@@ -195,7 +204,7 @@ function buildData(
       }
       }
 
-      const otherItems = f.items.filter((it) => !componentNames.has(it.name))
+      const otherItems = f.items.filter((it) => !componentNames.has(it.name) && itemVisible(it))
       const canInline = components.length === 1 && otherItems.length === 0
 
       if (canInline) {
@@ -207,6 +216,7 @@ function buildData(
 
       const children: SNode[] = []
       for (const comp of components) children.push(componentNode(comp))
+      if (children.length === 0 && otherItems.length === 0) return null
       openIds[`file:${f.file}`] = true
 
       const items = otherItems.slice().sort((a, b) => a.name.localeCompare(b.name))
@@ -222,17 +232,20 @@ function buildData(
         label: baseName,
         ...(fileStatus ? { status: fileStatus } : {}),
         comments: cCount(target),
-        fns: f.items.length + components.length,
-        tests: f.items.reduce((n, it) => n + testsOf(it), 0),
+        fns: otherItems.length + components.length,
+        ...(otherItems.length ? { tests: otherItems.reduce((n, it) => n + testsOf(it), 0) } : {}),
         ...(fileTestStatus ? { testStatus: fileTestStatus } : {}),
         ...(children.length ? { children } : {}),
         sel: { file: f.file, view: "code" },
       }
     }
 
+    const visibleItems = f.items.filter(itemVisible)
+    if (visibleItems.length === 0) return null
+
     // No component — check if single item matches file name
-    if (f.items.length === 1 && f.items[0]?.name === baseName) {
-      const it = f.items[0]!
+    if (visibleItems.length === 1 && visibleItems[0]?.name === baseName) {
+      const it = visibleItems[0]!
       const sym = symNode(it, f.file)
       const status = combineDiffStatus(sym.status, diff[target])
       if (status) sym.status = status
@@ -241,7 +254,7 @@ function buildData(
     }
 
     const children: SNode[] = []
-    const items = f.items.slice().sort((a, b) => a.name.localeCompare(b.name))
+    const items = visibleItems.slice().sort((a, b) => a.name.localeCompare(b.name))
     for (const it of items) children.push(symNode(it, f.file))
 
     const noCompTestStatus = rollUpTestStatus(children)
@@ -254,8 +267,8 @@ function buildData(
       label: baseName,
       ...(fileStatus ? { status: fileStatus } : {}),
       comments: cCount(target),
-      fns: f.items.length,
-      tests: f.items.reduce((n, it) => n + testsOf(it), 0),
+      fns: visibleItems.length,
+      tests: visibleItems.reduce((n, it) => n + testsOf(it), 0),
       ...(noCompTestStatus ? { testStatus: noCompTestStatus } : {}),
       ...(children.length ? { children } : {}),
       sel: { file: f.file, view: "code" },
@@ -287,6 +300,7 @@ function buildData(
       const id = `dir:${p}`
       openIds[id] = true
       const children = dirNodes(d, p)
+      if (children.length === 0) continue
       const testStatus = rollUpTestStatus(children)
       const status = rollUpDiffStatus(children)
       out.push({
@@ -301,7 +315,10 @@ function buildData(
         children,
       })
     }
-    for (const f of dir.files.slice().sort((a, b) => a.file.localeCompare(b.file))) out.push(fileNode(f))
+    for (const f of dir.files.slice().sort((a, b) => a.file.localeCompare(b.file))) {
+      const node = fileNode(f)
+      if (node) out.push(node)
+    }
     return out
   }
 
@@ -396,6 +413,9 @@ export function SidebarTree({
   onComment,
   diff,
   testState,
+  showFunctions = true,
+  showClasses = true,
+  showComponents = true,
 }: Props) {
   const results = testState?.results ?? null
   const testsRunning = testState?.status === "running"
@@ -406,8 +426,8 @@ export function SidebarTree({
     return set
   }, [results])
   const { data, openIds } = useMemo(
-    () => buildData(files, diff, comments, failingTests),
-    [files, diff, comments, failingTests]
+    () => buildData(files, diff, comments, failingTests, showFunctions, showClasses, showComponents),
+    [files, diff, comments, failingTests, showFunctions, showClasses, showComponents]
   )
 
   const selectedId = selection.symbol
@@ -449,7 +469,7 @@ export function SidebarTree({
     <SidebarCtx.Provider value={ctx}>
       <div className="sidebar-tree" ref={ref}>
         <Tree<SNode>
-          key={files.map(f => f.file).join("\0")}
+          key={`${showFunctions ? "fn" : ""}:${showClasses ? "cls" : ""}:${showComponents ? "comp" : ""}:${files.map(f => f.file).join("\0")}`}
           data={data}
           idAccessor="id"
           openByDefault={false}
