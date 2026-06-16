@@ -1,23 +1,16 @@
-import type { Preview } from "@storybook/react-vite"
-import { StorybookCommentLayer } from "../src/storybook-comment-layer"
-import "../src/studio.css"
+import * as userPreviewModule from "./preview.logos-user"
+import { withLogosComments } from "./.logos/CommentLayer"
 
-const preview: Preview = {
-  parameters: {
-    backgrounds: {
-      default: "dark",
-      values: [{ name: "dark", value: "#1f1f23" }],
-    },
-  },
-  decorators: [
-    (Story, context) => (
-      <div style={{ background: "#1f1f23", color: "#d4d4d8", minHeight: "100vh" }}>
-        <StorybookCommentLayer storyId={context.id} component={context.title?.split("/").pop()}>
-          <Story />
-        </StorybookCommentLayer>
-      </div>
-    ),
-  ],
+const userDefault = (userPreviewModule as any).default ?? {}
+const userDecorators = [
+  ...((userPreviewModule as any).decorators ?? []),
+  ...(userDefault.decorators ?? []),
+]
+
+const preview = {
+  ...userPreviewModule,
+  ...userDefault,
+  decorators: [...userDecorators, withLogosComments],
 }
 
 export default preview
