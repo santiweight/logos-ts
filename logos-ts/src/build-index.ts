@@ -10,12 +10,7 @@ import { computeTestAttachments, extractBackend } from "./backend.js"
 export interface StoryNode {
   id: string
   exportName: string
-}
-export interface CapturedNode {
-  exportName: string
-  testFile: string
   snapshot: string | null
-  previousSnapshot: string | null
 }
 export interface FileEntry {
   file: string
@@ -32,7 +27,6 @@ export interface ComponentEntry {
   propsCode?: string
   propsFields: { name: string; type: string }[]
   stories: StoryNode[]
-  captured: CapturedNode[]
 }
 export interface FileItem {
   kind: "function" | "class"
@@ -187,23 +181,34 @@ function detectComponents(sfs: SourceFile[], absRoot: string): DetectedComponent
   return components
 }
 
-function findCaptured(storyEntry: StoryEntry, absRoot: string): CapturedNode[] {
-  const dir = dirname(storyEntry.filePath)
-  const base = storyEntry.storiesModule.replace(/\.stories$/, "")
-  const suffix = ".captured.test.tsx"
-  const out: CapturedNode[] = []
-  for (const fn of readdirSync(dir)) {
-    if (!fn.startsWith(`${base}.`) || !fn.endsWith(suffix)) continue
-    const exportName = fn.slice(base.length + 1, -suffix.length)
-    const snapPath = join(dir, "__snapshots__", `${fn}.snap`)
-    out.push({
-      exportName,
-      testFile: relative(absRoot, join(dir, fn)),
-      snapshot: existsSync(snapPath) ? readFileSync(snapPath, "utf8") : null,
-      previousSnapshot: null,
-    })
+function parseSnapshotKeys(snapContent: string): Map<string, string> {
+  const entries = new Map<string, string>()
+  const re = /^exports\[`(.+?)`\]\s*=\s*`([\s\S]*?)`;$/gm
+  let m
+  while ((m = re.exec(snapContent))) {
+    entries.set(m[1], m[2])
   }
-  return out
+  return entries
+}
+
+let _snapCache: { path: string; entries: Map<string, string> } | null = null
+
+function loadStorySnapshots(absRoot: string): Map<string, string> {
+  const snapPath = join(absRoot, "frontend", "__snapshots__", "stories.test.tsx.snap")
+  if (_snapCache?.path === snapPath) return _snapCache.entries
+  if (!existsSync(snapPath)) {
+    _snapCache = { path: snapPath, entries: new Map() }
+    return _snapCache.entries
+  }
+  const entries = parseSnapshotKeys(readFileSync(snapPath, "utf8"))
+  _snapCache = { path: snapPath, entries }
+  return entries
+}
+
+function getSnapshotForStory(storyEntry: StoryEntry, absRoot: string, allSnaps: Map<string, string>): string | null {
+  const storyRelPath = "./" + relative(absRoot, storyEntry.filePath).replace(/^frontend\//, "")
+  const snapKey = `captured: ${storyRelPath} / ${storyEntry.exportName} 1`
+  return allSnaps.get(snapKey) ?? null
 }
 
 export function buildStudioIndex(root: string, existingProject?: ReturnType<typeof loadProject>): StudioIndex {
@@ -214,6 +219,7 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
   const tree = buildDependencyTree(sfs, root)
   const attachments = computeTestAttachments(sfs, absRoot)
   const backendFiles = extractBackend(sfs, tree, attachments, absRoot)
+  const allSnaps = loadStorySnapshots(absRoot)
 
   // Group story entries by component name
   const storiesByComponent = new Map<string, StoryEntry[]>()
@@ -236,8 +242,11 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
       ...(component.propsName != null ? { propsName: component.propsName } : {}),
       ...(component.propsCode != null ? { propsCode: component.propsCode } : {}),
       propsFields: component.propsFields,
-      stories: entries.map((e) => ({ id: e.id, exportName: e.exportName })),
-      captured: entries[0] ? findCaptured(entries[0], absRoot) : [],
+      stories: entries.map((e) => ({
+        id: e.id,
+        exportName: e.exportName,
+        snapshot: getSnapshotForStory(e, absRoot, allSnaps),
+      })),
     }
     ;(componentsByFile.get(file) ?? componentsByFile.set(file, []).get(file)!).push(next)
   }

@@ -13,7 +13,7 @@ import type {
   View,
 } from "./types"
 
-type Kind = "dir" | "file" | "fn" | "cls" | "comp" | "story" | "captured" | "section"
+type Kind = "dir" | "file" | "fn" | "cls" | "comp" | "story" | "section"
 
 interface SNode {
   id: string
@@ -172,23 +172,9 @@ function buildData(
         kind: "story" as Kind,
         sel: { file: f.file, component: comp.name, view: "story" as View, storyId: s.id },
       }))
-      const capturedNodes: SNode[] = comp.captured.map((cap) => {
-        const capStatus: "pass" | "fail" | undefined = failingFiles
-          ? failingFiles.has(cap.testFile) ? "fail" : "pass"
-          : undefined
-        const status = diff[`capture:${cap.testFile}::${cap.exportName}`]
-        return {
-          id: `cap:${comp.name}:${cap.exportName}`,
-          name: cap.exportName,
-          kind: "captured" as Kind,
-          ...(status ? { status } : {}),
-          ...(capStatus ? { testStatus: capStatus } : {}),
-          sel: { file: f.file, component: comp.name, view: "captured" as View, exportName: cap.exportName },
-        }
-      })
-      const status = combineDiffStatus(componentStatus, rollUpDiffStatus(capturedNodes))
-      const compNodeChildren = [...storyNodes, ...capturedNodes]
-      const compTestStatus = rollUpTestStatus(capturedNodes)
+      const status = componentStatus
+      const compNodeChildren = storyNodes
+      const compTestStatus = undefined
       return {
         id: `comp:${f.file}:${comp.name}`,
         name: comp.name,
@@ -332,7 +318,6 @@ const GLYPH: Record<Kind, ReactNode> = {
   cls: ICONS.cls,
   comp: ICONS.comp,
   story: ICONS.story,
-  captured: ICONS.captured,
   section: "§",
 }
 
@@ -373,7 +358,6 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
       {<span className="glyph">{GLYPH[d.kind]}</span>}
       <span className="label">
         {d.name}
-        {d.kind === "captured" && <em> ⟨captured⟩</em>}
       </span>
       {d.kind === "file" && d.fns ? <span className="fns">{d.fns}</span> : null}
       {d.kind === "comp" && d.stories ? <span className="count">{d.stories}</span> : null}
@@ -386,7 +370,7 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
 const rowHeight = (node: NodeApi<SNode>) => {
   const k = node.data.kind
   if (k === "section") return 22
-  if (k === "fn" || k === "cls" || k === "story" || k === "captured") return 20
+  if (k === "fn" || k === "cls" || k === "story") return 20
   return 22
 }
 
@@ -434,29 +418,21 @@ export function SidebarTree({
     ? `sym:${selection.file}:${selection.symbol}`
     : selection.view === "story"
       ? `story:${selection.storyId}`
-      : selection.view === "captured"
-        ? (() => {
-            const fe = files.find((f) => f.file === selection.file)
-            if (!fe) return null
-            const components = componentsOf(fe)
-            const component = components.find((c) => c.name === selection.component) ?? components[0]
-            return component ? `cap:${component.name}:${selection.exportName}` : null
-          })()
-        : (() => {
-            const fe = files.find((f) => f.file === selection.file)
-            if (fe && selection.component) return `comp:${fe.file}:${selection.component}`
-            if (fe && componentsOf(fe).length === 1) {
-              const component = componentsOf(fe)[0]!
-              const others = fe.items.filter((it) => it.name !== component.name)
-              if (others.length === 0) return `comp:${component.name}`
-            }
-            if (fe && componentsOf(fe).length === 0 && fe.items.length === 1) {
-              const baseName = (fe.file.split("/").pop() ?? "").replace(/\.(tsx?|jsx?)$/, "")
-              if (fe.items[0]?.name === baseName)
-                return `sym:${fe.file}:${fe.items[0]!.name}`
-            }
-            return `file:${selection.file}`
-          })()
+      : (() => {
+          const fe = files.find((f) => f.file === selection.file)
+          if (fe && selection.component) return `comp:${fe.file}:${selection.component}`
+          if (fe && componentsOf(fe).length === 1) {
+            const component = componentsOf(fe)[0]!
+            const others = fe.items.filter((it) => it.name !== component.name)
+            if (others.length === 0) return `comp:${component.name}`
+          }
+          if (fe && componentsOf(fe).length === 0 && fe.items.length === 1) {
+            const baseName = (fe.file.split("/").pop() ?? "").replace(/\.(tsx?|jsx?)$/, "")
+            if (fe.items[0]?.name === baseName)
+              return `sym:${fe.file}:${fe.items[0]!.name}`
+          }
+          return `file:${selection.file}`
+        })()
 
   const ctx = useMemo<Ctx>(
     () => ({ selectedId, testsRunning, onComment, onSelect }),

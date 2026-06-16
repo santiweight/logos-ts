@@ -14,8 +14,7 @@ const file: FileEntry = {
     signature: "JobCard()",
     componentCode: "",
     propsFields: [],
-    stories: [{ id: "jobcard--default", exportName: "Default" }],
-    captured: [],
+    stories: [{ id: "jobcard--default", exportName: "Default", snapshot: null }],
   },
 }
 
@@ -31,7 +30,6 @@ function renderStory(storybookRenderKey: string) {
       storybookRenderKey={storybookRenderKey}
       onRetryStorybook={() => {}}
       onView={() => {}}
-      onCapture={() => {}}
       comments={{}}
       onComment={() => {}}
       diff={{}}
@@ -52,7 +50,6 @@ describe("ContentPanel", () => {
         storybookRenderKey="inst-1:1000"
         onRetryStorybook={() => {}}
         onView={() => {}}
-        onCapture={() => {}}
         comments={{}}
         onComment={() => {}}
         diff={{}}
@@ -84,7 +81,6 @@ describe("ContentPanel", () => {
         storybookRenderKey="inst-2:2000"
         onRetryStorybook={() => {}}
         onView={() => {}}
-        onCapture={() => {}}
         comments={{}}
         onComment={() => {}}
         diff={{}}

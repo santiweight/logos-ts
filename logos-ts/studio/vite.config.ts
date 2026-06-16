@@ -516,41 +516,6 @@ function studioApi(runtime: StudioRuntime): Plugin {
         res.end(JSON.stringify({ error: "provide session id or ?goal= param" }))
       })
 
-      server.middlewares.use("/api/capture", async (req, res) => {
-        if (req.method !== "POST") { res.statusCode = 405; return res.end() }
-        res.setHeader("content-type", "application/json")
-        if (!caps.storybook) {
-          res.statusCode = 501
-          return res.end(JSON.stringify({ ok: false, error: "Storybook is not configured for this project" }))
-        }
-        try {
-          const { storyRef, workspaceId } = JSON.parse((await readBody(req)) || "{}")
-          const workspace = typeof workspaceId === "string" ? wsMgr.get(workspaceId) : null
-          const captureRoot = workspace?.forkDir ?? PROJECT_ROOT
-          const out = execFileSync(tsx, [resolve(LOGOS_TS, "src/capture.ts"), captureRoot, storyRef], {
-            cwd: LOGOS_TS, encoding: "utf8",
-          })
-          const testFile = (out.match(/captured -> (.+)/)?.[1] ?? "").trim()
-          const frontendDir = resolve(captureRoot, relative(PROJECT_ROOT, caps.storybook.frontendDir))
-          const frontendVitest = resolve(frontendDir, "node_modules/.bin/vitest")
-          const vitestCacheDir = resolve(captureRoot, ".logos_cache", "vitest")
-          mkdirSync(vitestCacheDir, { recursive: true })
-          execFileSync(frontendVitest, ["run", "--update", resolve(frontendDir, testFile)], {
-            cwd: frontendDir,
-            encoding: "utf8",
-            env: {
-              ...process.env,
-              LOGOS_VITEST_CACHE_DIR: vitestCacheDir,
-              NODE_ENV: "test",
-            },
-          })
-          if (workspace) wsMgr.reindex(workspace.id)
-          res.end(JSON.stringify({ ok: true, testFile }))
-        } catch (e) {
-          res.statusCode = 500
-          res.end(JSON.stringify({ ok: false, error: String(e) }))
-        }
-      })
     },
   }
 }

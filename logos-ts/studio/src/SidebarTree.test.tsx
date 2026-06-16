@@ -37,18 +37,12 @@ const files: FileEntry[] = [{
     signature: "JobCard()",
     componentCode: "",
     propsFields: [],
-    stories: [{ id: "jobcard--default", exportName: "Default" }],
-    captured: [{
-      exportName: "Default",
-      testFile: "src/components/JobCard.Default.captured.test.tsx",
-      snapshot: "<article>After</article>",
-      previousSnapshot: "<article>Before</article>",
-    }],
+    stories: [{ id: "jobcard--default", exportName: "Default", snapshot: "<article>After</article>" }],
   },
 }]
 
 describe("SidebarTree", () => {
-  it("rolls captured diff coloring up to the parent component row", () => {
+  it("rolls snapshot diff coloring up to the parent component row", () => {
     render(
       <SidebarTree
         files={files}
@@ -57,15 +51,13 @@ describe("SidebarTree", () => {
         comments={{}}
         onComment={() => {}}
         diff={{
-          "capture:src/components/JobCard.Default.captured.test.tsx::Default": "changed",
+          "component:JobCard": "changed",
         }}
         testState={null}
       />
     )
 
     expect(screen.getByText("JobCard").closest(".anode")).toHaveClass("diff-changed")
-    fireEvent.click(screen.getByText("JobCard"))
-    expect(screen.getByText(/captured/).closest(".anode")).toHaveClass("diff-changed")
   })
 
   it("opens comments from nested component rows with sibling functions", () => {
@@ -99,7 +91,6 @@ describe("SidebarTree", () => {
             componentCode: "",
             propsFields: [{ name: "searchParams", type: "SearchParams" }],
             stories: [],
-            captured: [],
           },
         }]}
         selection={{ file: "app/admin/taxonomy/page.tsx", view: "code" }}

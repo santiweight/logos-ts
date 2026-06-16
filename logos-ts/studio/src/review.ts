@@ -3,23 +3,21 @@ import type { StudioIndex, Workspace } from "./types"
 const componentsOf = (file: StudioIndex["files"][number]) =>
   file.components?.length ? file.components : file.component ? [file.component] : []
 
-export type CaptureChangeStatus = "added" | "changed" | "removed"
+export type SnapshotChangeStatus = "added" | "changed" | "removed"
 
-export interface CaptureChange {
+export interface SnapshotChange {
   id: string
   component: string
   exportName: string
-  testFile: string
   storyId: string | null
-  status: CaptureChangeStatus
+  status: SnapshotChangeStatus
   beforeSnapshot: string | null
   afterSnapshot: string | null
 }
 
-interface IndexedCapture {
+interface IndexedSnapshot {
   component: string
   exportName: string
-  testFile: string
   storyId: string | null
   snapshot: string | null
 }
@@ -33,44 +31,41 @@ export function selectWorkspaceReviewBaseIndex(projectIndex: StudioIndex, worksp
   return workspace.instances[workspace.baseInstanceId]?.index ?? projectIndex
 }
 
-function captureMap(index: StudioIndex): Map<string, IndexedCapture> {
-  const captures = new Map<string, IndexedCapture>()
+function snapshotMap(index: StudioIndex): Map<string, IndexedSnapshot> {
+  const snaps = new Map<string, IndexedSnapshot>()
   for (const file of index.files) {
     for (const component of componentsOf(file)) {
-      for (const capture of component.captured) {
-        const story = component.stories.find((candidate) => candidate.exportName === capture.exportName)
-        const id = `${capture.testFile}::${capture.exportName}`
-        captures.set(id, {
+      for (const story of component.stories) {
+        const id = `${component.name}::${story.exportName}`
+        snaps.set(id, {
           component: component.name,
-          exportName: capture.exportName,
-          testFile: capture.testFile,
-          storyId: story?.id ?? null,
-          snapshot: capture.snapshot,
+          exportName: story.exportName,
+          storyId: story.id,
+          snapshot: story.snapshot,
         })
       }
     }
   }
-  return captures
+  return snaps
 }
 
-export function capturedTestChanges(base: StudioIndex, workspace: StudioIndex): CaptureChange[] {
-  const before = captureMap(base)
-  const after = captureMap(workspace)
+export function snapshotChanges(base: StudioIndex, workspace: StudioIndex): SnapshotChange[] {
+  const before = snapshotMap(base)
+  const after = snapshotMap(workspace)
   const ids = new Set([...before.keys(), ...after.keys()])
-  const changes: CaptureChange[] = []
+  const changes: SnapshotChange[] = []
 
   for (const id of ids) {
     const previous = before.get(id)
     const current = after.get(id)
     if (previous && current && previous.snapshot === current.snapshot) continue
 
-    const capture = current ?? previous
-    if (!capture) continue
+    const snap = current ?? previous
+    if (!snap) continue
     changes.push({
       id,
-      component: capture.component,
-      exportName: capture.exportName,
-      testFile: capture.testFile,
+      component: snap.component,
+      exportName: snap.exportName,
       storyId: current?.storyId ?? previous?.storyId ?? null,
       status: previous ? current ? "changed" : "removed" : "added",
       beforeSnapshot: previous?.snapshot ?? null,
@@ -80,8 +75,7 @@ export function capturedTestChanges(base: StudioIndex, workspace: StudioIndex): 
 
   return changes.sort((a, b) =>
     a.component.localeCompare(b.component) ||
-    a.exportName.localeCompare(b.exportName) ||
-    a.testFile.localeCompare(b.testFile)
+    a.exportName.localeCompare(b.exportName)
   )
 }
 
@@ -134,7 +128,7 @@ function formatNode(node: Node, depth: number): string[] {
   ]
 }
 
-export function formatCapturedSnapshot(snapshot: string | null): string {
+export function formatSnapshot(snapshot: string | null): string {
   const html = extractSnapshotHtml(snapshot)
   if (html == null) return ""
   const document = new DOMParser().parseFromString(html, "text/html")

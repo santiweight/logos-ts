@@ -8,7 +8,7 @@ import { ICONS, svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { ReviewPanel } from "./ReviewPanel"
 import { diffIndex } from "./diff"
-import { capturedTestChanges, selectReviewBaseIndex, selectWorkspaceReviewBaseIndex } from "./review"
+import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex } from "./review"
 import { indexToArchText } from "./arch-text"
 import type {
   Goal,
@@ -61,7 +61,6 @@ export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
   const [goalError, setGoalError] = useState<string | null>(null)
-  const [captureError, setCaptureError] = useState<string | null>(null)
   const [selection, setSelection] = useState<Selection>({
     file: seed.files[0]?.file ?? "",
     view: "code",
@@ -118,21 +117,10 @@ export function App() {
     refreshStorybooks()
   }, [activeWorkspaceId, refreshStorybooks])
 
-  const captureChanges = useMemo(
-    () => workspaceIndex ? capturedTestChanges(reviewBaseIndex, workspaceIndex) : [],
-    [reviewBaseIndex, workspaceIndex]
-  )
-
   const diff = useMemo(() => {
     if (!activeWorkspaceId || !workspaceIndex) return {}
-    const next: Record<string, DiffStatus> = { ...diffIndex(reviewBaseIndex, workspaceIndex) }
-    for (const change of captureChanges) {
-      next[`capture:${change.testFile}::${change.exportName}`] = change.status
-      const componentTarget = `component:${change.component}`
-      next[componentTarget] = combineDiffStatus(next[componentTarget], change.status) ?? change.status
-    }
-    return next
-  }, [activeWorkspaceId, captureChanges, workspaceIndex, reviewBaseIndex])
+    return diffIndex(reviewBaseIndex, workspaceIndex)
+  }, [activeWorkspaceId, workspaceIndex, reviewBaseIndex])
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
   const activeGoals = activeWs?.goals ?? []
@@ -599,56 +587,15 @@ export function App() {
     if (viewName === "story" && comp) {
       const storyId = selection.storyId ?? comp.stories[0]?.id
       setSelection({ file: currentFile.file, component: comp.name, view: viewName, ...(storyId != null ? { storyId } : {}) })
-    } else if (viewName === "captured" && comp) {
-      const exportName = selection.exportName ?? comp.captured[0]?.exportName
-      setSelection({
-        file: currentFile.file,
-        component: comp.name,
-        view: viewName,
-        ...(exportName != null ? { exportName } : {}),
-      })
     } else {
       setSelection({ file: currentFile.file, ...(comp ? { component: comp.name } : {}), view: viewName })
     }
   }
 
-  const onCapture = useCallback(
-    async (storyId: string) => {
-      const found = view.files.flatMap((file) =>
-        componentsOf(file).map((component) => ({ file, component }))
-      ).find(({ component }) => component.stories.some((s) => s.id === storyId))
-      const story = found?.component.stories.find((s) => s.id === storyId)
-      if (!found || !story) return
-      setBusy(`capturing ${found.component.name}/${story.exportName}…`)
-      setCaptureError(null)
-      try {
-        const res = await fetch("/api/capture", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ storyRef: storyId, workspaceId: activeWorkspaceId }),
-        })
-        if (res.ok) {
-          await reindexWorkspace(activeWorkspaceId)
-          setSelection({ file: found.file.file, component: found.component.name, view: "captured", exportName: story.exportName })
-        } else {
-          const data = await res.json().catch(() => null) as { error?: string } | null
-          setCaptureError(data?.error ? `Capture failed: ${data.error}` : `Capture failed (${res.status})`)
-        }
-      } catch (e) {
-        setCaptureError(`Capture failed: ${String(e)}`)
-      } finally {
-        setBusy(null)
-      }
-    },
-    [view.files, activeWorkspaceId, reindexWorkspace]
-  )
 
   const nComps = view.files.reduce((n, f) => n + componentsOf(f).length, 0)
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
-  const captureReviewCount = captureChanges.length
-  const reviewCount = captureReviewCount + (
-    workspaceIndex && indexToArchText(reviewBaseIndex) !== indexToArchText(workspaceIndex) ? 1 : 0
-  )
+  const reviewCount = workspaceIndex && indexToArchText(reviewBaseIndex) !== indexToArchText(workspaceIndex) ? 1 : 0
   const activeDemo = demos.find((d) => d.id === activeDemoId)
   const demoLabel = demoSwitching
     ? `Opening ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
@@ -793,7 +740,6 @@ export function App() {
               storybookRenderKey={activeStorybookRenderKey}
               onRetryStorybook={retryStorybook}
               onView={setView}
-              onCapture={onCapture}
               comments={goalsByTarget}
               onComment={openComment}
               diff={diff}
@@ -835,8 +781,7 @@ export function App() {
           )}
           {"   "}
           {goalError ? <span className="status-error">goal error: {goalError}</span> :
-            captureError ? <span className="status-error">{captureError}</span> : busy ??
-            `${view.files.length} files · ${nComps} components · ${totalGoals} goals · ${workspaces.length} workspaces`}
+            busy ?? `${view.files.length} files · ${nComps} components · ${totalGoals} goals · ${workspaces.length} workspaces`}
         </span>
       </footer>
 

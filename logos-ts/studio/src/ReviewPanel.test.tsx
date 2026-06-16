@@ -15,13 +15,7 @@ function capturedFile(component: string, before: string, exportName = "Default")
       signature: `${component}()`,
       componentCode: "",
       propsFields: [],
-      stories: [{ id: `${component.toLowerCase()}--${exportName.toLowerCase()}`, exportName }],
-      captured: [{
-        exportName,
-        testFile: `components/${component}.${exportName}.captured.test.tsx`,
-        snapshot: before,
-        previousSnapshot: null,
-      }],
+      stories: [{ id: `${component.toLowerCase()}--${exportName.toLowerCase()}`, exportName, snapshot: before }],
     },
   }
 }
@@ -51,7 +45,6 @@ describe("ReviewPanel", () => {
         propsCode: "interface JobCardProps { title: string }",
         propsFields: [{ name: "title", type: "string" }],
         stories: [],
-        captured: [],
       },
     }])
     const workspace = index([{
@@ -76,7 +69,6 @@ describe("ReviewPanel", () => {
           { name: "remote", type: "boolean" },
         ],
         stories: [],
-        captured: [],
       },
     }])
 
@@ -127,7 +119,7 @@ describe("ReviewPanel", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: /JobRow \/ Default/ }))
-    expect(screen.getAllByText("components/JobRow.Default.captured.test.tsx")).toHaveLength(2)
+    expect(screen.getByRole("button", { name: /JobRow \/ Default/ })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Snapshot diff" }))
     expect(screen.getByText("<div>Engineer</div>")).toBeInTheDocument()

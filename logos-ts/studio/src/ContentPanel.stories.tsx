@@ -37,11 +37,8 @@ const file: FileEntry = {
       { name: "postedAt", type: "number" },
     ],
     stories: [
-      { id: "jobcard--default", exportName: "Default" },
-      { id: "jobcard--remote", exportName: "Remote" },
-    ],
-    captured: [
-      { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: '<article class="job-card"><header><h3>Senior Engineer</h3></header></article>', previousSnapshot: null },
+      { id: "jobcard--default", exportName: "Default", snapshot: '<article class="job-card"><header><h3>Senior Engineer</h3></header></article>' },
+      { id: "jobcard--remote", exportName: "Remote", snapshot: null },
     ],
   },
 }
@@ -66,7 +63,6 @@ const meta: Meta<typeof ContentPanel> = {
     storybookState: null,
     storybookRenderKey: "story-render-key",
     onView: noop,
-    onCapture: noop,
     comments: {},
     onComment: noop,
     diff: {},
@@ -77,12 +73,6 @@ export default meta
 type Story = StoryObj<typeof ContentPanel>
 
 export const CodeView: Story = {}
-
-export const CapturedView: Story = {
-  args: {
-    selection: { file: "src/components/JobCard.tsx", view: "captured", exportName: "Default" },
-  },
-}
 
 export const StoryView: Story = {
   args: {

@@ -13,7 +13,6 @@ export const ICONS = {
   cls: "⬚",
   comp: svgIcon("M16 18l6-6-6-6M8 6l-6 6 6 6"),
   story: "◆",
-  captured: "✓",
 } as const satisfies Record<string, ReactNode>
 
 export type IconKind = keyof typeof ICONS
@@ -22,7 +21,6 @@ export function iconForLabel(label: string): ReactNode {
   if (label.startsWith("ƒ ") || label.startsWith("fn:")) return ICONS.fn
   if (label.startsWith("⬚ ") || label.startsWith("cls:") || label.startsWith("class:")) return ICONS.cls
   if (label.startsWith("<") || label.startsWith("component:")) return ICONS.comp
-  if (label.startsWith("test:") || label.startsWith("test ")) return ICONS.captured
   if (label.startsWith("· ") || label.startsWith("method:")) return ICONS.fn
   return ICONS.file
 }

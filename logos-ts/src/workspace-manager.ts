@@ -118,7 +118,7 @@ export interface AgentEvent {
 type AgentEventCallback = (event: AgentEvent) => void
 type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
 
-function indexComponents(file: { component?: { captured?: unknown[] }; components?: { captured?: unknown[] }[] }): { captured?: unknown[] }[] {
+function indexComponents(file: { component?: { stories?: unknown[] }; components?: { stories?: unknown[] }[] }): { stories?: unknown[] }[] {
   return file.components?.length ? file.components : file.component ? [file.component] : []
 }
 
@@ -977,16 +977,16 @@ export class WorkspaceManager {
         }
       }
 
-      // Collect base snapshots before re-indexing so we can populate previousSnapshot
+      // Collect base snapshots before re-indexing so we can detect changes
       const baseSnapshots = new Map<string, string | null>()
-      const oldIndex = baseInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null }[] } }[] } | null
+      const oldIndex = baseInst.index as { files?: { components?: { stories?: { exportName: string; snapshot: string | null }[] }[] }[] } | null
       if (oldIndex?.files) {
         for (const f of oldIndex.files) {
           for (const component of indexComponents(f)) {
-          if (!component.captured) continue
-          for (const c of component.captured as { exportName: string; testFile: string; snapshot: string | null }[]) {
-            baseSnapshots.set(`${c.testFile}::${c.exportName}`, c.snapshot)
-          }
+            if (!component.stories) continue
+            for (const s of component.stories as { exportName: string; snapshot: string | null }[]) {
+              baseSnapshots.set(s.exportName, s.snapshot)
+            }
           }
         }
       }
@@ -998,19 +998,6 @@ export class WorkspaceManager {
         if (wsSbUrl) reindexArgs.push(wsSbUrl)
         const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
         workingInst.index = JSON.parse(stdout)
-        // Merge previousSnapshot from the base index
-        const newIndex = workingInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }; components?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[] }[] }
-        if (newIndex.files) {
-          for (const f of newIndex.files) {
-            for (const component of indexComponents(f) as { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[]) {
-            if (!component.captured) continue
-            for (const c of component.captured) {
-              const prev = baseSnapshots.get(`${c.testFile}::${c.exportName}`) ?? null
-              c.previousSnapshot = prev !== c.snapshot ? prev : null
-            }
-            }
-          }
-        }
       } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
 
       goal.status = code === 0 ? "done" : "error"

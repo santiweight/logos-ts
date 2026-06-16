@@ -4,8 +4,7 @@ import { describe, it, expect } from "vitest"
 // This mirrors studio/src/diff.ts exactly.
 
 interface TestRef { name: string; file: string; code: string }
-interface StoryNode { id: string; exportName: string }
-interface CapturedNode { exportName: string; testFile: string; snapshot: string | null }
+interface StoryNode { id: string; exportName: string; snapshot: string | null }
 interface BackendMethod { name: string; signature: string; code: string; tests: TestRef[] }
 interface FileFn { kind: "function"; name: string; signature: string; code: string; deps: string[]; tests: TestRef[] }
 interface FileClass { kind: "class"; name: string; fields: { name: string; type: string }[]; methods: BackendMethod[]; deps: string[]; tests: TestRef[]; code: string }
@@ -16,7 +15,7 @@ interface FileEntry {
     name: string; signature: string; componentCode: string
     propsName?: string; propsCode?: string
     propsFields: { name: string; type: string }[]
-    stories: StoryNode[]; captured: CapturedNode[]
+    stories: StoryNode[]
   }
 }
 interface StudioIndex { root: string; files: FileEntry[] }
@@ -88,7 +87,6 @@ function makeComponent(name: string, overrides?: Partial<NonNullable<FileEntry["
     componentCode: `function ${name}() { return null }`,
     propsFields: [],
     stories: [],
-    captured: [],
     ...overrides,
   }
 }

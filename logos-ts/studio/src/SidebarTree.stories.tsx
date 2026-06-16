@@ -20,11 +20,8 @@ const files: FileEntry[] = [
         { name: "company", type: "string" },
       ],
       stories: [
-        { id: "jobcard--default", exportName: "Default" },
-        { id: "jobcard--remote", exportName: "Remote" },
-      ],
-      captured: [
-        { exportName: "Default", testFile: "src/components/JobCard.Default.captured.test.tsx", snapshot: null, previousSnapshot: null },
+        { id: "jobcard--default", exportName: "Default", snapshot: null },
+        { id: "jobcard--remote", exportName: "Remote", snapshot: null },
       ],
     },
   },
@@ -40,9 +37,8 @@ const files: FileEntry[] = [
       componentCode: "export const FiltersSidebar = ...",
       propsFields: [],
       stories: [
-        { id: "filterssidebar--default", exportName: "Default" },
+        { id: "filterssidebar--default", exportName: "Default", snapshot: null },
       ],
-      captured: [],
     },
   },
   {
@@ -58,9 +54,8 @@ const files: FileEntry[] = [
       componentCode: "export const HeaderNav = ...",
       propsFields: [],
       stories: [
-        { id: "headernav--default", exportName: "Default" },
+        { id: "headernav--default", exportName: "Default", snapshot: null },
       ],
-      captured: [],
     },
   },
   {
@@ -118,7 +113,6 @@ export const WithDiff: Story = {
   args: {
     diff: {
       "file:src/components/JobCard.tsx": "changed",
-      "capture:src/components/JobCard.Default.captured.test.tsx::Default": "changed",
       "fn:parseJob": "changed",
     },
   },

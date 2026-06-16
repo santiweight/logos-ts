@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { indexToArchText, lineDiff, type DiffLine } from "./arch-text"
 import {
-  capturedTestChanges,
+  snapshotChanges,
   extractSnapshotHtml,
-  formatCapturedSnapshot,
-  type CaptureChange,
+  formatSnapshot,
+  type SnapshotChange,
 } from "./review"
 import type { SbState, StudioIndex } from "./types"
 
@@ -16,7 +16,7 @@ interface Props {
   onRetryStorybook: () => void
 }
 
-type ReviewTab = "architecture" | "captured"
+type ReviewTab = "architecture" | "snapshots"
 type CaptureView = "visual" | "diff"
 
 interface ReviewFileDiff {
@@ -38,9 +38,9 @@ export function ReviewPanel({
     () => lineDiff(indexToArchText(base), indexToArchText(workspace)),
     [base, workspace]
   )
-  const captureChanges = useMemo(() => capturedTestChanges(base, workspace), [base, workspace])
+  const snapshotChangesList = useMemo(() => snapshotChanges(base, workspace), [base, workspace])
   const architectureStats = useMemo(() => diffStats(architectureLines), [architectureLines])
-  const [tab, setTab] = useState<ReviewTab>(captureChanges.length > 0 ? "captured" : "architecture")
+  const [tab, setTab] = useState<ReviewTab>(snapshotChangesList.length > 0 ? "snapshots" : "architecture")
 
   return (
     <section className="content review-panel">
@@ -56,10 +56,10 @@ export function ReviewPanel({
               ` +${architectureStats.add} -${architectureStats.del}`}
           </button>
           <button
-            className={`tab ${tab === "captured" ? "active" : ""}`}
-            onClick={() => setTab("captured")}
+            className={`tab ${tab === "snapshots" ? "active" : ""}`}
+            onClick={() => setTab("snapshots")}
           >
-            Captured tests {captureChanges.length}
+            Snapshots {snapshotChangesList.length}
           </button>
         </div>
       </header>
@@ -67,8 +67,8 @@ export function ReviewPanel({
         {tab === "architecture" ? (
           <ArchitectureReview lines={architectureLines} stats={architectureStats} />
         ) : (
-          <CapturedReview
-            changes={captureChanges}
+          <SnapshotReview
+            changes={snapshotChangesList}
             storybookUrl={storybookUrl}
             storybookState={storybookState}
             onRetryStorybook={onRetryStorybook}
@@ -252,13 +252,13 @@ function highlightTypeScript(text: string): ReactNode[] {
   return nodes
 }
 
-function CapturedReview({
+function SnapshotReview({
   changes,
   storybookUrl,
   storybookState,
   onRetryStorybook,
 }: {
-  changes: CaptureChange[]
+  changes: SnapshotChange[]
   storybookUrl: string
   storybookState: SbState | null
   onRetryStorybook: () => void
@@ -272,13 +272,13 @@ function CapturedReview({
   }, [changes, selectedId])
 
   if (!selected) {
-    return <div className="empty">No captured tests changed in this workspace.</div>
+    return <div className="empty">No snapshots changed in this workspace.</div>
   }
 
   return (
     <div className="capture-review">
       <aside className="capture-review-list">
-        <div className="capture-review-list-title">CHANGED CAPTURED TESTS</div>
+        <div className="capture-review-list-title">CHANGED SNAPSHOTS</div>
         {changes.map((change) => (
           <button
             key={change.id}
@@ -290,12 +290,11 @@ function CapturedReview({
             </span>
             <span>
               <strong>{change.component} / {change.exportName}</strong>
-              <small>{change.testFile}</small>
             </span>
           </button>
         ))}
       </aside>
-      <CaptureDetail
+      <SnapshotDetail
         change={selected}
         storybookUrl={storybookUrl}
         storybookState={storybookState}
@@ -305,13 +304,13 @@ function CapturedReview({
   )
 }
 
-function CaptureDetail({
+function SnapshotDetail({
   change,
   storybookUrl,
   storybookState,
   onRetryStorybook,
 }: {
-  change: CaptureChange
+  change: SnapshotChange
   storybookUrl: string
   storybookState: SbState | null
   onRetryStorybook: () => void
@@ -321,8 +320,8 @@ function CaptureDetail({
   const afterHtml = extractSnapshotHtml(change.afterSnapshot)
   const sourceLines = useMemo(
     () => lineDiff(
-      formatCapturedSnapshot(change.beforeSnapshot),
-      formatCapturedSnapshot(change.afterSnapshot)
+      formatSnapshot(change.beforeSnapshot),
+      formatSnapshot(change.afterSnapshot)
     ),
     [change]
   )
@@ -334,7 +333,6 @@ function CaptureDetail({
       <header className="capture-detail-header">
         <div>
           <strong>{change.component} / {change.exportName}</strong>
-          <small>{change.testFile}</small>
         </div>
         <span className={`capture-status ${change.status}`}>{change.status}</span>
       </header>
@@ -378,7 +376,7 @@ function VisualComparison({
   storybookState,
   onRetryStorybook,
 }: {
-  change: CaptureChange
+  change: SnapshotChange
   beforeHtml: string | null
   afterHtml: string | null
   storybookUrl: string
@@ -432,7 +430,7 @@ function VisualComparison({
         />
       )}
       {beforeHtml == null && afterHtml == null && (
-        <div className="empty">This captured test has no snapshot output to render.</div>
+        <div className="empty">This snapshot has no output to render.</div>
       )}
     </div>
   )

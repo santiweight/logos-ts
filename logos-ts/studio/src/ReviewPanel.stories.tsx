@@ -19,13 +19,7 @@ function makeIndex(snapshot: string): StudioIndex {
         propsName: "JobCardProps",
         propsCode: "interface JobCardProps { title: string }",
         propsFields: [{ name: "title", type: "string" }],
-        stories: [{ id: "jobcard--default", exportName: "Default" }],
-        captured: [{
-          exportName: "Default",
-          testFile: "components/JobCard.Default.captured.test.tsx",
-          snapshot,
-          previousSnapshot: null,
-        }],
+        stories: [{ id: "jobcard--default", exportName: "Default", snapshot }],
       },
     }],
   }

@@ -7,12 +7,7 @@ export interface TestRef {
 export interface StoryNode {
   id: string
   exportName: string
-}
-export interface CapturedNode {
-  exportName: string
-  testFile: string
   snapshot: string | null
-  previousSnapshot: string | null
 }
 export interface ComponentEntry {
   name: string
@@ -22,7 +17,6 @@ export interface ComponentEntry {
   propsCode?: string
   propsFields: { name: string; type: string }[]
   stories: StoryNode[]
-  captured: CapturedNode[]
 }
 export interface BackendMethod {
   name: string
@@ -64,7 +58,7 @@ export interface StudioIndex {
   files: FileEntry[]
 }
 
-export type View = "code" | "arch" | "story" | "captured"
+export type View = "code" | "arch" | "story"
 
 export interface Selection {
   file: string

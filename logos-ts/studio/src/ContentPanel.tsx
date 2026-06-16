@@ -15,7 +15,6 @@ interface Props {
   storybookRenderKey: string
   onRetryStorybook: (() => void) | null
   onView: (view: View) => void
-  onCapture: (storyId: string) => void
   comments: GoalApi["comments"]
   onComment: GoalApi["onComment"]
   diff: Record<string, DiffStatus>
@@ -31,7 +30,6 @@ export function ContentPanel({
   storybookRenderKey,
   onRetryStorybook,
   onView,
-  onCapture,
   comments,
   onComment,
   diff,
@@ -47,7 +45,7 @@ export function ContentPanel({
     : null
 
   const tabs: View[] = comp
-    ? ["code", "arch", "story", "captured"]
+    ? ["code", "arch", "story"]
     : ["code", "arch"]
 
   const label = symbol
@@ -56,11 +54,9 @@ export function ContentPanel({
       ? `${comp.name} / arch`
       : comp && selection.view === "story"
         ? `${comp.name} / ${storyExport(comp, selection.storyId)}`
-        : comp && selection.view === "captured"
-          ? `${comp.name} / ${selection.exportName} ⟨captured⟩`
-          : comp
-            ? comp.name
-            : file.file
+        : comp
+          ? comp.name
+          : file.file
 
   return (
     <CommentCtx.Provider value={{ comments, onComment }}>
@@ -75,7 +71,7 @@ export function ContentPanel({
                 className={`tab ${selection.view === t ? "active" : ""}`}
                 onClick={() => onView(t)}
               >
-                {t === "code" ? "Code" : t === "arch" ? "Arch" : t === "story" ? "Story" : "Captured"}
+                {t === "code" ? "Code" : t === "arch" ? "Arch" : "Story"}
               </button>
             ))}
           </div>
@@ -92,17 +88,6 @@ export function ContentPanel({
               storybookState={storybookState}
               storybookRenderKey={storybookRenderKey}
               onRetryStorybook={onRetryStorybook}
-              onCapture={onCapture}
-            />
-          )}
-          {selection.view === "captured" && comp && (
-            <CapturedView
-              component={comp}
-              workspaceId={workspaceId}
-              storyRenderer={storyRenderer}
-              {...(selection.exportName != null ? { exportName: selection.exportName } : {})}
-              storybookUrl={storybookUrl}
-              storybookRenderKey={storybookRenderKey}
             />
           )}
           {selection.view === "code" && symbol && <SymbolView item={symbol} />}
@@ -289,7 +274,6 @@ function StoryView({
   storybookState,
   storybookRenderKey,
   onRetryStorybook,
-  onCapture,
 }: {
   storyId?: string
   workspaceId: string | null
@@ -298,7 +282,6 @@ function StoryView({
   storybookState: SbState | null
   storybookRenderKey: string
   onRetryStorybook: (() => void) | null
-  onCapture: (storyId: string) => void
 }) {
   const logsEndRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -322,9 +305,6 @@ function StoryView({
       <div className="pane">
         <div className="pane-path">
           <span>⟨portable⟩ {storyId}</span>
-          <button className="capture-btn" onClick={() => onCapture(storyId)}>
-            📸 Capture as test
-          </button>
         </div>
         <iframe
           className="story-frame"
@@ -382,9 +362,6 @@ function StoryView({
     <div className="pane">
       <div className="pane-path">
         <span>⟨live⟩ {src.replace(/^https?:\/\//, "")}</span>
-        <button className="capture-btn" onClick={() => onCapture(storyId)}>
-          📸 Capture as test
-        </button>
       </div>
       <iframe className="story-frame" key={src} src={src} title={storyId} />
       <div className="hint">
@@ -494,75 +471,3 @@ function SnapshotIframe({
   )
 }
 
-function CapturedView({
-  component,
-  exportName,
-  workspaceId,
-  storyRenderer,
-  storybookUrl,
-  storybookRenderKey,
-}: {
-  component: ComponentEntry
-  exportName?: string
-  workspaceId: string | null
-  storyRenderer: StoryRenderer
-  storybookUrl: string
-  storybookRenderKey: string
-}) {
-  const [tab, setTab] = useState<SnapTab>("rendered")
-  const cap = component.captured.find((c) => c.exportName === exportName) ?? component.captured[0]
-  if (!cap) return <div className="empty">No captured tests for {component.name}.</div>
-
-  const html = extractSnapHtml(cap.snapshot ?? "") ?? cap.snapshot ?? ""
-  const formatted = formatHtml(html)
-  const hasDiff = cap.previousSnapshot != null && cap.previousSnapshot !== cap.snapshot
-  const prevHtml = hasDiff ? extractSnapHtml(cap.previousSnapshot!) ?? "" : null
-  const diffResult = hasDiff ? diffLines(formatHtml(prevHtml!), formatted) : null
-
-  const tabs: { id: SnapTab; label: string }[] = [
-    { id: "rendered", label: "Rendered" },
-    { id: "source", label: "Source" },
-    ...(hasDiff ? [{ id: "diff" as const, label: "Diff" }] : []),
-  ]
-
-  return (
-    <div className="pane">
-      <div className="pane-path">
-        <span className={`badge ${hasDiff ? "changed" : "ok"}`}>
-          {hasDiff ? "~ changed" : "✓ captured"}
-        </span>{" "}
-        {cap.testFile}
-      </div>
-      <div className="snap-tabs">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            className={`snap-tab ${tab === t.id ? "active" : ""}`}
-            onClick={() => setTab(t.id)}
-          >{t.label}</button>
-        ))}
-      </div>
-      {tab === "rendered" && (storybookUrl || storyRenderer === "portable") && (
-        <SnapshotIframe
-          html={html}
-          workspaceId={workspaceId}
-          storyRenderer={storyRenderer}
-          storybookUrl={storybookUrl}
-          storybookRenderKey={storybookRenderKey}
-          {...(component.stories[0]?.id != null ? { storyId: component.stories[0].id } : {})}
-        />
-      )}
-      {tab === "rendered" && !storybookUrl && storyRenderer === "storybook" && (
-        <div className="empty">Waiting for Storybook to start…</div>
-      )}
-      {tab === "source" && (
-        <pre className="code snap">{formatted}</pre>
-      )}
-      {tab === "diff" && diffResult && (
-        <pre className="code snap snap-diff">{diffResult.map((l, i) => (
-          <span key={i} className={`diff-line diff-${l.type}`}>{l.type === "add" ? "+" : l.type === "del" ? "-" : " "} {l.text}{"\n"}</span>
-        ))}</pre>
-      )}
-    </div>
-  )
-}

@@ -64,13 +64,7 @@ function indexWithCapture(snapshot: string | null): StudioIndex {
       signature: "JobRow()",
       componentCode: "export function JobRow() { return null }\n",
       propsFields: [],
-      stories: [{ id: "jobrow--default", exportName: "Default" }],
-      captured: [{
-        exportName: "Default",
-        testFile: "frontend/src/JobRow.captured.test.tsx",
-        snapshot,
-        previousSnapshot: null,
-      }],
+      stories: [{ id: "jobrow--default", exportName: "Default", snapshot }],
     },
   }
   return { root: "/mock/project", files: [file] }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
-  capturedTestChanges,
+  snapshotChanges,
   extractSnapshotHtml,
-  formatCapturedSnapshot,
+  formatSnapshot,
   selectReviewBaseIndex,
   selectWorkspaceReviewBaseIndex,
 } from "./review"
@@ -10,11 +10,10 @@ import type { FileEntry, StudioIndex, Workspace } from "./types"
 
 function indexWithCapture(
   snapshot: string | null,
-  overrides: { component?: string; exportName?: string; testFile?: string } = {}
+  overrides: { component?: string; exportName?: string } = {}
 ): StudioIndex {
   const component = overrides.component ?? "JobRow"
   const exportName = overrides.exportName ?? "Default"
-  const testFile = overrides.testFile ?? `components/${component}.${exportName}.captured.test.tsx`
   const file: FileEntry = {
     file: `components/${component}.tsx`,
     code: "",
@@ -24,19 +23,18 @@ function indexWithCapture(
       signature: `${component}()`,
       componentCode: "",
       propsFields: [],
-      stories: [{ id: `${component.toLowerCase()}--${exportName.toLowerCase()}`, exportName }],
-      captured: [{ exportName, testFile, snapshot, previousSnapshot: null }],
+      stories: [{ id: `${component.toLowerCase()}--${exportName.toLowerCase()}`, exportName, snapshot }],
     },
   }
   return { root: "/test", files: [file] }
 }
 
-describe("capturedTestChanges", () => {
+describe("snapshotChanges", () => {
   it("returns only snapshots whose captured output changed", () => {
     const base = indexWithCapture("<div>before</div>")
     const workspace = indexWithCapture("<div>after</div>")
 
-    expect(capturedTestChanges(base, workspace)).toEqual([
+    expect(snapshotChanges(base, workspace)).toEqual([
       expect.objectContaining({
         component: "JobRow",
         exportName: "Default",
@@ -47,17 +45,17 @@ describe("capturedTestChanges", () => {
     ])
   })
 
-  it("does not report identical captures", () => {
+  it("does not report identical snapshots", () => {
     const base = indexWithCapture("<div>same</div>")
-    expect(capturedTestChanges(base, base)).toEqual([])
+    expect(snapshotChanges(base, base)).toEqual([])
   })
 
-  it("reports added and removed captured tests", () => {
+  it("reports added and removed snapshots", () => {
     const empty: StudioIndex = { root: "/test", files: [] }
-    const captured = indexWithCapture("<div>captured</div>")
+    const snapshot = indexWithCapture("<div>snapshot</div>")
 
-    expect(capturedTestChanges(empty, captured)[0]?.status).toBe("added")
-    expect(capturedTestChanges(captured, empty)[0]?.status).toBe("removed")
+    expect(snapshotChanges(empty, snapshot)[0]?.status).toBe("added")
+    expect(snapshotChanges(snapshot, empty)[0]?.status).toBe("removed")
   })
 })
 
@@ -115,7 +113,7 @@ describe("selectWorkspaceReviewBaseIndex", () => {
     const reviewBase = selectWorkspaceReviewBaseIndex(project, workspace)
 
     expect(reviewBase).toBe(base)
-    expect(capturedTestChanges(reviewBase, workspace.index)).toEqual([
+    expect(snapshotChanges(reviewBase, workspace.index)).toEqual([
       expect.objectContaining({
         component: "JobRow",
         exportName: "Default",
@@ -168,8 +166,8 @@ describe("snapshot rendering", () => {
     expect(extractSnapshotHtml(snapshot)).toBe('<a href="https://example.com" target="_blank">apply</a>')
   })
 
-  it("formats captured HTML into structural lines", () => {
-    expect(formatCapturedSnapshot("<div><strong>Before</strong><span>After</span></div>")).toBe([
+  it("formats snapshot HTML into structural lines", () => {
+    expect(formatSnapshot("<div><strong>Before</strong><span>After</span></div>")).toBe([
       "<div>",
       "  <strong>Before</strong>",
       "  <span>After</span>",
