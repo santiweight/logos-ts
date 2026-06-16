@@ -317,7 +317,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         }
         try {
           wsMgr.resetAll()
-          const workspace = await wsMgr.create({ name: "workspace" })
+          const workspace = await wsMgr.create()
           res.end(JSON.stringify({ ok: true, workspace }))
         } catch (e) {
           res.statusCode = 500

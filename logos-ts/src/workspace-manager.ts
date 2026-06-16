@@ -129,6 +129,20 @@ interface ProjectCaps {
   nodeModulesDirs: string[]
 }
 
+function defaultWorkspaceName(): string {
+  const now = new Date()
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  const day = days[now.getDay()]
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  const month = months[now.getMonth()]
+  const date = now.getDate()
+  const suffixes = ["th", "st", "nd", "rd"]
+  const suffix = date % 10 <= 3 && Math.floor(date / 10) !== 1 ? suffixes[date % 10]! : "th"
+  const h = now.getHours()
+  const hour = h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`
+  return `Scratch (${day} ${month} ${date}${suffix} ${hour})`
+}
+
 export class WorkspaceManager {
   private workspaces = new Map<string, WorkspaceRecord>()
   private runningAgents = new Map<string, ChildProcess>() // goalId → child
@@ -565,7 +579,7 @@ export class WorkspaceManager {
 
     const ws: WorkspaceRecord = {
       id,
-      name: opts?.name ?? "workspace",
+      name: opts?.name ?? defaultWorkspaceName(),
       kind,
       parentId,
       createdAt: Date.now(),
