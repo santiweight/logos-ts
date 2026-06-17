@@ -6,6 +6,7 @@ import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
 import { ICONS, svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
+import { CommentSidebar } from "./CommentSidebar"
 import { ReviewPanel } from "./ReviewPanel"
 import { diffIndex } from "./diff"
 import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex } from "./review"
@@ -69,6 +70,7 @@ export function App() {
   const [popup, setPopup] = useState<{ target: string; label: string; x: number; y: number } | null>(
     null
   )
+  const [commentSidebarOpen, setCommentSidebarOpen] = useState(false)
   const [demoMenuOpen, setDemoMenuOpen] = useState(false)
   const [demos, setDemos] = useState<DemoOption[]>([])
   const [activeDemoId, setActiveDemoId] = useState<string>("")
@@ -516,6 +518,62 @@ export function App() {
     [activeWorkspaceId, createWorkspace, refreshWorkspaces, runAgent]
   )
 
+  const continueGoal = useCallback(
+    (goalId: string, text: string) => {
+      if (!activeWorkspaceId) return
+      setGoalEvents((prev) => ({ ...prev, [goalId]: [] }))
+      setRunningGoals((prev) => new Set(prev).add(goalId))
+      setAgentGoalId(goalId)
+      setAgentOpen(true)
+      let closed = false
+      fetch("/api/agent/continue", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspace: activeWorkspaceId, goal: goalId, text }),
+      }).then((res) => {
+        if (!res.ok || !res.body) {
+          setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
+          return
+        }
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buf = ""
+        const pump = (): Promise<void> =>
+          reader.read().then(({ done, value }) => {
+            if (done || closed) {
+              setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
+              Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks()]).then(() => {
+                if (activeWorkspaceId) openWorkspace(activeWorkspaceId)
+              })
+              return
+            }
+            buf += decoder.decode(value, { stream: true })
+            let idx
+            while ((idx = buf.indexOf("\n\n")) >= 0) {
+              const chunk = buf.slice(0, idx)
+              buf = buf.slice(idx + 2)
+              if (!chunk.startsWith("data: ")) continue
+              try {
+                const msg = JSON.parse(chunk.slice(6))
+                setGoalEvents((prev) => ({ ...prev, [goalId]: [...(prev[goalId] ?? []), msg] }))
+                if (msg.type === "done" || msg.type === "error") {
+                  closed = true
+                  setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
+                  Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks()]).then(() => {
+                    if (activeWorkspaceId) openWorkspace(activeWorkspaceId)
+                  })
+                  return
+                }
+              } catch {}
+            }
+            return pump()
+          })
+        pump()
+      })
+    },
+    [activeWorkspaceId, refreshWorkspaces, refreshTests, refreshStorybooks, openWorkspace],
+  )
+
   const storyGoalsMessage = useMemo(() => {
     const storyGoals = activeGoals
       .filter((g) => g.storyId)
@@ -530,6 +588,7 @@ export function App() {
         component: g.component,
         mode: g.mode,
         status: g.status,
+        replies: g.replies,
       }))
     return { type: "logos:story-goals", goals: storyGoals, drafts: Object.values(storyCommentDrafts), workspaceKind: activeWs?.kind ?? "code" }
   }, [activeGoals, activeWs?.kind, storyCommentDrafts])
@@ -598,6 +657,16 @@ export function App() {
     postStoryGoals()
   }, [postStoryGoals])
 
+  // Re-broadcast goals when story iframes load so pins appear immediately
+  useEffect(() => {
+    const onLoad = (e: Event) => {
+      const iframe = e.target as HTMLIFrameElement
+      if (iframe.classList?.contains("story-frame")) postStoryGoals(iframe.contentWindow)
+    }
+    document.addEventListener("load", onLoad, true)
+    return () => document.removeEventListener("load", onLoad, true)
+  }, [postStoryGoals])
+
   const currentFile = view.files.find((f) => f.file === selection.file) ?? view.files[0]
 
   function setView(viewName: View) {
@@ -660,7 +729,7 @@ export function App() {
   }
 
   return (
-    <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`} style={studioStyle}>
+    <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}${commentSidebarOpen ? " comments-open" : ""}`} style={studioStyle}>
       <header className="topbar">
         <div className="topbar-menu">
           <button
@@ -797,6 +866,32 @@ export function App() {
         )}
       </main>
 
+      {commentSidebarOpen && (
+        <CommentSidebar
+          goals={activeGoals}
+          selection={selection}
+          runningGoals={effectiveRunningGoals}
+          onNavigate={(goal) => {
+            const target = goal.target
+            const comp = target.startsWith("component:") ? target.slice("component:".length) : undefined
+            const file = target.startsWith("file:") ? target.slice("file:".length) : undefined
+            if (comp) {
+              const f = view.files.find((f) => f.component?.name === comp || f.components?.some((c) => c.name === comp))
+              if (f) {
+                if (goal.storyId) {
+                  setSelection({ file: f.file, component: comp, view: "story", storyId: goal.storyId })
+                } else {
+                  setSelection({ file: f.file, component: comp, view: "code" })
+                }
+              }
+            } else if (file) {
+              setSelection({ file, view: "code" })
+            }
+          }}
+          onClose={() => setCommentSidebarOpen(false)}
+        />
+      )}
+
       <footer className="statusbar">
         <span>
           {svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 11)}{" "}
@@ -804,6 +899,10 @@ export function App() {
           <a className="refresh-btn" onClick={() => reindexWorkspace()} title="Re-index workspace from disk">↻</a>
         </span>
         <span>
+          <span className="agent-toggle" onClick={() => setCommentSidebarOpen((o) => !o)}>
+            {`💬 comments${totalGoals ? ` (${totalGoals})` : ""}`}
+          </span>
+          {"   "}
           <span className="agent-toggle" onClick={() => setAgentOpen((o) => !o)}>
             {agentRunning ? (
               <>
@@ -839,6 +938,7 @@ export function App() {
           goals={goalsByTarget[popup.target] ?? []}
           workspaceKind={activeWs?.kind}
           onAdd={(text, mode, fork) => { addGoal(popup.target, popup.label, text, mode, fork); setPopup(null) }}
+          onReply={(goalId, text) => { continueGoal(goalId, text) }}
           onClose={() => setPopup(null)}
         />
       )}

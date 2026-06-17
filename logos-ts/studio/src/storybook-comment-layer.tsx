@@ -23,6 +23,7 @@ export interface StoryComment {
   mode?: string
   fork?: boolean
   status?: string
+  replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
 }
 
 interface HoverTarget {

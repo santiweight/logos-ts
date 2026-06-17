@@ -2,6 +2,12 @@
 import React, { useEffect, useRef, useState } from "react"
 import { iconForLabel } from "./icons"
 
+export interface GoalReply {
+  author: "agent" | "user"
+  text: string
+  createdAt: number
+}
+
 export interface CommentItem {
   id: string
   text: string
@@ -9,7 +15,10 @@ export interface CommentItem {
   createdAt: number
   agentId?: string | null
   agentStatus?: string | null
+  sessionId?: string | null
+  status?: string | null
   mode?: string
+  replies?: GoalReply[]
 }
 
 export interface SubmitPayload {
@@ -20,6 +29,11 @@ export interface SubmitPayload {
 
 export interface DraftPayload extends SubmitPayload {}
 
+export interface ReplyPayload {
+  goalId: string
+  text: string
+}
+
 const FONT = "12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace"
 
 // --- Thread: shows existing comments + reply box with mode/fork controls ------
@@ -29,6 +43,7 @@ export function CommentThread({
   comments,
   onAdd,
   onRemove,
+  onReply,
   onClose,
   workspaceKind,
   onEditingChange,
@@ -39,6 +54,7 @@ export function CommentThread({
   comments: CommentItem[]
   onAdd: (payload: SubmitPayload) => void
   onRemove?: (id: string) => void
+  onReply?: ((payload: ReplyPayload) => void) | undefined
   onClose: () => void
   workspaceKind?: "code" | "arch" | undefined
   onEditingChange?: (active: boolean) => void
@@ -48,6 +64,8 @@ export function CommentThread({
   const [text, setText] = useState(initialDraft?.text ?? "")
   const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
   const [fork, setFork] = useState(initialDraft?.fork ?? false)
+  const [replyGoalId, setReplyGoalId] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState("")
   const onEditingChangeRef = useRef(onEditingChange)
   const onDraftChangeRef = useRef(onDraftChange)
   onEditingChangeRef.current = onEditingChange
@@ -65,36 +83,90 @@ export function CommentThread({
     setText("")
   }
 
+  const submitReply = () => {
+    const t = replyText.trim()
+    if (!t || !replyGoalId || !onReply) return
+    onReply({ goalId: replyGoalId, text: t })
+    setReplyText("")
+    setReplyGoalId(null)
+  }
+
+  const canReply = (c: CommentItem) =>
+    onReply && (c.agentStatus === "done" || c.status === "done") && (c.agentId || c.sessionId)
+
   return (
     <>
       <Header label={label} onClose={onClose} />
       {comments.length > 0 && (
-        <div style={{ maxHeight: 220, overflowY: "auto" }}>
+        <div style={{ maxHeight: 320, overflowY: "auto" }}>
           {comments.map((c) => (
-            <div key={c.id} style={messageStyle}>
-              <div style={messageMetaStyle}>
-                <span style={{ fontWeight: 600, color: "var(--fg, var(--text))" }}>
-                  {c.author ?? "you"}
-                </span>
-                <span>{formatTime(c.createdAt)}</span>
-                {onRemove && (
-                  <button
-                    type="button"
-                    onClick={() => onRemove(c.id)}
-                    style={deleteBtnStyle}
-                    title="Delete"
-                  >
-                    delete
-                  </button>
+            <div key={c.id}>
+              <div style={messageStyle}>
+                <div style={messageMetaStyle}>
+                  <span style={{ fontWeight: 600, color: "var(--fg, var(--text))" }}>
+                    {c.author ?? "you"}
+                  </span>
+                  <span>{formatTime(c.createdAt)}</span>
+                  {onRemove && (
+                    <button
+                      type="button"
+                      onClick={() => onRemove(c.id)}
+                      style={deleteBtnStyle}
+                      title="Delete"
+                    >
+                      delete
+                    </button>
+                  )}
+                </div>
+                <div style={{ whiteSpace: "pre-wrap" }}>{c.text}</div>
+                {c.agentId && (
+                  <div style={agentBadgeStyle} title="Agent assigned to this comment">
+                    <span>{c.agentId}</span>
+                    <span style={agentStatusBadge(c.agentStatus)}>
+                      {c.agentStatus ?? "pending"}
+                    </span>
+                  </div>
                 )}
               </div>
-              <div style={{ whiteSpace: "pre-wrap" }}>{c.text}</div>
-              {c.agentId && (
-                <div style={agentBadgeStyle} title="Agent assigned to this comment">
-                  <span>{c.agentId}</span>
-                  <span style={agentStatusBadge(c.agentStatus)}>
-                    {c.agentStatus ?? "pending"}
-                  </span>
+              {c.replies?.map((r, i) => (
+                <div key={`${c.id}-reply-${i}`} style={{ ...messageStyle, paddingLeft: 20, borderLeft: `2px solid ${r.author === "agent" ? "var(--accent, #2563eb)" : "var(--border)"}` }}>
+                  <div style={messageMetaStyle}>
+                    <span style={{ fontWeight: 600, color: r.author === "agent" ? "var(--accent, #2563eb)" : "var(--fg, var(--text))" }}>
+                      {r.author}
+                    </span>
+                    <span>{formatTime(r.createdAt)}</span>
+                  </div>
+                  <div style={{ whiteSpace: "pre-wrap" }}>{r.text}</div>
+                </div>
+              ))}
+              {canReply(c) && replyGoalId !== c.id && (
+                <div style={{ padding: "4px 12px 8px", borderBottom: "1px solid var(--border, var(--border-faint))" }}>
+                  <button
+                    type="button"
+                    onClick={() => setReplyGoalId(c.id)}
+                    style={replyBtnStyle}
+                  >
+                    Reply
+                  </button>
+                </div>
+              )}
+              {replyGoalId === c.id && (
+                <div style={{ borderBottom: "1px solid var(--border, var(--border-faint))" }}>
+                  <textarea
+                    autoFocus
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitReply()
+                      if (e.key === "Escape") { setReplyGoalId(null); setReplyText("") }
+                    }}
+                    placeholder="Continue the conversation…"
+                    style={{ ...textareaStyle, borderTop: "none" }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 12px 8px", gap: 6 }}>
+                    <button type="button" onClick={() => { setReplyGoalId(null); setReplyText("") }} style={cancelBtnStyle}>Cancel</button>
+                    <button type="button" onClick={submitReply} style={primaryBtnStyle} disabled={!replyText.trim()}>Send</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -399,6 +471,27 @@ function forkBtn(active: boolean): React.CSSProperties {
     cursor: "pointer",
     padding: 0,
   }
+}
+
+const replyBtnStyle: React.CSSProperties = {
+  font: "inherit",
+  fontSize: 11,
+  background: "none",
+  border: "none",
+  color: "var(--accent, #2563eb)",
+  cursor: "pointer",
+  padding: 0,
+}
+
+const cancelBtnStyle: React.CSSProperties = {
+  font: "inherit",
+  fontSize: 12,
+  background: "none",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  padding: "4px 10px",
+  cursor: "pointer",
+  color: "var(--muted)",
 }
 
 const primaryBtnStyle: React.CSSProperties = {

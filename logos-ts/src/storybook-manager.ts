@@ -363,6 +363,7 @@ export interface StoryComment {
   component?: string
   mode?: string
   status?: string
+  replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
 }
 
 export function postComment(comment: Omit<StoryComment, "id" | "createdAt"> & { fork?: boolean }): void {

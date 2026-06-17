@@ -69,6 +69,12 @@ export interface Selection {
   exportName?: string
 }
 
+export interface GoalReply {
+  author: "agent" | "user"
+  text: string
+  createdAt: number
+}
+
 export interface Goal {
   id: string
   text: string
@@ -81,6 +87,7 @@ export interface Goal {
   component?: string | null
   status: "pending" | "running" | "done" | "error"
   sessionId?: string | null
+  replies?: GoalReply[]
 }
 
 export type WorkspaceKind = "code" | "arch"

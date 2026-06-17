@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
-import { SidebarTree } from "./SidebarTree"
-import type { FileEntry } from "./types"
+import { SidebarTree, buildData } from "./SidebarTree"
+import type { FileEntry, Goal } from "./types"
 
 const originalResizeObserver = globalThis.ResizeObserver
 
@@ -138,7 +138,6 @@ describe("SidebarTree", () => {
               componentCode: "",
               propsFields: [],
               stories: [],
-              captured: [],
             },
           },
           {
@@ -242,7 +241,6 @@ describe("SidebarTree", () => {
             componentCode: "",
             propsFields: [],
             stories: [],
-            captured: [],
           },
         }]}
         selection={{ file: "app/admin/taxonomy/page.tsx", view: "code" }}
@@ -257,5 +255,117 @@ describe("SidebarTree", () => {
 
     expect(screen.getByText("saveTaxonomy")).toBeInTheDocument()
     expect(screen.queryByText("AdminTaxonomyPage")).not.toBeInTheDocument()
+  })
+})
+
+function makeGoal(overrides: Partial<Goal> & { target: string }): Goal {
+  return {
+    id: `goal-${Math.random()}`,
+    text: "test",
+    label: "test",
+    mode: "code",
+    createdAt: Date.now(),
+    status: "done",
+    ...overrides,
+  }
+}
+
+function findNode(nodes: any[], id: string): { comments?: number } | undefined {
+  for (const n of nodes) {
+    if (n.id === id) return n as { comments?: number }
+    if (n.children) {
+      const found = findNode(n.children as any[], id)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
+describe("buildData comment counts", () => {
+  const twoComponentFiles: FileEntry[] = [
+    {
+      file: "frontend/components/FactTable.tsx",
+      code: "",
+      items: [{ kind: "function", name: "FactTable", signature: "FactTable()", code: "", deps: [], tests: [] }],
+      component: {
+        name: "FactTable",
+        signature: "FactTable()",
+        componentCode: "",
+        propsFields: [],
+        stories: [
+          { id: "components-facttable--complete", exportName: "Complete", snapshot: null },
+          { id: "components-facttable--empty", exportName: "Empty", snapshot: null },
+        ],
+      },
+    },
+    {
+      file: "frontend/components/JobTable.tsx",
+      code: "",
+      items: [{ kind: "function", name: "JobTable", signature: "JobTable()", code: "", deps: [], tests: [] }],
+      component: {
+        name: "JobTable",
+        signature: "JobTable()",
+        componentCode: "",
+        propsFields: [],
+        stories: [{ id: "components-jobtable--default", exportName: "Default", snapshot: null }],
+      },
+    },
+  ]
+
+  it("story leaf gets its own count", () => {
+    const goals: Record<string, Goal[]> = {
+      "component:FactTable": [
+        makeGoal({ target: "component:FactTable", storyId: "components-facttable--complete" }),
+      ],
+    }
+    const { data } = buildData(twoComponentFiles, {}, goals, null, true, true, true)
+    const story = findNode(data, "story:components-facttable--complete")
+    expect(story?.comments).toBe(1)
+  })
+
+  it("sibling story with no comments has no count", () => {
+    const goals: Record<string, Goal[]> = {
+      "component:FactTable": [
+        makeGoal({ target: "component:FactTable", storyId: "components-facttable--complete" }),
+      ],
+    }
+    const { data } = buildData(twoComponentFiles, {}, goals, null, true, true, true)
+    const empty = findNode(data, "story:components-facttable--empty")
+    expect(empty?.comments ?? 0).toBe(0)
+  })
+
+  it("component rolls up from story children", () => {
+    const goals: Record<string, Goal[]> = {
+      "component:FactTable": [
+        makeGoal({ target: "component:FactTable", storyId: "components-facttable--complete" }),
+        makeGoal({ target: "component:FactTable", storyId: "components-facttable--complete" }),
+        makeGoal({ target: "component:FactTable", storyId: "components-facttable--empty" }),
+      ],
+    }
+    const { data } = buildData(twoComponentFiles, {}, goals, null, true, true, true)
+    const comp = findNode(data, "comp:FactTable")
+    expect(comp?.comments).toBe(3)
+  })
+
+  it("directory rolls up from all descendants", () => {
+    const goals: Record<string, Goal[]> = {
+      "component:FactTable": [
+        makeGoal({ target: "component:FactTable", storyId: "components-facttable--complete" }),
+      ],
+      "component:JobTable": [
+        makeGoal({ target: "component:JobTable", storyId: "components-jobtable--default" }),
+      ],
+    }
+    const { data } = buildData(twoComponentFiles, {}, goals, null, true, true, true)
+    const frontend = findNode(data, "dir:frontend")
+    const components = findNode(data, "dir:frontend/components")
+    expect(components?.comments).toBe(2)
+    expect(frontend?.comments).toBe(2)
+  })
+
+  it("component with no story comments shows 0", () => {
+    const { data } = buildData(twoComponentFiles, {}, {}, null, true, true, true)
+    const comp = findNode(data, "comp:FactTable")
+    expect(comp?.comments).toBe(0)
   })
 })

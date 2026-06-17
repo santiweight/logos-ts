@@ -490,6 +490,32 @@ function studioApi(runtime: StudioRuntime): Plugin {
         if (!goalId) end()
       })
 
+      // --- Continue a completed goal (SSE) — resume the Claude session ---
+      server.middlewares.use("/api/agent/continue", async (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end(); return }
+        const body = JSON.parse((await readBody(req)) || "{}")
+        const wsId = String(body.workspace ?? "")
+        const goalId = String(body.goal ?? "")
+        const text = String(body.text ?? "")
+        if (!wsId || !goalId || !text) { res.statusCode = 400; res.end(JSON.stringify({ error: "missing workspace, goal, or text" })); return }
+
+        res.setHeader("content-type", "text/event-stream")
+        res.setHeader("cache-control", "no-cache")
+        res.setHeader("connection", "keep-alive")
+        let closed = false
+        let ended = false
+        req.on("close", () => { closed = true })
+        const send = (o: unknown) => { if (!closed) res.write(`data: ${JSON.stringify(o)}\n\n`) }
+        const end = () => { if (!closed && !ended) { ended = true; res.end() } }
+
+        const handler = (evt: { type: string; [key: string]: unknown }) => {
+          send(evt)
+          if (evt.type === "done" || evt.type === "error") end()
+        }
+        const ok = wsMgr.continueGoal(wsId, goalId, text, handler)
+        if (!ok) end()
+      })
+
       // --- Session log retrieval ---
       server.middlewares.use("/api/sessions", (req, res) => {
         res.setHeader("content-type", "application/json")

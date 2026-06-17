@@ -1,5 +1,6 @@
 import { Component, StrictMode, type ComponentType, type ErrorInfo, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
+import { StorybookCommentLayer } from "./storybook-comment-layer"
 
 interface PortableStoryModule {
   PortableStory: ComponentType
@@ -71,7 +72,9 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 function Frame(): ReactNode {
   return (
     <section data-portable-story-rendered={storyId} data-portable-story-title={storyTitle}>
-      <PortableStory />
+      <StorybookCommentLayer storyId={storyId} {...(storyTitle.includes(" / ") ? { component: storyTitle.split(" / ")[0] } : {})}>
+        <PortableStory />
+      </StorybookCommentLayer>
     </section>
   )
 }
@@ -88,3 +91,4 @@ createRoot(root).render(
 )
 
 window.parent?.postMessage({ type: "logos:portable-story-loaded", storyId, storyTitle }, "*")
+window.parent?.postMessage({ type: "logos:story-ready", storyId }, "*")

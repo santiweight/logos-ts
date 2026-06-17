@@ -28,6 +28,12 @@ import type {
   WorkspaceKind,
 } from "./runtime-store.js"
 
+export interface GoalReply {
+  author: "agent" | "user"
+  text: string
+  createdAt: number
+}
+
 export interface Goal {
   id: string
   text: string
@@ -40,6 +46,7 @@ export interface Goal {
   component?: string | null
   status: "pending" | "running" | "done" | "error"
   sessionId?: string | null
+  replies?: GoalReply[]
 }
 
 export type { WorkspaceKind }
@@ -121,6 +128,20 @@ export interface AgentEvent {
 
 type AgentEventCallback = (event: AgentEvent) => void
 type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
+
+function extractAgentSummary(events: AgentEvent[]): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const evt = events[i]!
+    if (evt.type !== "event") continue
+    const e = evt["event"] as Record<string, unknown> | undefined
+    if (e?.["type"] !== "assistant") continue
+    const content = (e["message"] as Record<string, unknown> | undefined)?.["content"] as { type: string; text?: string }[] | undefined
+    if (!content) continue
+    const texts = content.filter((b) => b.type === "text" && b.text?.trim()).map((b) => b.text!.trim())
+    if (texts.length > 0) return texts.join("\n\n")
+  }
+  return null
+}
 
 function indexComponents(file: { component?: { stories?: unknown[] }; components?: { stories?: unknown[] }[] }): { stories?: unknown[] }[] {
   return file.components?.length ? file.components : file.component ? [file.component] : []
@@ -917,6 +938,7 @@ export class WorkspaceManager {
 
     onEvent({ type: "status", message: "starting agent…" })
 
+    const collectedEvents: AgentEvent[] = []
     const session = this.sessions.create(goal.id, ws.id)
     let sessionId = session.id
     goal.sessionId = sessionId
@@ -924,6 +946,7 @@ export class WorkspaceManager {
 
     const recordAndEmit = (evt: AgentEvent) => {
       if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) return
+      collectedEvents.push(evt)
       try {
         this.sessions.addEvent(sessionId, evt.type, evt)
       } catch (error) {
@@ -1021,11 +1044,117 @@ export class WorkspaceManager {
           })
         }
       }
+      const summary = extractAgentSummary(collectedEvents)
+      if (summary) {
+        if (!goal.replies) goal.replies = []
+        goal.replies.push({ author: "agent", text: summary, createdAt: Date.now() })
+      }
       this.save(ws)
       rmSync(mcpConfigPath, { force: true })
       recordAndEmit({ type: "done", code })
       this.maybeStartNextQueued(ws.id)
     })
+  }
+
+  continueGoal(wsId: string, goalId: string, replyText: string, onEvent: AgentEventCallback): boolean {
+    const ws = this.workspaces.get(wsId)
+    if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return false }
+    const goal = ws.goals.find((g) => g.id === goalId)
+    if (!goal) { onEvent({ type: "error", message: "goal not found" }); return false }
+    if (!goal.sessionId) { onEvent({ type: "error", message: "no session to continue" }); return false }
+    if (this.runningAgents.has(goalId)) { onEvent({ type: "error", message: "goal is already running" }); return false }
+
+    if (!goal.replies) goal.replies = []
+    goal.replies.push({ author: "user", text: replyText, createdAt: Date.now() })
+    goal.status = "running"
+    this.save(ws)
+
+    const dir = this.activeInstance(ws).materializedRoot
+    const collectedEvents: AgentEvent[] = []
+    let sessionId = goal.sessionId
+
+    const mcpConfig: { mcpServers: Record<string, unknown> } = { mcpServers: {} }
+    if (this.caps.tests) {
+      const testRunnerConfig = JSON.stringify({
+        cwd: dir,
+        command: this.caps.tests.command,
+        watch: this.caps.tests.watchDirs,
+        filePattern: "\\.(tsx?|jsx?)$",
+      })
+      mcpConfig.mcpServers["test-runner"] = {
+        command: this.tsx,
+        args: [resolve(this.logosTsRoot, "src/test-runner-mcp.ts"), testRunnerConfig],
+      }
+    }
+    const mcpConfigPath = resolve(this.runsDir, `${goalId}-cont-${Date.now()}.mcp.json`)
+    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
+
+    const recordAndEmit = (evt: AgentEvent) => {
+      if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) return
+      collectedEvents.push(evt)
+      try {
+        this.sessions.addEvent(sessionId, evt.type, evt)
+      } catch (error) {
+        if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) return
+        throw error
+      }
+      onEvent(evt)
+      this.publishGoalEvent(goalId, evt, onEvent)
+    }
+
+    onEvent({ type: "status", message: "continuing conversation…" })
+
+    const child = this.spawnAgent(
+      "claude",
+      ["-p", replyText, "-r", sessionId, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
+      {
+        cwd: dir,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+      },
+    )
+    this.runningAgents.set(goalId, child)
+
+    let buf = ""
+    child.stdout?.on("data", (d: Buffer) => {
+      buf += d.toString()
+      let i
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i)
+        buf = buf.slice(i + 1)
+        if (!line.trim()) continue
+        try { recordAndEmit({ type: "event", event: JSON.parse(line) }) } catch { recordAndEmit({ type: "raw", line }) }
+      }
+    })
+    child.stderr?.on("data", (d: Buffer) => recordAndEmit({ type: "stderr", message: d.toString() }))
+    child.on("error", (e) => recordAndEmit({ type: "error", message: String(e) }))
+    child.on("close", async (code) => {
+      this.runningAgents.delete(goalId)
+      if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) {
+        rmSync(mcpConfigPath, { force: true })
+        return
+      }
+
+      try {
+        const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), dir, "-"]
+        const wsSbUrl = this.sbManager.get(ws.id)
+        if (wsSbUrl) reindexArgs.push(wsSbUrl)
+        const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
+        const inst = this.activeInstance(ws)
+        inst.index = JSON.parse(stdout)
+      } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
+
+      goal.status = code === 0 ? "done" : "error"
+      const summary = extractAgentSummary(collectedEvents)
+      if (summary) {
+        goal.replies!.push({ author: "agent", text: summary, createdAt: Date.now() })
+      }
+      this.save(ws)
+      rmSync(mcpConfigPath, { force: true })
+      recordAndEmit({ type: "done", code })
+    })
+
+    return true
   }
 
   get sessionManager(): ClaudeSessionManager {

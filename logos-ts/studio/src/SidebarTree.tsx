@@ -91,7 +91,7 @@ function rollUpDiffStatus(children: SNode[] | undefined): DiffStatus | undefined
   return status
 }
 
-function buildData(
+export function buildData(
   files: FileEntry[],
   diff: Record<string, DiffStatus>,
   comments: Props["comments"],
@@ -101,7 +101,13 @@ function buildData(
   showComponents: boolean
 ): { data: SNode[]; openIds: Record<string, boolean> } {
   const openIds: Record<string, boolean> = {}
+  const allGoals = Object.values(comments).flat().filter(Boolean) as Goal[]
+  const storyComments = new Map<string, number>()
+  for (const g of allGoals) {
+    if (g.storyId) storyComments.set(g.storyId, (storyComments.get(g.storyId) ?? 0) + 1)
+  }
   const cCount = (target: string) => comments[target]?.length ?? 0
+  const storyCount = (storyId: string) => storyComments.get(storyId) ?? 0
 
   const failingFiles = failingTests
     ? new Set([...failingTests].map((k) => k.slice(0, k.indexOf(":"))))
@@ -166,27 +172,28 @@ function buildData(
       const componentNode = (comp: ComponentEntry): SNode => {
       const compTarget = `component:${comp.name}`
       const componentStatus = diff[compTarget] ?? (comp.propsName ? diff[`props:${comp.propsName}`] : undefined)
-      const storyNodes: SNode[] = comp.stories.map((s) => ({
-        id: `story:${s.id}`,
-        name: s.exportName,
-        kind: "story" as Kind,
-        sel: { file: f.file, component: comp.name, view: "story" as View, storyId: s.id },
-      }))
-      const status = componentStatus
-      const compNodeChildren = storyNodes
-      const compTestStatus = undefined
+      const storyNodes: SNode[] = comp.stories.map((s) => {
+        const sc = storyCount(s.id)
+        return {
+          id: `story:${s.id}`,
+          name: s.exportName,
+          kind: "story" as Kind,
+          ...(sc ? { comments: sc } : {}),
+          sel: { file: f.file, component: comp.name, view: "story" as View, storyId: s.id },
+        }
+      })
+      const totalComments = rollUpComments(storyNodes)
       return {
         id: `comp:${f.file}:${comp.name}`,
         name: comp.name,
         kind: "comp",
         target: compTarget,
         label: comp.name,
-        ...(status ? { status } : {}),
+        ...(componentStatus ? { status: componentStatus } : {}),
         stories: comp.stories.length,
-        comments: cCount(compTarget),
-        ...(compTestStatus ? { testStatus: compTestStatus } : {}),
+        comments: totalComments,
         sel: { file: f.file, component: comp.name, view: "code" },
-        ...(compNodeChildren.length ? { children: compNodeChildren } : {}),
+        ...(storyNodes.length ? { children: storyNodes } : {}),
       }
       }
 
@@ -196,7 +203,6 @@ function buildData(
       if (canInline) {
         const only = componentNode(components[0]!)
         only.id = `comp:${components[0]!.name}`
-        only.comments = (only.comments ?? 0) + cCount(target)
         return only
       }
 
@@ -217,9 +223,9 @@ function buildData(
         target,
         label: baseName,
         ...(fileStatus ? { status: fileStatus } : {}),
-        comments: cCount(target),
-        fns: otherItems.length + components.length,
-        ...(otherItems.length ? { tests: otherItems.reduce((n, it) => n + testsOf(it), 0) } : {}),
+        comments: rollUpComments(children),
+        fns: f.items.length + components.length,
+        tests: f.items.reduce((n, it) => n + testsOf(it), 0),
         ...(fileTestStatus ? { testStatus: fileTestStatus } : {}),
         ...(children.length ? { children } : {}),
         sel: { file: f.file, view: "code" },
@@ -245,6 +251,7 @@ function buildData(
 
     const noCompTestStatus = rollUpTestStatus(children)
     const fileStatus = combineDiffStatus(diff[target], rollUpDiffStatus(children))
+    const fileComments = rollUpComments(children)
     return {
       id: `file:${f.file}`,
       name: baseName,
@@ -252,13 +259,19 @@ function buildData(
       target,
       label: baseName,
       ...(fileStatus ? { status: fileStatus } : {}),
-      comments: cCount(target),
-      fns: visibleItems.length,
-      tests: visibleItems.reduce((n, it) => n + testsOf(it), 0),
+      comments: fileComments,
+      fns: f.items.length,
+      tests: f.items.reduce((n, it) => n + testsOf(it), 0),
       ...(noCompTestStatus ? { testStatus: noCompTestStatus } : {}),
       ...(children.length ? { children } : {}),
       sel: { file: f.file, view: "code" },
     }
+  }
+
+  function rollUpComments(children: SNode[]): number {
+    let n = 0
+    for (const c of children) n += (c.comments ?? 0)
+    return n
   }
 
   // Group files into a directory tree
@@ -289,6 +302,7 @@ function buildData(
       if (children.length === 0) continue
       const testStatus = rollUpTestStatus(children)
       const status = rollUpDiffStatus(children)
+      const dirComments = rollUpComments(children)
       out.push({
         id,
         name: n,
@@ -296,7 +310,7 @@ function buildData(
         target,
         label: n,
         ...(status ? { status } : {}),
-        comments: cCount(target),
+        comments: dirComments,
         ...(testStatus ? { testStatus } : {}),
         children,
       })
@@ -361,7 +375,14 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
       </span>
       {d.kind === "file" && d.fns ? <span className="fns">{d.fns}</span> : null}
       {d.kind === "comp" && d.stories ? <span className="count">{d.stories}</span> : null}
-      {d.comments ? <span className="cbadge">{d.comments}</span> : null}
+      {d.comments && (node.isLeaf || !node.isOpen) ? (
+        <span className="cbadge" title={`${d.comments} comment${d.comments === 1 ? "" : "s"}`}>
+          <svg width="18" height="16" viewBox="0 0 18 16" fill="none">
+            <path d="M1 1.5C1 1.22 1.22 1 1.5 1h15c.28 0 .5.22.5.5v10c0 .28-.22.5-.5.5H5l-3.5 3V1.5Z" fill="var(--accent)" opacity="0.85" stroke="var(--accent)" strokeWidth="1"/>
+          </svg>
+          <span className="cbadge-count">{d.comments}</span>
+        </span>
+      ) : null}
       {!showDot && d.tests ? <span className="count ok">✓{d.tests}</span> : null}
     </div>
   )
