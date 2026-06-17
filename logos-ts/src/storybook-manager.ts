@@ -377,11 +377,23 @@ export function postReady(storyId: string): void {
   } catch {}
 }
 
-export function onGoalsFromStudio(cb: (goals: StoryComment[], workspaceKind: "code" | "arch") => void): () => void {
+export function postCommentEditing(storyId: string, active: boolean): void {
+  try {
+    window.parent?.postMessage({ type: "logos:story-comment-editing", storyId, active }, "*")
+  } catch {}
+}
+
+export function postCommentDraft(draft: (Omit<StoryComment, "id" | "createdAt" | "author" | "status"> & { text: string; mode: "code" | "arch"; fork: boolean; kind: "new" | "reply" }) | { storyId: string; active: false }): void {
+  try {
+    window.parent?.postMessage({ type: "logos:story-comment-draft", ...draft }, "*")
+  } catch {}
+}
+
+export function onGoalsFromStudio(cb: (goals: StoryComment[], workspaceKind: "code" | "arch", drafts: any[]) => void): () => void {
   const handler = (event: MessageEvent) => {
     if (event.data?.type === "logos:story-goals") {
       const kind = event.data.workspaceKind === "arch" ? "arch" : "code"
-      cb(event.data.goals as StoryComment[], kind)
+      cb(event.data.goals as StoryComment[], kind, Array.isArray(event.data.drafts) ? event.data.drafts : [])
     }
   }
   window.addEventListener("message", handler)
@@ -413,6 +425,19 @@ export function resolve(root: Element, selector: string): Element | null {
   }
 }
 
+export function resolveNearest(root: Element, selector: string): { selector: string; element: Element } {
+  const exact = resolve(root, selector)
+  if (exact) return { selector, element: exact }
+  if (!selector.startsWith(":scope > ")) return { selector: ":scope", element: root }
+  const parts = selector.slice(":scope > ".length).split(" > ")
+  for (let i = parts.length - 1; i > 0; i--) {
+    const parentSelector = ":scope > " + parts.slice(0, i).join(" > ")
+    const element = resolve(root, parentSelector)
+    if (element) return { selector: parentSelector, element }
+  }
+  return { selector: ":scope", element: root }
+}
+
 export function describe(el: Element): string {
   const tag = el.tagName.toLowerCase()
   const text = (el.textContent ?? "").trim().replace(/\\s+/g, " ").slice(0, 32)
@@ -425,10 +450,13 @@ import type { Decorator } from "@storybook/react"
 import {
   postComment,
   postReady,
+  postCommentEditing,
+  postCommentDraft,
   onGoalsFromStudio,
   cssPath,
   describe,
   resolve,
+  resolveNearest,
   type StoryComment,
 } from "./comment-store"
 import {
@@ -449,9 +477,12 @@ interface HoverTarget {
 }
 
 interface Draft {
-  rect: DOMRect
   selector: string
   label: string
+  text?: string
+  mode?: "code" | "arch"
+  fork?: boolean
+  kind?: "new" | "reply"
 }
 
 function componentNameFromContext(context: any): string | undefined {
@@ -487,9 +518,19 @@ export function CommentLayer({
 
   useEffect(() => {
     postReady(storyId)
-    return onGoalsFromStudio((goals, kind) => {
+    return onGoalsFromStudio((goals, kind, drafts) => {
       setComments(goals.filter((goal) => goal.storyId === storyId))
       setWorkspaceKind(kind)
+      const restored = drafts.find((draft) => draft.storyId === storyId && typeof draft.text === "string" && draft.text.trim())
+      if (restored) {
+        if (restored.kind === "reply") {
+          setOpenSelector(restored.selector)
+          setDraft(null)
+        } else {
+          setDraft(restored)
+          setOpenSelector(null)
+        }
+      }
     })
   }, [storyId])
 
@@ -551,9 +592,9 @@ export function CommentLayer({
       event.preventDefault()
       event.stopPropagation()
       setDraft({
-        rect: target.getBoundingClientRect(),
         selector: cssPath(target, rootRef.current),
         label: describe(target),
+        kind: "new",
       })
       setOpenSelector(null)
     }
@@ -600,11 +641,48 @@ export function CommentLayer({
     })
   }
 
+  const sendCommentEditing = useCallback((active: boolean) => {
+    postCommentEditing(storyId, active)
+  }, [storyId])
+
+  const clearCommentDraft = useCallback(() => {
+    postCommentDraft({ storyId, active: false })
+    sendCommentEditing(false)
+  }, [sendCommentEditing, storyId])
+
+  const sendCommentDraft = useCallback((draftUpdate: Draft, payload: SubmitPayload) => {
+    if (!payload.text.trim()) {
+      postCommentDraft({ storyId, active: false })
+      sendCommentEditing(false)
+      return
+    }
+    postCommentDraft({
+      storyId,
+      component,
+      selector: draftUpdate.selector,
+      label: draftUpdate.label,
+      text: payload.text,
+      mode: payload.mode,
+      fork: payload.fork,
+      kind: draftUpdate.kind ?? "new",
+    })
+    sendCommentEditing(true)
+  }, [component, sendCommentEditing, storyId])
+
+  useEffect(() => clearCommentDraft, [clearCommentDraft])
+
+  const rootLabel = component ?? storyId
+
   const saveDraft = (payload: SubmitPayload) => {
     if (!draft) return
-    sendComment(draft.selector, draft.label, payload)
+    const rootEl = rootRef.current
+    if (!rootEl) throw new Error("Cannot attach comment because the story root disappeared.")
+    const { selector } = resolveNearest(rootEl, draft.selector)
+    const label = selector === draft.selector ? draft.label : rootLabel
+    sendComment(selector, label, payload)
+    clearCommentDraft()
     setDraft(null)
-    setOpenSelector(draft.selector)
+    setOpenSelector(selector)
   }
 
   return (
@@ -642,34 +720,58 @@ export function CommentLayer({
           root &&
           openSelector &&
           (() => {
-            const el = resolve(root, openSelector)
             const list = groups.get(openSelector)
-            if (!el || !list) return null
-            const rect = el.getBoundingClientRect()
+            if (!list) return null
+            const nearest = resolveNearest(root, openSelector)
+            const selector = nearest.selector
+            const label = selector === openSelector ? list[0]?.label ?? openSelector : rootLabel
+            const rect = nearest.element.getBoundingClientRect()
             return (
               <div style={{ ...popoverShell, ...popoverPos(rect), position: "absolute", pointerEvents: "auto" }}>
                 <CommentThread
-                  label={list[0]?.label ?? openSelector}
+                  label={label}
                   comments={list}
                   workspaceKind={workspaceKind}
                   onAdd={(payload) => {
-                    sendComment(openSelector, list[0]?.label ?? openSelector, payload)
+                    sendComment(selector, label, payload)
+                    clearCommentDraft()
+                    setDraft(null)
                   }}
-                  onClose={() => setOpenSelector(null)}
+                  initialDraft={draft?.kind === "reply" && draft.selector === openSelector ? draft : undefined}
+                  onDraftChange={(payload) => {
+                    const replyDraft = { selector: openSelector, label, kind: "reply" as const, ...payload }
+                    setDraft(replyDraft)
+                    sendCommentDraft(replyDraft, payload)
+                  }}
+                  onEditingChange={sendCommentEditing}
+                  onClose={() => { clearCommentDraft(); setOpenSelector(null); setDraft(null) }}
                 />
               </div>
             )
           })()}
 
-        {enabled && draft && (
-          <div style={{ ...popoverShell, ...popoverPos(draft.rect), position: "absolute", pointerEvents: "auto" }}>
-            <CommentComposer
-              label={draft.label}
-              workspaceKind={workspaceKind}
-              onSave={saveDraft}
-              onCancel={() => setDraft(null)}
-            />
-          </div>
+        {enabled && draft && draft.kind !== "reply" && (
+          (() => {
+            const nearest = root ? resolveNearest(root, draft.selector) : null
+            const rect = nearest?.element.getBoundingClientRect() ?? new DOMRect()
+            return (
+              <div style={{ ...popoverShell, ...popoverPos(rect), position: "absolute", pointerEvents: "auto" }}>
+                <CommentComposer
+                  label={draft.label}
+                  workspaceKind={workspaceKind}
+                  onSave={saveDraft}
+                  onCancel={() => { clearCommentDraft(); setDraft(null) }}
+                  initialDraft={draft}
+                  onDraftChange={(payload) => {
+                    const next = { ...draft, ...payload, kind: "new" as const }
+                    setDraft(next)
+                    sendCommentDraft(next, payload)
+                  }}
+                  onEditingChange={sendCommentEditing}
+                />
+              </div>
+            )
+          })()
         )}
 
         <CommentToolbar

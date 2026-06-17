@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-syntax */
-import React, { useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { iconForLabel } from "./icons"
 
 export interface CommentItem {
@@ -18,6 +18,8 @@ export interface SubmitPayload {
   fork: boolean
 }
 
+export interface DraftPayload extends SubmitPayload {}
+
 const FONT = "12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace"
 
 // --- Thread: shows existing comments + reply box with mode/fork controls ------
@@ -29,6 +31,9 @@ export function CommentThread({
   onRemove,
   onClose,
   workspaceKind,
+  onEditingChange,
+  initialDraft,
+  onDraftChange,
 }: {
   label: string
   comments: CommentItem[]
@@ -36,10 +41,23 @@ export function CommentThread({
   onRemove?: (id: string) => void
   onClose: () => void
   workspaceKind?: "code" | "arch" | undefined
+  onEditingChange?: (active: boolean) => void
+  initialDraft?: Partial<DraftPayload> | undefined
+  onDraftChange?: (payload: DraftPayload) => void
 }) {
-  const [text, setText] = useState("")
-  const [mode, setMode] = useState<"code" | "arch">("code")
-  const [fork, setFork] = useState(false)
+  const [text, setText] = useState(initialDraft?.text ?? "")
+  const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
+  const [fork, setFork] = useState(initialDraft?.fork ?? false)
+  const onEditingChangeRef = useRef(onEditingChange)
+  const onDraftChangeRef = useRef(onDraftChange)
+  onEditingChangeRef.current = onEditingChange
+  onDraftChangeRef.current = onDraftChange
+  const editingActive = text.trim().length > 0
+  useEffect(() => {
+    onEditingChangeRef.current?.(editingActive)
+    onDraftChangeRef.current?.({ text, mode, fork })
+  }, [editingActive, fork, mode, text])
+  useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
     if (!t) return
@@ -106,15 +124,31 @@ export function CommentComposer({
   onSave,
   onCancel,
   workspaceKind,
+  onEditingChange,
+  initialDraft,
+  onDraftChange,
 }: {
   label: string
   onSave: (payload: SubmitPayload) => void
   onCancel: () => void
   workspaceKind?: "code" | "arch" | undefined
+  onEditingChange?: (active: boolean) => void
+  initialDraft?: Partial<DraftPayload> | undefined
+  onDraftChange?: (payload: DraftPayload) => void
 }) {
-  const [text, setText] = useState("")
-  const [mode, setMode] = useState<"code" | "arch">("code")
-  const [fork, setFork] = useState(false)
+  const [text, setText] = useState(initialDraft?.text ?? "")
+  const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
+  const [fork, setFork] = useState(initialDraft?.fork ?? false)
+  const onEditingChangeRef = useRef(onEditingChange)
+  const onDraftChangeRef = useRef(onDraftChange)
+  onEditingChangeRef.current = onEditingChange
+  onDraftChangeRef.current = onDraftChange
+  const editingActive = text.trim().length > 0
+  useEffect(() => {
+    onEditingChangeRef.current?.(editingActive)
+    onDraftChangeRef.current?.({ text, mode, fork })
+  }, [editingActive, fork, mode, text])
+  useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
     if (t) onSave({ text: t, mode, fork })

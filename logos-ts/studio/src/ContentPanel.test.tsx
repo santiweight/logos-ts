@@ -18,7 +18,7 @@ const file: FileEntry = {
   },
 }
 
-function renderStory(storybookRenderKey: string) {
+function renderStory(storybookRenderKey: string, storyCommentEditingByStoryId: Record<string, boolean> = {}) {
   return render(
     <ContentPanel
       file={file}
@@ -28,6 +28,7 @@ function renderStory(storybookRenderKey: string) {
       storybookUrl="/storybooks/ws-1"
       storybookState={{ status: "ready", startedAt: 1000, logs: [] }}
       storybookRenderKey={storybookRenderKey}
+      storyCommentEditingByStoryId={storyCommentEditingByStoryId}
       onRetryStorybook={() => {}}
       onView={() => {}}
       comments={{}}
@@ -79,6 +80,63 @@ describe("ContentPanel", () => {
         storybookUrl="/storybooks/ws-1"
         storybookState={{ status: "ready", startedAt: 2000, logs: [] }}
         storybookRenderKey="inst-2:2000"
+        storyCommentEditingByStoryId={{}}
+        onRetryStorybook={() => {}}
+        onView={() => {}}
+        onCapture={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+      />
+    )
+
+    expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
+      "src",
+      "/storybooks/ws-1/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-2%3A2000"
+    )
+  })
+
+  it("defers Storybook iframe URL changes while a story comment is being typed", () => {
+    const { rerender } = renderStory("inst-1:1000")
+    expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
+      "src",
+      "/storybooks/ws-1/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000"
+    )
+
+    rerender(
+      <ContentPanel
+        file={file}
+        selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
+        workspaceId="ws-1"
+        storyRenderer="storybook"
+        storybookUrl="/storybooks/ws-1"
+        storybookState={{ status: "ready", startedAt: 2000, logs: [] }}
+        storybookRenderKey="inst-2:2000"
+        storyCommentEditingByStoryId={{ "jobcard--default": true }}
+        onRetryStorybook={() => {}}
+        onView={() => {}}
+        onCapture={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+      />
+    )
+
+    expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
+      "src",
+      "/storybooks/ws-1/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000"
+    )
+
+    rerender(
+      <ContentPanel
+        file={file}
+        selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
+        workspaceId="ws-1"
+        storyRenderer="storybook"
+        storybookUrl="/storybooks/ws-1"
+        storybookState={{ status: "ready", startedAt: 2000, logs: [] }}
+        storybookRenderKey="inst-2:2000"
+        storyCommentEditingByStoryId={{}}
         onRetryStorybook={() => {}}
         onView={() => {}}
         comments={{}}

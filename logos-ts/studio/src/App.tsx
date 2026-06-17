@@ -92,6 +92,8 @@ export function App() {
 
   const [storybookUrls, setStorybookUrls] = useState<Record<string, string>>({})
   const [storybookStates, setStorybookStates] = useState<Record<string, SbState>>({})
+  const [storyCommentEditing, setStoryCommentEditing] = useState<Record<string, boolean>>({})
+  const [storyCommentDrafts, setStoryCommentDrafts] = useState<Record<string, unknown>>({})
   const refreshStorybooks = useCallback(async () => {
     try {
       const res = await fetch("/api/storybooks")
@@ -540,8 +542,8 @@ export function App() {
         mode: g.mode,
         status: g.status,
       }))
-    return { type: "logos:story-goals", goals: storyGoals, workspaceKind: activeWs?.kind ?? "code" }
-  }, [activeGoals, activeWs?.kind])
+    return { type: "logos:story-goals", goals: storyGoals, drafts: Object.values(storyCommentDrafts), workspaceKind: activeWs?.kind ?? "code" }
+  }, [activeGoals, activeWs?.kind, storyCommentDrafts])
 
   const postStoryGoals = useCallback((target?: Window | null) => {
     if (target) {
@@ -558,6 +560,39 @@ export function App() {
     const onMsg = (e: MessageEvent) => {
       if (e.data?.type === "logos:story-ready") {
         postStoryGoals(e.source as Window | null)
+        return
+      }
+      if (e.data?.type === "logos:story-comment-editing") {
+        const storyId = typeof e.data.storyId === "string" ? e.data.storyId : ""
+        if (!storyId) return
+        setStoryCommentEditing((current) => {
+          const active = e.data.active === true
+          if (active) return { ...current, [storyId]: true }
+          const next = { ...current }
+          delete next[storyId]
+          return next
+        })
+        return
+      }
+      if (e.data?.type === "logos:story-comment-draft") {
+        const storyId = typeof e.data.storyId === "string" ? e.data.storyId : ""
+        if (!storyId) return
+        const text = typeof e.data.text === "string" ? e.data.text : ""
+        const active = e.data.active !== false && text.trim().length > 0
+        setStoryCommentDrafts((current) => {
+          if (!active) {
+            const next = { ...current }
+            delete next[storyId]
+            return next
+          }
+          return { ...current, [storyId]: { ...e.data, active: true } }
+        })
+        setStoryCommentEditing((current) => {
+          if (active) return { ...current, [storyId]: true }
+          const next = { ...current }
+          delete next[storyId]
+          return next
+        })
         return
       }
       if (e.data?.type !== "logos:story-comment") return
@@ -738,6 +773,7 @@ export function App() {
               storybookUrl={activeStorybookUrl}
               storybookState={activeStorybookState}
               storybookRenderKey={activeStorybookRenderKey}
+              storyCommentEditingByStoryId={storyCommentEditing}
               onRetryStorybook={retryStorybook}
               onView={setView}
               comments={goalsByTarget}

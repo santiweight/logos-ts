@@ -13,6 +13,7 @@ interface Props {
   storybookUrl: string
   storybookState: SbState | null
   storybookRenderKey: string
+  storyCommentEditingByStoryId?: Record<string, boolean>
   onRetryStorybook: (() => void) | null
   onView: (view: View) => void
   comments: GoalApi["comments"]
@@ -28,6 +29,7 @@ export function ContentPanel({
   storybookUrl,
   storybookState,
   storybookRenderKey,
+  storyCommentEditingByStoryId = {},
   onRetryStorybook,
   onView,
   comments,
@@ -87,6 +89,7 @@ export function ContentPanel({
               storybookUrl={storybookUrl}
               storybookState={storybookState}
               storybookRenderKey={storybookRenderKey}
+              storyCommentEditing={selection.storyId ? storyCommentEditingByStoryId[selection.storyId] === true : false}
               onRetryStorybook={onRetryStorybook}
             />
           )}
@@ -273,6 +276,7 @@ function StoryView({
   storybookUrl,
   storybookState,
   storybookRenderKey,
+  storyCommentEditing,
   onRetryStorybook,
 }: {
   storyId?: string
@@ -281,6 +285,7 @@ function StoryView({
   storybookUrl: string
   storybookState: SbState | null
   storybookRenderKey: string
+  storyCommentEditing: boolean
   onRetryStorybook: (() => void) | null
 }) {
   const logsEndRef = useRef<HTMLDivElement>(null)
@@ -295,12 +300,15 @@ function StoryView({
     if (shouldAutoStart) onRetryStorybook()
   }, [shouldAutoStart, onRetryStorybook])
 
+  const portableParams = new URLSearchParams({ storyId: storyId ?? "", logosReload: storybookRenderKey })
+  if (workspaceId) portableParams.set("workspaceId", workspaceId)
+  const nextSrc = storyRenderer === "portable"
+    ? `/portable-story.html?${portableParams.toString()}`
+    : `${storybookUrl}/iframe.html?id=${storyId ?? ""}&viewMode=story&logosReload=${encodeURIComponent(storybookRenderKey)}`
+  const src = useDeferredString(nextSrc, storyCommentEditing)
   if (!storyId) return <div className="empty">No story selected.</div>
 
   if (storyRenderer === "portable") {
-    const params = new URLSearchParams({ storyId, logosReload: storybookRenderKey })
-    if (workspaceId) params.set("workspaceId", workspaceId)
-    const src = `/portable-story.html?${params.toString()}`
     return (
       <div className="pane">
         <div className="pane-path">
@@ -357,7 +365,6 @@ function StoryView({
     )
   }
 
-  const src = `${storybookUrl}/iframe.html?id=${storyId}&viewMode=story&logosReload=${encodeURIComponent(storybookRenderKey)}`
   return (
     <div className="pane">
       <div className="pane-path">
@@ -369,6 +376,14 @@ function StoryView({
       </div>
     </div>
   )
+}
+
+function useDeferredString(value: string, defer: boolean): string {
+  const [committedValue, setCommittedValue] = useState(value)
+  useEffect(() => {
+    if (!defer) setCommittedValue(value)
+  }, [defer, value])
+  return defer ? committedValue : value
 }
 
 function extractSnapHtml(raw: string): string | null {
