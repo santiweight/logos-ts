@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { dirname, resolve, join, relative, sep } from "node:path"
 import type { StudioIndex } from "../src/build-index"
 import { authPlugin } from "./server/auth"
-import { storybookProxyPlugin } from "./server/storybook-proxy"
+import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
 import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
@@ -316,7 +316,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         const entries = sbManager.all()
         const states = sbManager.allStates()
         const urls: Record<string, string> = {}
-        for (const [id, entry] of Object.entries(entries)) urls[id] = entry.url
+        for (const id of Object.keys(entries)) urls[id] = publicStorybookUrl(id)
         res.end(JSON.stringify({ urls, states, entries }))
       })
 

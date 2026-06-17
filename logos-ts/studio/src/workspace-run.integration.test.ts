@@ -259,11 +259,11 @@ describe("workspace + run integration", () => {
       const frame = page.frame({ url: (url) => url.toString().includes(`/runs/${wsId}/root-app/`) })
       expect(frame).not.toBeNull()
       await frame!.waitForFunction(
-        () => document.body.dataset.apiRunBase != null,
+        () => document.body.dataset["apiRunBase"] != null,
         null,
         { timeout: 30_000 },
       )
-      expect(await frame!.evaluate(() => document.body.dataset.apiRunBase))
+      expect(await frame!.evaluate(() => document.body.dataset["apiRunBase"]))
         .toBe(`/runs/${wsId}/root-app/`)
       expect(await page.evaluate(() => window.localStorage.getItem("logos:selection:v1")))
         .toContain("\"view\":\"run\"")

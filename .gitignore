@@ -11,5 +11,7 @@ dist/
 storybook-static/
 .logos/
 .logos_cache/
+**/.storybook/.logos/
+**/.storybook/preview.logos-user.*
 .DS_Store
 *.log

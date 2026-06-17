@@ -42,7 +42,7 @@ function proxyTarget(req: IncomingMessage, manager: RunManager): ProxyTarget | n
 }
 
 function isOwnRunBaseRequest(req: IncomingMessage): boolean {
-  const base = process.env.LOGOS_RUN_BASE
+  const base = process.env["LOGOS_RUN_BASE"]
   if (!base) return false
   const url = new URL(req.url || "/", "http://logos.local")
   return url.pathname === base.slice(0, -1) || url.pathname.startsWith(base)
