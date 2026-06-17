@@ -566,6 +566,9 @@ body.resizing-rail * {
 .anode.dir { font-weight: 600; }
 .anode.dir .label { color: var(--text); }
 .anode.file .label { color: var(--text); }
+.anode.run { font-weight: 600; }
+.anode.run .glyph { color: var(--accent); }
+.anode.run .label { color: var(--text); }
 .anode.comp { font-weight: 600; }
 .anode.comp .glyph { color: var(--accent); }
 
@@ -586,6 +589,25 @@ body.resizing-rail * {
 .anode.cls .glyph { color: var(--accent); }
 .anode.story .glyph { color: var(--muted); }
 .anode.captured .glyph { color: var(--ok); }
+
+.run-tree-btn {
+  width: 20px;
+  height: 18px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.run-tree-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+.run-tree-btn.ready { color: var(--ok); }
+.run-tree-btn.starting { color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.run-tree-btn.failed { color: #e5847d; }
 
 /* diff tints carry over from the old tree */
 .anode.diff-added { border-left-color: var(--ok); }

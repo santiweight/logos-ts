@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { join, resolve, relative, dirname } from "node:path"
+import { basename, join, resolve, relative, dirname } from "node:path"
 
 export interface StorybookCaps {
   configDir: string
@@ -12,10 +12,19 @@ export interface TestCaps {
   watchDirs: string[]
 }
 
+export interface RunTargetCaps {
+  id: string
+  label: string
+  cwd: string
+  command: string
+  args: string[]
+}
+
 export interface ProjectCaps {
   root: string
   storybook: StorybookCaps | null
   tests: TestCaps | null
+  runs: RunTargetCaps[]
   nodeModulesDirs: string[]
 }
 
@@ -25,6 +34,7 @@ export function detectProject(root: string): ProjectCaps {
     root: absRoot,
     storybook: detectStorybook(absRoot),
     tests: detectTests(absRoot),
+    runs: detectRuns(absRoot),
     nodeModulesDirs: findNodeModules(absRoot),
   }
 }
@@ -93,6 +103,75 @@ function detectTests(root: string): TestCaps | null {
   }
 
   return null
+}
+
+function detectRuns(root: string): RunTargetCaps[] {
+  const targets: RunTargetCaps[] = []
+  const packageDirs = findPackageDirs(root)
+
+  for (const dir of packageDirs) {
+    const pkgPath = join(dir, "package.json")
+    let pkg: any
+    try {
+      pkg = JSON.parse(readFileSync(pkgPath, "utf8"))
+    } catch {
+      continue
+    }
+
+    const rel = relative(root, dir)
+    const idBase = rel ? rel.replace(/[^a-zA-Z0-9_-]+/g, "-") : "root"
+    const labelBase = rel ? basenameSafe(rel) : "App"
+    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) } as Record<string, string>
+    const scripts = (pkg.scripts ?? {}) as Record<string, string>
+    const hasVite = Boolean(deps["vite"])
+    const devScript = scripts["dev"]
+
+    if (devScript && (hasVite || /\bvite\b/.test(devScript))) {
+      targets.push({
+        id: `${idBase}-app`,
+        label: targets.length === 0 ? "App" : `${labelBase} App`,
+        cwd: dir,
+        command: "npm",
+        args: ["run", "dev", "--", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+      })
+      continue
+    }
+
+    if (hasVite) {
+      targets.push({
+        id: `${idBase}-app`,
+        label: targets.length === 0 ? "App" : `${labelBase} App`,
+        cwd: dir,
+        command: "node_modules/.bin/vite",
+        args: ["--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+      })
+    }
+  }
+
+  return targets
+}
+
+function findPackageDirs(root: string): string[] {
+  const dirs: string[] = []
+  const rootPkg = join(root, "package.json")
+  if (existsSync(rootPkg)) dirs.push(root)
+
+  for (const name of safeReaddir(root)) {
+    if (name === "node_modules" || name.startsWith(".")) continue
+    const dir = join(root, name)
+    const pkg = join(dir, "package.json")
+    if (existsSync(pkg)) dirs.push(dir)
+  }
+
+  return dirs
+}
+
+function basenameSafe(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean)
+  const base = parts[parts.length - 1] ?? path
+  return base
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
 }
 
 function findSourceDirs(root: string): string[] {

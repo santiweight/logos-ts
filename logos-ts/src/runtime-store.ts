@@ -91,6 +91,30 @@ export interface StoredStorybookState {
   error?: string
 }
 
+export interface StoredRunEntry {
+  id: string
+  workspaceId: string
+  targetId: string
+  pid: number
+  port: number
+  url: string
+  cwd: string
+  startedAt: number
+}
+
+export type StoredRunStatus = "starting" | "ready" | "failed"
+
+export interface StoredRunState {
+  id: string
+  workspaceId: string
+  targetId: string
+  status: StoredRunStatus
+  startedAt: number
+  updatedAt: number
+  logs: string[]
+  error?: string
+}
+
 export class LogosRuntimeStore {
   private db: import("node:sqlite").DatabaseSync
 
@@ -180,6 +204,30 @@ export class LogosRuntimeStore {
         logs_json TEXT NOT NULL,
         error TEXT
       );
+      CREATE TABLE IF NOT EXISTS runs (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        target_id TEXT NOT NULL,
+        pid INTEGER NOT NULL,
+        port INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        UNIQUE(workspace_id, target_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_runs_workspace ON runs(workspace_id);
+      CREATE TABLE IF NOT EXISTS run_states (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        target_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        logs_json TEXT NOT NULL,
+        error TEXT,
+        UNIQUE(workspace_id, target_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_states_workspace ON run_states(workspace_id);
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         goal_id TEXT NOT NULL,
@@ -303,6 +351,8 @@ export class LogosRuntimeStore {
       this.db.prepare(`DELETE FROM workspace_instances WHERE workspace_id = ?`).run(id)
       this.db.prepare(`DELETE FROM storybooks WHERE id = ?`).run(id)
       this.db.prepare(`DELETE FROM storybook_states WHERE id = ?`).run(id)
+      this.db.prepare(`DELETE FROM runs WHERE workspace_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM run_states WHERE workspace_id = ?`).run(id)
       this.db.prepare(`DELETE FROM workspace_policy_events WHERE workspace_id = ?`).run(id)
       this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id)
     })
@@ -314,6 +364,8 @@ export class LogosRuntimeStore {
       this.db.prepare(`DELETE FROM workspace_instances`).run()
       this.db.prepare(`DELETE FROM storybooks`).run()
       this.db.prepare(`DELETE FROM storybook_states`).run()
+      this.db.prepare(`DELETE FROM runs`).run()
+      this.db.prepare(`DELETE FROM run_states`).run()
       this.db.prepare(`DELETE FROM workspace_policy_events`).run()
       this.db.prepare(`DELETE FROM workspaces`).run()
     })
@@ -418,6 +470,79 @@ export class LogosRuntimeStore {
     this.db.prepare(`DELETE FROM storybook_states`).run()
   }
 
+  listRuns(): Record<string, StoredRunEntry> {
+    const rows = this.db.prepare(`SELECT * FROM runs ORDER BY workspace_id, target_id`).all() as Record<string, unknown>[]
+    return Object.fromEntries(rows.map((row) => {
+      const entry = mapRun(row)
+      return [entry.id, entry]
+    }))
+  }
+
+  saveRuns(entries: Record<string, StoredRunEntry>): void {
+    this.transaction(() => {
+      this.db.prepare(`DELETE FROM runs`).run()
+      for (const entry of Object.values(entries)) {
+        this.db.prepare(`
+          INSERT INTO runs (id, workspace_id, target_id, pid, port, url, cwd, started_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          entry.id,
+          entry.workspaceId,
+          entry.targetId,
+          entry.pid,
+          entry.port,
+          entry.url,
+          entry.cwd,
+          entry.startedAt,
+        )
+      }
+    })
+  }
+
+  deleteAllRuns(): void {
+    this.db.prepare(`DELETE FROM runs`).run()
+  }
+
+  listRunStates(): Record<string, StoredRunState> {
+    const rows = this.db.prepare(`SELECT * FROM run_states ORDER BY workspace_id, target_id`).all() as Record<string, unknown>[]
+    return Object.fromEntries(rows.map((row) => {
+      const state = mapRunState(row)
+      return [state.id, state]
+    }))
+  }
+
+  saveRunState(state: StoredRunState): void {
+    this.db.prepare(`
+      INSERT INTO run_states (id, workspace_id, target_id, status, started_at, updated_at, logs_json, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        workspace_id = excluded.workspace_id,
+        target_id = excluded.target_id,
+        status = excluded.status,
+        started_at = excluded.started_at,
+        updated_at = excluded.updated_at,
+        logs_json = excluded.logs_json,
+        error = excluded.error
+    `).run(
+      state.id,
+      state.workspaceId,
+      state.targetId,
+      state.status,
+      state.startedAt,
+      state.updatedAt,
+      JSON.stringify(state.logs),
+      state.error ?? null,
+    )
+  }
+
+  deleteRunState(id: string): void {
+    this.db.prepare(`DELETE FROM run_states WHERE id = ?`).run(id)
+  }
+
+  deleteAllRunStates(): void {
+    this.db.prepare(`DELETE FROM run_states`).run()
+  }
+
   close(): void {
     this.db.close()
   }
@@ -507,6 +632,34 @@ function mapStorybookState(row: Record<string, unknown>): StoredStorybookState {
   const state: StoredStorybookState = {
     id: row["id"] as string,
     status: row["status"] as StoredStorybookStatus,
+    startedAt: row["started_at"] as number,
+    updatedAt: row["updated_at"] as number,
+    logs: JSON.parse(row["logs_json"] as string),
+  }
+  const error = nullableString(row["error"])
+  if (error) state.error = error
+  return state
+}
+
+function mapRun(row: Record<string, unknown>): StoredRunEntry {
+  return {
+    id: row["id"] as string,
+    workspaceId: row["workspace_id"] as string,
+    targetId: row["target_id"] as string,
+    pid: row["pid"] as number,
+    port: row["port"] as number,
+    url: row["url"] as string,
+    cwd: row["cwd"] as string,
+    startedAt: row["started_at"] as number,
+  }
+}
+
+function mapRunState(row: Record<string, unknown>): StoredRunState {
+  const state: StoredRunState = {
+    id: row["id"] as string,
+    workspaceId: row["workspace_id"] as string,
+    targetId: row["target_id"] as string,
+    status: row["status"] as StoredRunStatus,
     startedAt: row["started_at"] as number,
     updatedAt: row["updated_at"] as number,
     logs: JSON.parse(row["logs_json"] as string),

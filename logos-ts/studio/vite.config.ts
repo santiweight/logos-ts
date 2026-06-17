@@ -7,6 +7,7 @@ import { dirname, resolve, join, relative, sep } from "node:path"
 import type { StudioIndex } from "../src/build-index"
 import { authPlugin } from "./server/auth"
 import { storybookProxyPlugin } from "./server/storybook-proxy"
+import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -38,6 +39,7 @@ type StudioRuntime = {
   studioPortFile: string
   indexReady: Promise<StudioIndex>
   sbManager: import("../src/storybook-manager").StorybookManager
+  runManager: import("../src/run-manager").RunManager
   wsMgr: import("../src/workspace-manager").WorkspaceManager
   portableStories: import("../src/portable-stories").PortableStoryResolver
 }
@@ -80,6 +82,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   const [
     { detectProject },
     { StorybookManager },
+    { RunManager },
     { WorkspaceManager },
     { ClaudeSessionManager },
     { LogosRuntimeStore },
@@ -88,6 +91,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   ] = await Promise.all([
     import("../src/detect-project"),
     import("../src/storybook-manager"),
+    import("../src/run-manager"),
     import("../src/workspace-manager"),
     import("../src/claude-session-manager"),
     import("../src/runtime-store"),
@@ -102,6 +106,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   console.log(`[logos] demo: ${demoId}`)
   console.log(`[logos] project: ${caps.root}`)
   console.log(`[logos] storybook: ${caps.storybook ? caps.storybook.configDir : "not found"}`)
+  console.log(`[logos] runs: ${caps.runs.length ? caps.runs.map((run) => run.label).join(", ") : "not found"}`)
   console.log(`[logos] tests: ${caps.tests ? caps.tests.command.join(" ") : "not found"}`)
   const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
   const studioPortFile = resolve(projectRoot, ".logos", "studio-port")
@@ -120,6 +125,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   })
 
   const sbManager = new StorybookManager(runtimeStore, resolve(LOGOS_TS, "src"), projectRoot)
+  const runManager = new RunManager(runtimeStore, projectRoot)
 
   const sessionMgr = new ClaudeSessionManager(runtimeStore)
 
@@ -132,6 +138,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     sourceProjectRoot: sourceProject,
     caps,
     sbManager,
+    runManager,
     sessions: sessionMgr,
     tsx,
     getIndex: () => indexReady,
@@ -146,7 +153,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     },
   })
 
-  return { demoId, sourceProject, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, wsMgr, portableStories }
+  return { demoId, sourceProject, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, runManager, wsMgr, portableStories }
 }
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
@@ -168,6 +175,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         studioPortFile: STUDIO_PORT_FILE,
         indexReady,
         sbManager,
+        runManager,
         wsMgr,
       } = runtime
 
@@ -209,6 +217,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
           setTimeout(() => {
             try { runtime.wsMgr.abortAll() } catch {}
             try { runtime.sbManager.shutdownAll() } catch {}
+            try { runtime.runManager.shutdownAll() } catch {}
             void (server as { restart?: () => Promise<void> }).restart?.()
           }, 50)
           return
@@ -296,6 +305,25 @@ function studioApi(runtime: StudioRuntime): Plugin {
         res.end(JSON.stringify({ urls, states, entries }))
       })
 
+      server.middlewares.use("/api/run-targets", (_req, res) => {
+        res.setHeader("content-type", "application/json")
+        res.end(JSON.stringify({ targets: caps.runs }))
+      })
+
+      server.middlewares.use("/api/runs", (_req, res) => {
+        res.setHeader("content-type", "application/json")
+        for (const ws of wsMgr.list()) {
+          for (const target of caps.runs) runManager.get(ws.id, target.id)
+        }
+        const entries = runManager.all()
+        const states = runManager.allStates()
+        const urls: Record<string, string> = {}
+        for (const entry of Object.values(entries)) {
+          urls[entry.id] = publicRunUrl(entry.workspaceId, entry.targetId)
+        }
+        res.end(JSON.stringify({ urls, states, entries }))
+      })
+
       server.middlewares.use("/api/workspace-policy-events", (req, res) => {
         res.setHeader("content-type", "application/json")
         if (req.method !== "GET") {
@@ -364,6 +392,20 @@ function studioApi(runtime: StudioRuntime): Plugin {
             console.error(`[logos] storybook for ${wsId} failed to start:`, e.message)
           })
           res.end(JSON.stringify({ ok: true, state: sbManager.state(wsId) }))
+          return
+        }
+
+        // POST /api/workspaces/:id/runs/:targetId — start or restart a run target
+        const runMatch = sub.match(/^(.+)\/runs\/([^/]+)$/)
+        if (req.method === "POST" && runMatch?.[1] && runMatch[2]) {
+          const wsId = runMatch[1]
+          const targetId = decodeURIComponent(runMatch[2])
+          const body = JSON.parse((await readBody(req)) || "{}") as { restart?: boolean }
+          if (!wsMgr.get(wsId)) { res.statusCode = 404; res.end(JSON.stringify({ error: "workspace not found" })); return }
+          wsMgr.ensureRun(wsId, targetId, { restart: body.restart === true }).catch((e: any) => {
+            console.error(`[logos] run ${targetId} for ${wsId} failed to start:`, e.message)
+          })
+          res.end(JSON.stringify({ ok: true, state: runManager.state(wsId, targetId) }))
           return
         }
 
@@ -620,22 +662,29 @@ function workspaceAliasPlugin(runtime: StudioRuntime): Plugin {
 
 function autoStorybook(runtime: StudioRuntime): Plugin {
   return {
-    name: "auto-storybook",
+    name: "auto-workspace-runtimes",
     configureServer() {
-      const { caps, sbManager, wsMgr } = runtime
+      const { caps, sbManager, runManager, wsMgr } = runtime
       sbManager.cleanupAll()
+      runManager.cleanupAll()
       // Ensure Storybooks are running for all existing workspaces
       for (const wsMeta of wsMgr.list()) {
+        const ws = wsMgr.get(wsMeta.id)
+        if (!ws) continue
         if (!sbManager.get(wsMeta.id) && caps.storybook) {
-          const ws = wsMgr.get(wsMeta.id)
-          if (!ws) continue
           const wsFrontend = join(ws.forkDir, relative(runtime.projectRoot, caps.storybook.frontendDir))
           sbManager.ensure(wsMeta.id, wsFrontend).catch((e: any) =>
             console.error(`[storybook-mgr] failed to restart ${wsMeta.id}:`, e.message)
           )
         }
+        for (const target of caps.runs) {
+          if (runManager.get(wsMeta.id, target.id)) continue
+          runManager.ensure(wsMeta.id, ws.forkDir, target).catch((e: any) =>
+            console.error(`[run-mgr] failed to restart ${wsMeta.id}:${target.id}:`, e.message)
+          )
+        }
       }
-      const cleanup = () => { wsMgr.abortAll(); sbManager.shutdownAll() }
+      const cleanup = () => { wsMgr.abortAll(); sbManager.shutdownAll(); runManager.shutdownAll() }
       process.on("exit", cleanup)
       process.on("SIGINT", () => { cleanup(); process.exit() })
       process.on("SIGTERM", () => { cleanup(); process.exit() })
@@ -656,7 +705,7 @@ export default defineConfig(async ({ command }) => {
   return {
     cacheDir: process.env.LOGOS_VITE_CACHE_DIR || undefined,
     plugins: runtime
-      ? [authPlugin(), workspaceAliasPlugin(runtime), portableStoriesPlugin(runtime), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), autoStorybook(runtime)]
+      ? [authPlugin(), workspaceAliasPlugin(runtime), portableStoriesPlugin(runtime), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), runProxyPlugin(runtime.runManager), autoStorybook(runtime)]
       : [react()],
     server: {
       // Bind a concrete address: the default "localhost" can end up IPv6-only,

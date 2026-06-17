@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unnecessary-condition, no-restricted-syntax */
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { SidebarTree } from "./SidebarTree"
-import { ContentPanel } from "./ContentPanel"
+import { ContentPanel, RunView } from "./ContentPanel"
 import { CommentPopup } from "./CommentPopup"
 import { ChangesRail } from "./ChangesRail"
 import { ICONS, svgIcon } from "./icons"
@@ -16,6 +16,8 @@ import type {
   ComponentEntry,
   DiffStatus,
   FileEntry,
+  RunState,
+  RunTarget,
   SbState,
   Selection,
   StudioIndex,
@@ -98,6 +100,9 @@ export function App() {
   const [storybookStates, setStorybookStates] = useState<Record<string, SbState>>({})
   const [storyCommentEditing, setStoryCommentEditing] = useState<Record<string, boolean>>({})
   const [storyCommentDrafts, setStoryCommentDrafts] = useState<Record<string, unknown>>({})
+  const [runTargets, setRunTargets] = useState<RunTarget[]>([])
+  const [runUrls, setRunUrls] = useState<Record<string, string>>({})
+  const [runStates, setRunStates] = useState<Record<string, RunState>>({})
   const refreshStorybooks = useCallback(async () => {
     try {
       const res = await fetch("/api/storybooks")
@@ -122,6 +127,50 @@ export function App() {
     } catch {}
     refreshStorybooks()
   }, [activeWorkspaceId, refreshStorybooks])
+  const refreshRunTargets = useCallback(async () => {
+    try {
+      const res = await fetch("/api/run-targets")
+      if (res.ok) {
+        const data = await res.json() as { targets: RunTarget[] }
+        setRunTargets(data.targets)
+      }
+    } catch {}
+  }, [])
+  const refreshRuns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/runs")
+      if (res.ok) {
+        const data = await res.json() as { urls: Record<string, string>; states: Record<string, RunState> }
+        setRunUrls(data.urls)
+        setRunStates(data.states)
+      }
+    } catch {}
+  }, [])
+  const runKey = useCallback((targetId: string) => (
+    activeWorkspaceId ? `${activeWorkspaceId}:${targetId}` : ""
+  ), [activeWorkspaceId])
+  const runTarget = selection.view === "run" && selection.runTargetId
+    ? runTargets.find((target) => target.id === selection.runTargetId) ?? null
+    : null
+  const activeRunUrl = runTarget ? runUrls[runKey(runTarget.id)] ?? "" : ""
+  const activeRunState = runTarget ? runStates[runKey(runTarget.id)] ?? null : null
+  const activeRunStatesByTarget = useMemo(() => {
+    const out: Record<string, RunState | undefined> = {}
+    if (!activeWorkspaceId) return out
+    for (const target of runTargets) out[target.id] = runStates[`${activeWorkspaceId}:${target.id}`]
+    return out
+  }, [activeWorkspaceId, runTargets, runStates])
+  const startRun = useCallback(async (targetId: string, restart = false) => {
+    if (!activeWorkspaceId) return
+    try {
+      await fetch(`/api/workspaces/${activeWorkspaceId}/runs/${encodeURIComponent(targetId)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ restart }),
+      })
+    } catch {}
+    refreshRuns()
+  }, [activeWorkspaceId, refreshRuns])
 
   const diff = useMemo(() => {
     if (!activeWorkspaceId || !workspaceIndex) return {}
@@ -274,7 +323,7 @@ export function App() {
     if (bootedRef.current) return
     bootedRef.current = true
     ;(async () => {
-      await Promise.all([refresh(), refreshTests(), refreshStorybooks(), refreshDemos()])
+      await Promise.all([refresh(), refreshTests(), refreshStorybooks(), refreshRunTargets(), refreshRuns(), refreshDemos()])
       const wsRes = await fetch("/api/workspaces").catch(() => null)
       const wsList = wsRes?.ok ? ((await wsRes.json()) as WorkspaceMeta[]) : []
       setWorkspaces(wsList)
@@ -286,7 +335,7 @@ export function App() {
         await createWorkspace()
       }
     })()
-    const iv = setInterval(() => { refreshTests(); refreshStorybooks() }, 2_000)
+    const iv = setInterval(() => { refreshTests(); refreshStorybooks(); refreshRuns() }, 2_000)
     return () => clearInterval(iv)
   }, [])
 
@@ -398,7 +447,7 @@ export function App() {
             es.close()
             esRefs.current.delete(goalId)
             setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-            Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks()]).then(() => openWorkspace(wsId))
+            Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => openWorkspace(wsId))
           }
         }
         es.onerror = () => {
@@ -418,12 +467,12 @@ export function App() {
             [goalId]: [...(prev[goalId] ?? []), { type: "error", message: "agent stream disconnected" }],
           }))
           setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-          Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks()]).then(() => openWorkspace(wsId))
+          Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => openWorkspace(wsId))
         }
       }
       openStream(0)
     },
-    [refreshWorkspaces, refreshTests, refreshStorybooks, openWorkspace]
+    [refreshWorkspaces, refreshTests, refreshStorybooks, refreshRuns, openWorkspace]
   )
   const closeAgent = useCallback(() => setAgentOpen(false), [])
 
@@ -457,11 +506,11 @@ export function App() {
         setActiveWorkspaceId(ws.id)
         setSelection({ file: ws.index.files[0]?.file ?? "", view: "code" })
       }
-      await Promise.all([refreshTests(), refreshStorybooks()])
+      await Promise.all([refreshTests(), refreshStorybooks(), refreshRuns()])
     } finally {
       setBusy(null)
     }
-  }, [refreshTests, refreshStorybooks])
+  }, [refreshTests, refreshStorybooks, refreshRuns])
 
   // Poll workspace index while agent is running
   useEffect(() => {
@@ -817,6 +866,9 @@ export function App() {
           onComment={openComment}
           diff={diff}
           testState={testState}
+          runTargets={runTargets}
+          runStates={activeRunStatesByTarget}
+          onRun={startRun}
           showFunctions={sidebarFilters.functions}
           showClasses={sidebarFilters.classes}
           showComponents={sidebarFilters.components}
@@ -840,6 +892,13 @@ export function App() {
               storybookUrl={activeStorybookUrl}
               storybookState={activeStorybookState}
               onRetryStorybook={retryStorybook}
+            />
+          ) : selection.view === "run" ? (
+            <RunView
+              target={runTarget}
+              runUrl={activeRunUrl}
+              runState={activeRunState}
+              onRun={startRun}
             />
           ) : currentFile ? (
             <ContentPanel

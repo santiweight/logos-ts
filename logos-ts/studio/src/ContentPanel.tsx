@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { GraphView } from "./GraphView"
-import type { ComponentEntry, GoalApi, DiffStatus, FileEntry, FileItem, SbState, Selection, View } from "./types"
+import type { ComponentEntry, GoalApi, DiffStatus, FileEntry, FileItem, RunState, RunTarget, SbState, Selection, View } from "./types"
 
 export type StoryRenderer = "portable" | "storybook"
 
@@ -378,6 +378,82 @@ function StoryView({
   )
 }
 
+export function RunView({
+  target,
+  runUrl,
+  runState,
+  onRun,
+}: {
+  target: RunTarget | null
+  runUrl: string
+  runState: RunState | null
+  onRun: ((targetId: string, restart?: boolean) => void) | null
+}) {
+  const logsEndRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [runState?.logs.length])
+
+  const shouldAutoStart = !!target && !!onRun && !runUrl && !runState
+  useEffect(() => {
+    if (shouldAutoStart && target) onRun(target.id)
+  }, [shouldAutoStart, target, onRun])
+
+  if (!target) return <div className="empty">No run selected.</div>
+
+  if (!runUrl) {
+    if (runState?.status === "failed") {
+      return (
+        <div className="sb-startup">
+          <div className="sb-startup-header sb-failed">{target.label} failed to start</div>
+          {runState.error && <div className="sb-startup-error">{runState.error}</div>}
+          {onRun && (
+            <button className="sb-retry-btn" onClick={() => onRun(target.id)}>▶ Play</button>
+          )}
+          {runState.logs.length > 0 && (
+            <pre className="sb-startup-logs">
+              {runState.logs.join("\n")}
+              <div ref={logsEndRef} />
+            </pre>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div className="sb-startup">
+        <div className="sb-startup-header">
+          <span className="ag-spin">⟳</span>{" "}
+          Starting {target.label}
+          {runState?.startedAt && <> (<Elapsed since={runState.startedAt} />)</>}
+          ...
+        </div>
+        {runState?.logs && runState.logs.length > 0 && (
+          <pre className="sb-startup-logs">
+            {runState.logs.join("\n")}
+            <div ref={logsEndRef} />
+          </pre>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="pane">
+      <div className="pane-path">
+        <span>⟨run⟩ {target.label}</span>
+        {onRun && (
+          <button className="sb-retry-btn" onClick={() => onRun(target.id, true)}>↻ Restart</button>
+        )}
+      </div>
+      <iframe className="story-frame" src={runUrl} title={target.label} />
+      <div className="hint">
+        Running from {target.cwd} with hot reload when the underlying dev server supports it.
+      </div>
+    </div>
+  )
+}
+
 function useDeferredString(value: string, defer: boolean): string {
   const [committedValue, setCommittedValue] = useState(value)
   useEffect(() => {
@@ -485,4 +561,3 @@ function SnapshotIframe({
     />
   )
 }
-

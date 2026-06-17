@@ -20,6 +20,7 @@ import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 import type { StorybookManager } from "./storybook-manager.js"
+import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
 import type {
@@ -128,6 +129,14 @@ export interface AgentEvent {
 
 type AgentEventCallback = (event: AgentEvent) => void
 type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
+type RunManagerLike = Pick<RunManager, "ensure" | "restart" | "shutdownWorkspace" | "shutdownAll">
+
+const noopRunManager: RunManagerLike = {
+  ensure: () => Promise.resolve(""),
+  restart: () => Promise.resolve(""),
+  shutdownWorkspace: () => {},
+  shutdownAll: () => {},
+}
 
 function extractAgentSummary(events: AgentEvent[]): string | null {
   for (let i = events.length - 1; i >= 0; i--) {
@@ -151,6 +160,7 @@ interface ProjectCaps {
   root: string
   storybook?: { configDir: string; frontendDir: string }
   tests?: { command: string[]; watchDirs: string[] }
+  runs?: { id: string; label: string; cwd: string; command: string; args: string[] }[]
   nodeModulesDirs: string[]
 }
 
@@ -181,6 +191,7 @@ export class WorkspaceManager {
   private sourceProjectRoot: string
   private caps: ProjectCaps
   private sbManager: StorybookManager
+  private runManager: RunManagerLike
   private sessions: ClaudeSessionManager
   private tsx: string
   private getIndex: (() => Promise<unknown>) | null
@@ -196,6 +207,7 @@ export class WorkspaceManager {
     sourceProjectRoot?: string
     caps: ProjectCaps
     sbManager: StorybookManager
+    runManager?: RunManager
     sessions: ClaudeSessionManager
     tsx: string
     getIndex?: () => Promise<unknown>
@@ -209,6 +221,7 @@ export class WorkspaceManager {
     this.sourceProjectRoot = opts.sourceProjectRoot ?? opts.projectRoot
     this.caps = opts.caps
     this.sbManager = opts.sbManager
+    this.runManager = opts.runManager ?? noopRunManager
     this.sessions = opts.sessions
     this.tsx = opts.tsx
     this.getIndex = opts.getIndex ?? null
@@ -628,6 +641,7 @@ export class WorkspaceManager {
         console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
       })
     }
+    this.startRuns(id, instance.materializedRoot)
 
     return this.toMeta(ws)
   }
@@ -645,6 +659,25 @@ export class WorkspaceManager {
     return this.startStorybook(wsId, this.activeInstance(ws).materializedRoot)
   }
 
+  private startRuns(id: string, forkDir: string): void {
+    for (const target of this.caps.runs ?? []) {
+      this.runManager.ensure(id, forkDir, target).catch((e: any) => {
+        console.error(`[workspace] run ${target.id} for ${id} failed to start:`, e.message)
+      })
+    }
+  }
+
+  ensureRun(wsId: string, targetId: string, opts?: { restart?: boolean }): Promise<string> {
+    const ws = this.workspaces.get(wsId)
+    if (!ws) return Promise.reject(new Error("no such workspace"))
+    const target = (this.caps.runs ?? []).find((candidate) => candidate.id === targetId)
+    if (!target) return Promise.reject(new Error("run target not found"))
+    const root = this.activeInstance(ws).materializedRoot
+    return opts?.restart
+      ? this.runManager.restart(wsId, root, target)
+      : this.runManager.ensure(wsId, root, target)
+  }
+
   delete(id: string): void {
     const ws = this.workspaces.get(id)
     if (!ws) return
@@ -659,6 +692,7 @@ export class WorkspaceManager {
 
     // Shutdown workspace storybook
     this.sbManager.shutdown(id)
+    this.runManager.shutdownWorkspace(id)
 
     // Remove sessions
     this.sessions.deleteByWorkspace(id)
@@ -679,6 +713,7 @@ export class WorkspaceManager {
       this.delete(id)
     }
     this.sbManager.shutdownAll()
+    this.runManager.shutdownAll()
     this.sessions.deleteAll()
     rmSync(this.runsDir, { recursive: true, force: true })
     mkdirSync(this.runsDir, { recursive: true })
@@ -1038,11 +1073,13 @@ export class WorkspaceManager {
       if (code === 0) {
         ws.activeInstanceId = workingInst.id
         this.sbManager.shutdown(ws.id)
+        this.runManager.shutdownWorkspace(ws.id)
         if (this.caps.storybook) {
           this.startStorybook(ws.id, workingInst.materializedRoot).catch((e: any) => {
             console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
           })
         }
+        this.startRuns(ws.id, workingInst.materializedRoot)
       }
       const summary = extractAgentSummary(collectedEvents)
       if (summary) {

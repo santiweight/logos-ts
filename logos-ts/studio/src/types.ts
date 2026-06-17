@@ -58,7 +58,7 @@ export interface StudioIndex {
   files: FileEntry[]
 }
 
-export type View = "code" | "arch" | "story"
+export type View = "code" | "arch" | "story" | "run"
 
 export interface Selection {
   file: string
@@ -67,6 +67,7 @@ export interface Selection {
   view: View
   storyId?: string
   exportName?: string
+  runTargetId?: string
 }
 
 export interface GoalReply {
@@ -130,6 +131,24 @@ export interface TestState {
 }
 
 export interface SbState {
+  status: "starting" | "ready" | "failed"
+  startedAt: number
+  logs: string[]
+  error?: string
+}
+
+export interface RunTarget {
+  id: string
+  label: string
+  cwd: string
+  command: string
+  args: string[]
+}
+
+export interface RunState {
+  id: string
+  workspaceId: string
+  targetId: string
   status: "starting" | "ready" | "failed"
   startedAt: number
   logs: string[]

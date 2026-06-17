@@ -8,12 +8,14 @@ import type {
   DiffStatus,
   FileEntry,
   FileItem,
+  RunState,
+  RunTarget,
   Selection,
   TestState,
   View,
 } from "./types"
 
-type Kind = "dir" | "file" | "fn" | "cls" | "comp" | "story" | "section"
+type Kind = "dir" | "file" | "fn" | "cls" | "comp" | "story" | "section" | "run"
 
 interface SNode {
   id: string
@@ -28,6 +30,8 @@ interface SNode {
   testStatus?: "pass" | "fail"
   fns?: number
   stories?: number
+  runStatus?: RunState["status"] | "stopped"
+  runTargetId?: string
   sel?: Selection
 }
 
@@ -39,6 +43,9 @@ interface Props {
   onComment: (target: string, label: string, x: number, y: number) => void
   diff: Record<string, DiffStatus>
   testState: TestState | null
+  runTargets?: RunTarget[]
+  runStates?: Record<string, RunState | undefined>
+  onRun?: (targetId: string, restart?: boolean) => void
   showFunctions?: boolean
   showClasses?: boolean
   showComponents?: boolean
@@ -49,12 +56,14 @@ interface Ctx {
   testsRunning: boolean
   onComment: Props["onComment"]
   onSelect: Props["onSelect"]
+  onRun: NonNullable<Props["onRun"]>
 }
 const SidebarCtx = createContext<Ctx>({
   selectedId: null,
   testsRunning: false,
   onComment: () => {},
   onSelect: () => {},
+  onRun: () => {},
 })
 
 const testsOf = (it: FileItem): number =>
@@ -96,6 +105,8 @@ export function buildData(
   diff: Record<string, DiffStatus>,
   comments: Props["comments"],
   failingTests: Set<string> | null,
+  runTargets: RunTarget[],
+  runStates: Record<string, RunState | undefined>,
   showFunctions: boolean,
   showClasses: boolean,
   showComponents: boolean
@@ -322,7 +333,19 @@ export function buildData(
     return out
   }
 
-  return { data: dirNodes(root, ""), openIds }
+  const runNodes: SNode[] = runTargets.map((target) => {
+    const state = runStates[target.id]
+    return {
+      id: `run:${target.id}`,
+      name: target.label,
+      kind: "run",
+      runTargetId: target.id,
+      runStatus: state?.status ?? "stopped",
+      sel: { file: "", view: "run", runTargetId: target.id },
+    }
+  })
+
+  return { data: [...runNodes, ...dirNodes(root, "")], openIds }
 }
 
 const GLYPH: Record<Kind, ReactNode> = {
@@ -333,11 +356,12 @@ const GLYPH: Record<Kind, ReactNode> = {
   comp: ICONS.comp,
   story: ICONS.story,
   section: "§",
+  run: "▶",
 }
 
 function Node({ node, style }: NodeRendererProps<SNode>) {
   const d = node.data
-  const { selectedId, testsRunning, onComment, onSelect } = useContext(SidebarCtx)
+  const { selectedId, testsRunning, onComment, onSelect, onRun } = useContext(SidebarCtx)
   const isActive = selectedId === d.id
   const showDot = d.testStatus && (node.isLeaf || !node.isOpen)
 
@@ -349,6 +373,9 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
       return
     }
     if (d.sel) onSelect(d.sel)
+    if (d.kind === "run" && d.runTargetId && d.runStatus !== "ready" && d.runStatus !== "starting") {
+      onRun(d.runTargetId)
+    }
     if (!node.isLeaf) node.toggle()
   }
 
@@ -384,6 +411,19 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
         </span>
       ) : null}
       {!showDot && d.tests ? <span className="count ok">✓{d.tests}</span> : null}
+      {d.kind === "run" && d.runTargetId ? (
+        <button
+          className={`run-tree-btn ${d.runStatus ?? "stopped"}`}
+          title={d.runStatus === "ready" ? "Restart" : "Play"}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onRun(d.runTargetId!, d.runStatus === "ready")
+          }}
+        >
+          {d.runStatus === "starting" ? "⟳" : d.runStatus === "ready" ? "↻" : "▶"}
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -418,6 +458,9 @@ export function SidebarTree({
   onComment,
   diff,
   testState,
+  runTargets = [],
+  runStates = {},
+  onRun = () => {},
   showFunctions = true,
   showClasses = true,
   showComponents = true,
@@ -431,11 +474,13 @@ export function SidebarTree({
     return set
   }, [results])
   const { data, openIds } = useMemo(
-    () => buildData(files, diff, comments, failingTests, showFunctions, showClasses, showComponents),
-    [files, diff, comments, failingTests, showFunctions, showClasses, showComponents]
+    () => buildData(files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents),
+    [files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents]
   )
 
-  const selectedId = selection.symbol
+  const selectedId = selection.view === "run" && selection.runTargetId
+    ? `run:${selection.runTargetId}`
+    : selection.symbol
     ? `sym:${selection.file}:${selection.symbol}`
     : selection.view === "story"
       ? `story:${selection.storyId}`
@@ -456,8 +501,8 @@ export function SidebarTree({
         })()
 
   const ctx = useMemo<Ctx>(
-    () => ({ selectedId, testsRunning, onComment, onSelect }),
-    [selectedId, testsRunning, onComment, onSelect]
+    () => ({ selectedId, testsRunning, onComment, onSelect, onRun }),
+    [selectedId, testsRunning, onComment, onSelect, onRun]
   )
 
   const [ref, size] = useSize()
@@ -466,7 +511,7 @@ export function SidebarTree({
     <SidebarCtx.Provider value={ctx}>
       <div className="sidebar-tree" ref={ref}>
         <Tree<SNode>
-          key={`${showFunctions ? "fn" : ""}:${showClasses ? "cls" : ""}:${showComponents ? "comp" : ""}:${files.map(f => f.file).join("\0")}`}
+          key={`${showFunctions ? "fn" : ""}:${showClasses ? "cls" : ""}:${showComponents ? "comp" : ""}:${runTargets.map(t => `${t.id}:${runStates[t.id]?.status ?? "stopped"}`).join("\0")}:${files.map(f => f.file).join("\0")}`}
           data={data}
           idAccessor="id"
           openByDefault={false}
