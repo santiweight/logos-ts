@@ -45,7 +45,7 @@ function createProject(): string {
     "const port = Number(valueAfter('--port', process.env.PORT || '0'))",
     "const base = valueAfter('--base', '/')",
     "const server = http.createServer((req, res) => {",
-    "  if (req.url === `${base}env`) {",
+    "  if (req.url === `${base}env` || req.url === '/api/env') {",
     "    res.writeHead(200, { 'content-type': 'application/json' })",
     "    res.end(JSON.stringify({ LOGOS_PROJECT: process.env.LOGOS_PROJECT || null, LOGOS_RUN_BASE: process.env.LOGOS_RUN_BASE || null }))",
     "    return",
@@ -55,7 +55,7 @@ function createProject(): string {
     "    res.end('outside base')",
     "    return",
     "  }",
-    "  const html = '<!doctype html><title>fake run</title><main>fake run app</main>'",
+    "  const html = `<!doctype html><title>fake run</title><main>fake run app</main><script>fetch('/api/env').then((res)=>res.json()).then((data)=>{document.body.dataset.apiRunBase=data.LOGOS_RUN_BASE||''}).catch(()=>{document.body.dataset.apiRunBase='failed'})</script>`",
     "  const acceptsGzip = req.headers['accept-encoding'] && req.headers['accept-encoding'].includes('gzip')",
     "  if (acceptsGzip && req.headers['accept-encoding'] !== 'identity') {",
     "    res.writeHead(200, { 'content-type': 'text/html', 'content-encoding': 'gzip' })",
@@ -256,6 +256,15 @@ describe("workspace + run integration", () => {
       )
       expect(await page.locator("iframe.story-frame[title='App']").getAttribute("src"))
         .toBe(`/runs/${encodeURIComponent(wsId)}/root-app/`)
+      const frame = page.frame({ url: (url) => url.toString().includes(`/runs/${wsId}/root-app/`) })
+      expect(frame).not.toBeNull()
+      await frame!.waitForFunction(
+        () => document.body.dataset.apiRunBase != null,
+        null,
+        { timeout: 30_000 },
+      )
+      expect(await frame!.evaluate(() => document.body.dataset.apiRunBase))
+        .toBe(`/runs/${wsId}/root-app/`)
       expect(await page.evaluate(() => window.localStorage.getItem("logos:selection:v1")))
         .toContain("\"view\":\"run\"")
     } finally {

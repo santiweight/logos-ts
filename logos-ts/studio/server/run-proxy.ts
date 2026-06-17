@@ -11,6 +11,7 @@ interface ProxyTarget {
   framework: "vite" | "next"
   path: string
   url: URL
+  fromReferer: boolean
 }
 
 function proxyTarget(req: IncomingMessage, manager: RunManager): ProxyTarget | null {
@@ -36,6 +37,7 @@ function proxyTarget(req: IncomingMessage, manager: RunManager): ProxyTarget | n
     framework: entry.framework,
     path: routeThroughAppRoot ? scopedPath : `${url.pathname}${url.search}`,
     url: new URL(entry.url),
+    fromReferer: false,
   }
 }
 
@@ -47,7 +49,7 @@ function isOwnRunBaseRequest(req: IncomingMessage): boolean {
 }
 
 function refererProxyTarget(req: IncomingMessage, url: URL, manager: RunManager): ProxyTarget | null {
-  if (!isFrameworkAbsolutePath(url.pathname)) return null
+  if (!isRefererProxyPath(url.pathname)) return null
   const rawReferer = req.headers.referer
   if (typeof rawReferer !== "string") return null
   const referer = new URL(rawReferer, "http://logos.local")
@@ -71,15 +73,12 @@ function refererProxyTarget(req: IncomingMessage, url: URL, manager: RunManager)
     framework: entry.framework,
     path: `${url.pathname}${url.search}`,
     url: new URL(entry.url),
+    fromReferer: true,
   }
 }
 
-function isFrameworkAbsolutePath(pathname: string): boolean {
-  return pathname.startsWith("/_next/") ||
-    pathname.startsWith("/__nextjs") ||
-    pathname === "/favicon.ico" ||
-    pathname === "/robots.txt" ||
-    pathname === "/manifest.webmanifest"
+function isRefererProxyPath(pathname: string): boolean {
+  return !pathname.startsWith("/runs/") && !pathname.startsWith("/storybooks/")
 }
 
 function upstreamHeaders(req: IncomingMessage, target: URL): OutgoingHttpHeaders {
@@ -94,65 +93,6 @@ export function publicRunUrl(workspaceId: string, targetId: string): string {
   return `/runs/${encodeURIComponent(workspaceId)}/${encodeURIComponent(targetId)}/`
 }
 
-function rewriteRunHtml(html: string, target: ProxyTarget): string {
-  const base = publicRunUrl(target.workspaceId, target.targetId)
-  const script = `<script>
-(() => {
-  const base = ${JSON.stringify(base)};
-  const shouldRewriteNavigation = (value) => (
-    typeof value === "string" &&
-    value.startsWith("/") &&
-    !value.startsWith(base) &&
-    !value.startsWith("/_next/") &&
-    !value.startsWith("/__nextjs")
-  );
-  const rewrite = (value) => {
-    if (typeof value === "string" && (value.startsWith("/api") || value.startsWith("/ws"))) return base + value.slice(1);
-    if (value instanceof URL && value.origin === window.location.origin && (value.pathname.startsWith("/api") || value.pathname.startsWith("/ws"))) {
-      return new URL(base + value.pathname.slice(1) + value.search + value.hash, window.location.origin);
-    }
-    return value;
-  };
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = (input, init) => {
-    if (input instanceof Request) {
-      const next = rewrite(new URL(input.url));
-      if (next !== input.url && next instanceof URL) input = new Request(next, input);
-    } else {
-      input = rewrite(input);
-    }
-    return originalFetch(input, init);
-  };
-  const originalOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-    return originalOpen.call(this, method, rewrite(url), ...rest);
-  };
-  const OriginalWebSocket = window.WebSocket;
-  window.WebSocket = function(url, protocols) {
-    const next = rewrite(url);
-    return protocols == null ? new OriginalWebSocket(next) : new OriginalWebSocket(next, protocols);
-  };
-  window.WebSocket.prototype = OriginalWebSocket.prototype;
-  Object.defineProperty(window.WebSocket, "OPEN", { value: OriginalWebSocket.OPEN });
-  Object.defineProperty(window.WebSocket, "CONNECTING", { value: OriginalWebSocket.CONNECTING });
-  Object.defineProperty(window.WebSocket, "CLOSING", { value: OriginalWebSocket.CLOSING });
-  Object.defineProperty(window.WebSocket, "CLOSED", { value: OriginalWebSocket.CLOSED });
-  document.addEventListener("click", (event) => {
-    if (event.defaultPrevented || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
-    const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
-    if (!target || (target.target && target.target !== "_self")) return;
-    const href = target.getAttribute("href");
-    if (!shouldRewriteNavigation(href)) return;
-    event.preventDefault();
-    window.location.href = base + href.slice(1);
-  }, true);
-})();
-</script>`
-  return html.includes("<head>")
-    ? html.replace("<head>", `<head>${script}`)
-    : `${script}${html}`
-}
-
 function rewriteLocationHeader(location: string, target: ProxyTarget): string {
   const base = publicRunUrl(target.workspaceId, target.targetId)
   if (location.startsWith(target.url.origin)) return location.replace(target.url.origin, base)
@@ -160,6 +100,18 @@ function rewriteLocationHeader(location: string, target: ProxyTarget): string {
     return `${base}${location.slice(1)}`
   }
   return location
+}
+
+function isDocumentNavigation(req: IncomingMessage): boolean {
+  const destination = req.headers["sec-fetch-dest"]
+  if (destination === "document") return true
+  const accept = req.headers.accept
+  return typeof accept === "string" && accept.includes("text/html")
+}
+
+function runScopedRedirect(target: ProxyTarget, reqUrl: string): string {
+  const url = new URL(reqUrl || "/", "http://logos.local")
+  return `${publicRunUrl(target.workspaceId, target.targetId)}${url.pathname.replace(/^\//, "")}${url.search}`
 }
 
 export function runProxyPlugin(manager: RunManager): Plugin {
@@ -214,6 +166,12 @@ export function runProxyPlugin(manager: RunManager): Plugin {
           next()
           return
         }
+        if (target.fromReferer && isDocumentNavigation(req)) {
+          res.statusCode = 302
+          res.setHeader("location", runScopedRedirect(target, req.url || "/"))
+          res.end()
+          return
+        }
 
         const proxyReq = httpRequest({
           hostname: target.url.hostname,
@@ -245,7 +203,7 @@ export function runProxyPlugin(manager: RunManager): Plugin {
           const chunks: Buffer[] = []
           proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk))
           proxyRes.on("end", () => {
-            res.end(rewriteRunHtml(Buffer.concat(chunks).toString("utf8"), target))
+            res.end(Buffer.concat(chunks).toString("utf8"))
           })
         })
         proxyReq.on("error", (error) => {
