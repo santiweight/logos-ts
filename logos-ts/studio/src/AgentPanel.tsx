@@ -69,7 +69,7 @@ function Line({ m }: { m: AgentMsg }) {
 
 function statusIcon(goal: Goal | null, running: boolean): string {
   if (running) return ""
-  if (!goal) return "●"
+  if (!goal) return ""
   switch (goal.status) {
     case "done": return "✓"
     case "error": return "✗"
@@ -109,7 +109,6 @@ export function AgentPanel({
         <span className={statusClass(goal)}>
           {running ? <span className="ag-spin">⟳</span> : statusIcon(goal, running)}{" "}
           {heading}
-          {goal && <span className={`cmode ${goal.mode}`}>{goal.mode}</span>}
         </span>
         <button className="agent-close" onClick={onClose}>
           ✕
