@@ -147,6 +147,7 @@ export interface AgentEvent {
 
 type AgentEventCallback = (event: AgentEvent) => void
 type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
+const INDEX_MAX_BUFFER = 64 * 1024 * 1024
 
 function indexComponents(file: { component?: { captured?: unknown[] }; components?: { captured?: unknown[] }[] }): { captured?: unknown[] }[] {
   return file.components?.length ? file.components : file.component ? [file.component] : []
@@ -203,6 +204,11 @@ function architectureTextFromIndex(index: unknown): string {
     lines.push("")
   }
   return lines.join("\n").trim()
+}
+
+function errorSummary(error: unknown): string {
+  if (error instanceof Error) return error.message
+  return String(error)
 }
 
 interface ProjectCaps {
@@ -288,7 +294,7 @@ export class WorkspaceManager {
     if (root === this.projectRoot && this.getIndex) return this.getIndex()
     const args = [resolve(this.logosTsRoot, "src/build-index.ts"), root, "-"]
     return JSON.parse(
-      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 })
+      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
     )
   }
 
@@ -447,7 +453,7 @@ export class WorkspaceManager {
     const wsSbUrl = this.sbManager.get(ws.id)
     if (wsSbUrl) args.push(wsSbUrl)
     inst.index = JSON.parse(
-      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8" })
+      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
     )
     this.save(ws)
     return this.toState(ws)
@@ -1035,7 +1041,11 @@ export class WorkspaceManager {
     const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
     const wsSbUrl = this.sbManager.get(ws.id)
     if (wsSbUrl) reindexArgs.push(wsSbUrl)
-    const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
+    const { stdout } = await execFileAsync(this.tsx, reindexArgs, {
+      cwd: this.logosTsRoot,
+      encoding: "utf8",
+      maxBuffer: INDEX_MAX_BUFFER,
+    })
     inst.index = JSON.parse(stdout)
 
     const newIndex = inst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }; components?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[] }[] }
@@ -1090,7 +1100,7 @@ export class WorkspaceManager {
     try {
       await this.reindexInstance(ws, implInst, baseIndex)
     } catch (e) {
-      console.error(`[logos] re-index failed for impl instance ${implInst.id}:`, e)
+      console.error(`[logos] re-index failed for impl instance ${implInst.id}: ${errorSummary(e)}`)
     }
 
     implInst.validation = this.validateImplConformance(implInst, arcInst)
@@ -1227,7 +1237,7 @@ export class WorkspaceManager {
       // Re-index workspace
       try {
         await this.reindexInstance(ws, workingInst, baseInst.index)
-      } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
+      } catch (e) { console.error(`[logos] re-index failed for ${ws.id}: ${errorSummary(e)}`) }
 
       goal.status = code === 0 ? "done" : "error"
       if (code === 0) {
