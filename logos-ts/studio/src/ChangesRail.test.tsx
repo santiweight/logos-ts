@@ -22,6 +22,7 @@ const baseProps = {
   onDeleteWorkspace: noop as (id: string) => void,
   onDeleteGoal: noop as (wsId: string, goalId: string) => void,
   runningGoals: new Set<string>(),
+  onResizeStart: noop,
 }
 
 describe("ChangesRail", () => {
@@ -146,7 +147,7 @@ describe("ChangesRail", () => {
     expect(spinners).toHaveLength(1)
   })
 
-  it("opens a workspace context menu with create pull request", () => {
+  it("does not open a merge request context menu from workspace rows", () => {
     const onCreatePullRequest = vi.fn()
     const workspaces = [
       { id: "ws-1", name: "feature", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
@@ -160,8 +161,114 @@ describe("ChangesRail", () => {
     )
 
     fireEvent.contextMenu(screen.getByText(/feature/), { clientX: 10, clientY: 20 })
-    fireEvent.click(screen.getByText("Create pull request"))
+
+    expect(screen.queryByText("Create or update merge request")).not.toBeInTheDocument()
+    expect(onCreatePullRequest).not.toHaveBeenCalled()
+  })
+
+  it("creates pull requests from the workspace row button", () => {
+    const onCreatePullRequest = vi.fn()
+    const workspaces = [
+      { id: "ws-1", name: "feature", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+    ]
+    render(
+      <ChangesRail
+        {...baseProps}
+        workspaces={workspaces}
+        onCreatePullRequest={onCreatePullRequest}
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle("Make pull request"))
 
     expect(onCreatePullRequest).toHaveBeenCalledWith("ws-1")
+  })
+
+  it("shows attached pull request and push-updates action for the active workspace", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "feature",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [],
+        publication: {
+          branchName: "logos/feature",
+          remote: "origin",
+          commit: "abc123",
+          changed: true,
+          updatedAt: 2000,
+          pullRequest: { number: 42, url: "https://github.com/acme/repo/pull/42", created: true },
+        },
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
+
+    expect(screen.queryByText("origin/logos/feature")).not.toBeInTheDocument()
+    expect(screen.getByText("PR #42")).toHaveAttribute("href", "https://github.com/acme/repo/pull/42")
+    expect(screen.queryByTitle("Push updates to pull request")).not.toBeInTheDocument()
+    expect(screen.getByTitle("Pull request is up to date")).toBeDisabled()
+    expect(screen.queryByText("Update MR")).not.toBeInTheDocument()
+  })
+
+  it("offers push updates when goals are newer than the attached pull request", () => {
+    const onCreatePullRequest = vi.fn()
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "feature",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [
+          { id: "g-1", text: "new work", label: "div", target: "component:X", mode: "code" as const, createdAt: 3000, status: "done" as const },
+        ],
+        publication: {
+          branchName: "logos/feature",
+          remote: "origin",
+          commit: "abc123",
+          changed: true,
+          updatedAt: 2000,
+          pullRequest: { number: 42, url: "https://github.com/acme/repo/pull/42", created: true },
+        },
+      },
+    ]
+    render(
+      <ChangesRail
+        {...baseProps}
+        workspaces={workspaces}
+        activeWorkspaceId="ws-1"
+        onCreatePullRequest={onCreatePullRequest}
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle("Push updates to pull request"))
+
+    expect(onCreatePullRequest).toHaveBeenCalledWith("ws-1")
+  })
+
+  it("does not show visible trash controls on goal rows", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "feature",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [
+          { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "pending" as const },
+        ],
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
+
+    expect(screen.queryByTitle("Delete goal (⌘⌫)")).not.toBeInTheDocument()
   })
 })

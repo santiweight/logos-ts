@@ -107,6 +107,7 @@ const baseArgs = {
   onDeleteWorkspace: noop,
   onDeleteGoal: noop,
   runningGoals: new Set<string>(),
+  onResizeStart: noop,
 }
 
 export const Empty: Story = {

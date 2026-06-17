@@ -568,6 +568,12 @@ describe("WorkspaceManager workspace kinds", () => {
     const result = mgr.pushAsBranch(workspace.id, "Publish Me")
 
     expect(result).toMatchObject({ branchName: "logos/publish-me", remote: "origin", changed: true })
+    expect(mgr.get(workspace.id)?.publication).toMatchObject({
+      branchName: "logos/publish-me",
+      remote: "origin",
+      commit: result.commit,
+      changed: true,
+    })
     expect(execFileSync("git", ["--git-dir", remote, "show", "refs/heads/logos/publish-me:hn-jobs/src/generated.txt"], {
       encoding: "utf8",
     })).toBe("from workspace\n")

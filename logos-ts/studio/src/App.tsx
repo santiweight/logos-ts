@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises, @typescript-eslint/no-misused-promises, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unnecessary-condition, no-restricted-syntax */
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { SidebarTree } from "./SidebarTree"
 import { ContentPanel } from "./ContentPanel"
 import { CommentPopup } from "./CommentPopup"
@@ -61,6 +61,7 @@ export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
   const [goalError, setGoalError] = useState<string | null>(null)
+  const [publishError, setPublishError] = useState<string | null>(null)
   const [selection, setSelection] = useState<Selection>({
     file: seed.files[0]?.file ?? "",
     view: "code",
@@ -75,6 +76,7 @@ export function App() {
 
   // ---- workspaces (forks) ----
   const [railOpen, setRailOpen] = useState(true)
+  const [railWidth, setRailWidth] = useState(280)
   const [sidebarFilters, setSidebarFilters] = useState({
     functions: true,
     classes: true,
@@ -232,41 +234,28 @@ export function App() {
 
   const createWorkspacePullRequest = useCallback(async (id: string) => {
     const workspace = workspaces.find((w) => w.id === id)
-    const suggested = branchNameFromWorkspace(workspace?.name ?? "workspace")
-    const branchName = window.prompt("Branch name for the pull request", suggested)?.trim()
-    if (!branchName) return
-
-    setBusy(`creating PR for ${branchName}…`)
+    const workspaceName = workspace?.name?.trim() || "Logos workspace"
+    const branchName = workspace?.publication?.branchName ?? branchNameFromWorkspace(workspaceName)
+    setPublishError(null)
+    setBusy(`${workspace?.publication ? "updating" : "creating"} merge request…`)
     try {
       const res = await fetch(`/api/workspaces/${id}/push-branch`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ branchName }),
+        body: JSON.stringify({ branchName, title: workspaceName }),
       })
       const data = await res.json().catch(() => ({})) as {
         error?: string
-        remote?: string
-        branchName?: string
-        changed?: boolean
-        pullRequest?: { url: string; number: number | null; created: boolean }
       }
       if (!res.ok) {
-        window.alert(data.error ?? "Failed to create pull request")
+        setPublishError(data.error ?? "Failed to create merge request")
         return
       }
-      const pushedBranch = data.branchName ?? branchName
-      const remote = data.remote ?? "origin"
-      const prUrl = data.pullRequest?.url
-      if (prUrl) {
-        window.open(prUrl, "_blank", "noopener,noreferrer")
-        window.alert(`${data.pullRequest?.created === false ? "Opened existing" : "Created"} PR for ${remote}/${pushedBranch}\n${prUrl}`)
-      } else {
-        window.alert(`Pushed ${remote}/${pushedBranch}, but no PR URL was returned`)
-      }
+      await refreshWorkspaces()
     } finally {
       setBusy(null)
     }
-  }, [workspaces])
+  }, [workspaces, refreshWorkspaces])
 
   const deleteGoal = useCallback(
     async (wsId: string, goalId: string) => {
@@ -635,10 +624,28 @@ export function App() {
   const demoLabel = demoSwitching
     ? `Opening ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
     : activeDemo?.name ?? "Custom"
+  const studioStyle = { "--rail-width": `${railWidth}px` } as CSSProperties
+  const startRailResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = railWidth
+    document.body.classList.add("resizing-rail")
+    const onMove = (move: PointerEvent) => {
+      const next = startWidth + move.clientX - startX
+      setRailWidth(Math.min(420, Math.max(260, next)))
+    }
+    const onUp = () => {
+      document.body.classList.remove("resizing-rail")
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }, [railWidth])
 
   if (!activeWorkspaceId || !workspaceIndex) {
     return (
-      <div className="studio">
+      <div className="studio" style={studioStyle}>
         <header className="topbar">
           <div className="topbar-menu">
             <button className="topbar-trigger" onClick={() => setDemoMenuOpen((o) => !o)} aria-label="Open menu">
@@ -653,7 +660,7 @@ export function App() {
   }
 
   return (
-    <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`}>
+    <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`} style={studioStyle}>
       <header className="topbar">
         <div className="topbar-menu">
           <button
@@ -700,6 +707,7 @@ export function App() {
         onDeleteWorkspace={deleteWorkspace}
         onDeleteGoal={deleteGoal}
         runningGoals={effectiveRunningGoals}
+        onResizeStart={startRailResize}
       />
 
       <aside className="sidebar">
@@ -817,7 +825,9 @@ export function App() {
           )}
           {"   "}
           {goalError ? <span className="status-error">goal error: {goalError}</span> :
-            busy ?? `${view.files.length} files · ${nComps} components · ${totalGoals} goals · ${workspaces.length} workspaces`}
+            publishError ? <span className="status-error">{publishError}</span> :
+            busy ? busy :
+            `${view.files.length} files · ${nComps} components · ${totalGoals} goals · ${workspaces.length} workspaces`}
         </span>
       </footer>
 

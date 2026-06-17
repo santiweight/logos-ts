@@ -1,12 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { useEffect, useState } from "react"
+import { type PointerEvent as ReactPointerEvent } from "react"
 import type { Goal, WorkspaceMeta } from "./types"
 import { svgIcon } from "./icons"
 
-const branchIcon = svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 12)
+const listIcon = svgIcon("M5 7h14M5 12h14M5 17h14", 12)
+const forkIcon = svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 12)
 const plusIcon = svgIcon("M12 5v14M5 12h14", 12)
 const collapseIcon = svgIcon("M15 18l-6-6 6-6", 12)
 const resetIcon = svgIcon("M4 4v6h6M20 20v-6h-6M6.5 17.5a7.5 7.5 0 0 0 11-10.2L20 10M17.5 6.5a7.5 7.5 0 0 0-11 10.2L4 14", 12)
+const mergeIcon = svgIcon("M7 3v11a4 4 0 0 0 4 4h6M17 18l-3-3M17 18l-3 3M7 7h5", 12)
+const trashIcon = svgIcon("M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7", 12)
+const pushIcon = svgIcon("M12 21V5M7 10l5-5 5 5M5 21h14", 12)
 
 interface Props {
   open: boolean
@@ -24,6 +28,7 @@ interface Props {
   onDeleteWorkspace: (id: string) => void
   onDeleteGoal: (wsId: string, goalId: string) => void
   runningGoals: Set<string>
+  onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
 }
 
 export function ChangesRail({
@@ -42,28 +47,13 @@ export function ChangesRail({
   onDeleteWorkspace,
   onDeleteGoal,
   runningGoals,
+  onResizeStart,
 }: Props) {
-  const [menu, setMenu] = useState<{ x: number; y: number; workspaceId: string } | null>(null)
-
-  useEffect(() => {
-    if (!menu) return
-    const close = () => setMenu(null)
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close()
-    }
-    window.addEventListener("click", close)
-    window.addEventListener("keydown", onKeyDown)
-    return () => {
-      window.removeEventListener("click", close)
-      window.removeEventListener("keydown", onKeyDown)
-    }
-  }, [menu])
-
   if (!open) {
     return (
       <div className="rail collapsed">
         <button className="rail-toggle" onClick={onToggle} title="Workspaces">
-          {branchIcon}
+          {listIcon}
         </button>
         {workspaces.length > 0 && <div className="rail-count">{workspaces.length}</div>}
       </div>
@@ -72,6 +62,7 @@ export function ChangesRail({
 
   return (
     <div className="rail">
+      <div className="rail-resize" title="Resize changes sidebar" onPointerDown={onResizeStart} />
       <div className="rail-head">
         <span>CHANGES</span>
         <span>
@@ -101,48 +92,97 @@ export function ChangesRail({
           const isActive = activeWorkspaceId === w.id
           const wsSelected = selected?.type === "workspace" && selected.id === w.id
           const goals = w.goals
+          const hasUpdatesToPush = w.publication
+            ? goals.some((g) => g.createdAt > w.publication!.updatedAt)
+            : false
           return (
             <div key={w.id}>
               <div
                 className={`rail-row ws ${isActive || wsSelected ? "active" : ""}`}
                 onClick={() => onOpenWorkspace(w.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setMenu({ x: e.clientX, y: e.clientY, workspaceId: w.id })
-                }}
               >
-                <button
-                  className="rail-del"
-                  title="Delete workspace (⌘⌫)"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDeleteWorkspace(w.id)
-                  }}
-                >
-                  ×
-                </button>
-                <span className="rail-dot fork">{branchIcon}</span> {w.name}
-                {w.parentId && <span className="rail-status"> · branch</span>}
-                {!isActive && goals.length > 0 && <span className="rail-status"> · {goals.length}</span>}
-                {goals.some((g) => runningGoals.has(g.id)) && (
-                  <span className="rail-agent" title="Agent running">
-                    <span className="ag-spin">↻</span>
-                  </span>
-                )}
-                {isActive && (
+                <div className="rail-main">
+                  <span className="rail-title">{w.name}</span>
+                  {w.parentId && <span className="rail-status"> · branch</span>}
+                  {!isActive && goals.length > 0 && <span className="rail-status"> · {goals.length}</span>}
+                </div>
+                <div className="rail-actions">
+                  {goals.some((g) => runningGoals.has(g.id)) && (
+                    <span className="rail-agent" title="Agent running">
+                      <span className="ag-spin">↻</span>
+                    </span>
+                  )}
+                  {!w.publication && (
+                    <button
+                      className="rail-merge"
+                      title="Make pull request"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onCreatePullRequest(w.id)
+                      }}
+                    >
+                      {mergeIcon}
+                    </button>
+                  )}
+                  {isActive && (
+                    <button
+                      className="rail-fork"
+                      title="Fork workspace"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onFork()
+                      }}
+                    >
+                      {forkIcon}
+                    </button>
+                  )}
                   <button
-                    className="rail-fork"
-                    title="Fork workspace"
+                    className="rail-del"
+                    title="Delete workspace (⌘⌫)"
                     onClick={(e) => {
                       e.stopPropagation()
-                      onFork()
+                      onDeleteWorkspace(w.id)
                     }}
                   >
-                    fork
+                    {trashIcon}
                   </button>
-                )}
+                </div>
               </div>
+
+              {isActive && w.publication && (
+                <div className="rail-publication">
+                  <div className="rail-publication-main">
+                    {w.publication.pullRequest?.url ? (
+                      <a
+                        href={w.publication.pullRequest.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {w.publication.pullRequest.number ? `PR #${w.publication.pullRequest.number}` : "PR"}
+                      </a>
+                    ) : (
+                      <span className="rail-publication-value">PR created</span>
+                    )}
+                  </div>
+                  {hasUpdatesToPush ? (
+                    <button
+                      className="rail-push-updates"
+                      title="Push updates to pull request"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onCreatePullRequest(w.id)
+                      }}
+                    >
+                      {pushIcon}
+                    </button>
+                  ) : (
+                    <button className="rail-push-updates disabled" title="Pull request is up to date" disabled>
+                      {pushIcon}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {isActive &&
                 goals
@@ -159,43 +199,19 @@ export function ChangesRail({
                           onSelectGoal(g.id)
                         }}
                       >
-                        <button
-                          className="rail-del"
-                          title="Delete goal (⌘⌫)"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onDeleteGoal(w.id, g.id)
-                          }}
-                        >
-                          ×
-                        </button>
-                        <div className="rail-target">
-                          {g.label}
-                          <span className={`goal-status ${g.status}`}>{g.status}</span>
+                        <div className="rail-main">
+                          <div className="rail-target">
+                            {g.label}
+                            <span className={`goal-status ${g.status}`}>{g.status}</span>
+                          </div>
+                          <div className="rail-comment">{g.text}</div>
                         </div>
-                        <div className="rail-comment">{g.text}</div>
                       </div>
                     )
                   })}
             </div>
           )
         })}
-      {menu && (
-        <div
-          className="rail-context-menu"
-          style={{ left: menu.x, top: menu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => {
-              onCreatePullRequest(menu.workspaceId)
-              setMenu(null)
-            }}
-          >
-            Create pull request
-          </button>
-        </div>
-      )}
     </div>
   )
 }
