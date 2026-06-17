@@ -24,6 +24,7 @@ import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
 import type {
   LogosRuntimeStore,
+  StoredWorkspacePublication,
   WorkspaceKind,
 } from "./runtime-store.js"
 
@@ -62,6 +63,7 @@ interface WorkspaceRecord {
   activeInstanceId: string
   goals: Goal[]
   instances: Record<string, WorkspaceInstance>
+  publication?: StoredWorkspacePublication
 }
 
 export interface WorkspaceState {
@@ -76,6 +78,7 @@ export interface WorkspaceState {
   index: unknown
   goals: Goal[]
   instances: Record<string, WorkspaceInstance>
+  publication?: StoredWorkspacePublication
 }
 
 export interface WorkspaceMeta {
@@ -87,6 +90,7 @@ export interface WorkspaceMeta {
   baseInstanceId: string
   activeInstanceId: string
   goals: Goal[]
+  publication?: StoredWorkspacePublication
 }
 
 export interface PushWorkspaceBranchResult {
@@ -240,7 +244,7 @@ export class WorkspaceManager {
 
   private toState(ws: WorkspaceRecord): WorkspaceState {
     const inst = this.activeInstance(ws)
-    return {
+    const state: WorkspaceState = {
       id: ws.id,
       name: ws.name,
       kind: ws.kind,
@@ -253,10 +257,12 @@ export class WorkspaceManager {
       goals: ws.goals,
       instances: ws.instances,
     }
+    if (ws.publication) state.publication = ws.publication
+    return state
   }
 
   private toMeta(ws: WorkspaceRecord): WorkspaceMeta {
-    return {
+    const meta: WorkspaceMeta = {
       id: ws.id,
       name: ws.name,
       kind: ws.kind,
@@ -266,6 +272,8 @@ export class WorkspaceManager {
       activeInstanceId: ws.activeInstanceId,
       goals: ws.goals,
     }
+    if (ws.publication) meta.publication = ws.publication
+    return meta
   }
 
   private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
@@ -383,13 +391,16 @@ export class WorkspaceManager {
         ? this.createOrGetPullRequest(publishDir, remote, branch, prOpts)
         : undefined
 
-      return {
+      const result = {
         branchName: branch,
         remote,
         commit,
         changed,
         ...(pullRequest ? { pullRequest } : {}),
       }
+      ws.publication = { ...result, updatedAt: Date.now() }
+      this.save(ws)
+      return result
     } catch (e) {
       this.logPublishError(e)
       throw e

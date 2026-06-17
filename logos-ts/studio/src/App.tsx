@@ -23,6 +23,7 @@ import type {
   Workspace,
   WorkspaceKind,
   WorkspaceMeta,
+  WorkspacePublication,
 } from "./types"
 import seedData from "./studio-index.json"
 
@@ -32,6 +33,15 @@ interface DemoOption {
   id: string
   name: string
   root: string
+}
+
+interface PullRequestDialogState {
+  workspaceId: string
+  workspaceName: string
+  branchName: string
+  submitting: boolean
+  error: string | null
+  result: WorkspacePublication | null
 }
 
 function combineDiffStatus(
@@ -87,6 +97,7 @@ export function App() {
   const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
   const [workspaceBaselineIndex, setWorkspaceBaselineIndex] = useState<StudioIndex | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
+  const [pullRequestDialog, setPullRequestDialog] = useState<PullRequestDialogState | null>(null)
 
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
   const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
@@ -240,15 +251,30 @@ export function App() {
     [activeWorkspaceId, refreshWorkspaces, openWorkspace, createWorkspace]
   )
 
-  const createWorkspacePullRequest = useCallback(async (id: string) => {
+  const createWorkspacePullRequest = useCallback((id: string) => {
     const workspace = workspaces.find((w) => w.id === id)
-    const suggested = branchNameFromWorkspace(workspace?.name ?? "workspace")
-    const branchName = window.prompt("Branch name for the pull request", suggested)?.trim()
-    if (!branchName) return
+    setPullRequestDialog({
+      workspaceId: id,
+      workspaceName: workspace?.name ?? "workspace",
+      branchName: workspace?.publication?.branchName ?? branchNameFromWorkspace(workspace?.name ?? "workspace"),
+      submitting: false,
+      error: null,
+      result: workspace?.publication ?? null,
+    })
+  }, [workspaces])
 
+  const submitWorkspacePullRequest = useCallback(async () => {
+    if (!pullRequestDialog) return
+    const branchName = pullRequestDialog.branchName.trim()
+    if (!branchName) {
+      setPullRequestDialog((dialog) => dialog ? { ...dialog, error: "Branch name is required" } : dialog)
+      return
+    }
+    const { workspaceId } = pullRequestDialog
     setBusy(`creating PR for ${branchName}…`)
+    setPullRequestDialog((dialog) => dialog ? { ...dialog, branchName, submitting: true, error: null } : dialog)
     try {
-      const res = await fetch(`/api/workspaces/${id}/push-branch`, {
+      const res = await fetch(`/api/workspaces/${workspaceId}/push-branch`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ branchName }),
@@ -257,26 +283,40 @@ export function App() {
         error?: string
         remote?: string
         branchName?: string
+        commit?: string
         changed?: boolean
         pullRequest?: { url: string; number: number | null; created: boolean }
       }
       if (!res.ok) {
-        window.alert(data.error ?? "Failed to create pull request")
+        setPullRequestDialog((dialog) => dialog ? {
+          ...dialog,
+          submitting: false,
+          error: data.error ?? "Failed to create pull request",
+        } : dialog)
         return
       }
-      const pushedBranch = data.branchName ?? branchName
-      const remote = data.remote ?? "origin"
-      const prUrl = data.pullRequest?.url
-      if (prUrl) {
-        window.open(prUrl, "_blank", "noopener,noreferrer")
-        window.alert(`${data.pullRequest?.created === false ? "Opened existing" : "Created"} PR for ${remote}/${pushedBranch}\n${prUrl}`)
-      } else {
-        window.alert(`Pushed ${remote}/${pushedBranch}, but no PR URL was returned`)
+      if (!data.branchName || !data.remote || !data.commit) {
+        setPullRequestDialog((dialog) => dialog ? {
+          ...dialog,
+          submitting: false,
+          error: "Workspace published, but the server did not return branch details",
+        } : dialog)
+        return
       }
+      const result: WorkspacePublication = {
+        branchName: data.branchName,
+        remote: data.remote,
+        commit: data.commit,
+        changed: data.changed ?? false,
+        ...(data.pullRequest ? { pullRequest: data.pullRequest } : {}),
+        updatedAt: Date.now(),
+      }
+      setPullRequestDialog((dialog) => dialog ? { ...dialog, submitting: false, error: null, result } : dialog)
+      await refreshWorkspaces()
     } finally {
       setBusy(null)
     }
-  }, [workspaces])
+  }, [pullRequestDialog, refreshWorkspaces])
 
   const deleteGoal = useCallback(
     async (wsId: string, goalId: string) => {
@@ -850,6 +890,98 @@ export function App() {
           onAdd={(text, mode, fork) => { addGoal(popup.target, popup.label, text, mode, fork); setPopup(null) }}
           onClose={() => setPopup(null)}
         />
+      )}
+
+      {pullRequestDialog && (
+        <div
+          className="native-modal"
+          role="presentation"
+          onClick={() => {
+            if (!pullRequestDialog.submitting) setPullRequestDialog(null)
+          }}
+        >
+          <form
+            className="native-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pull-request-title"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault()
+              submitWorkspacePullRequest()
+            }}
+          >
+            <div className="native-dialog-head">
+              <span id="pull-request-title">Merge request</span>
+              <button
+                className="native-dialog-close"
+                type="button"
+                aria-label="Close"
+                disabled={pullRequestDialog.submitting}
+                onClick={() => setPullRequestDialog(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="native-dialog-body">
+              <label className="native-field">
+                <span>Workspace</span>
+                <input value={pullRequestDialog.workspaceName} readOnly />
+              </label>
+              <label className="native-field">
+                <span>Branch</span>
+                <input
+                  autoFocus
+                  value={pullRequestDialog.branchName}
+                  onChange={(e) => {
+                    const branchName = e.target.value
+                    setPullRequestDialog((dialog) => dialog ? { ...dialog, branchName, error: null } : dialog)
+                  }}
+                />
+              </label>
+              {pullRequestDialog.error && (
+                <div className="native-error">{pullRequestDialog.error}</div>
+              )}
+              {pullRequestDialog.result && (
+                <div className="native-result">
+                  <div>
+                    <strong>Branch</strong>{" "}
+                    {pullRequestDialog.result.remote}/{pullRequestDialog.result.branchName}
+                  </div>
+                  {pullRequestDialog.result.pullRequest?.url ? (
+                    <div>
+                      <strong>Pull request</strong>{" "}
+                      <a href={pullRequestDialog.result.pullRequest.url} target="_blank" rel="noreferrer">
+                        {pullRequestDialog.result.pullRequest.number
+                          ? `#${pullRequestDialog.result.pullRequest.number}`
+                          : pullRequestDialog.result.pullRequest.url}
+                      </a>
+                    </div>
+                  ) : (
+                    <div>Pull request link unavailable.</div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="native-dialog-actions">
+              {pullRequestDialog.result?.pullRequest?.url && (
+                <a href={pullRequestDialog.result.pullRequest.url} target="_blank" rel="noreferrer">
+                  Open PR
+                </a>
+              )}
+              <button
+                type="button"
+                disabled={pullRequestDialog.submitting}
+                onClick={() => setPullRequestDialog(null)}
+              >
+                Close
+              </button>
+              <button className="primary" type="submit" disabled={pullRequestDialog.submitting}>
+                {pullRequestDialog.submitting ? "Publishing…" : pullRequestDialog.result ? "Update" : "Publish"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   )

@@ -146,7 +146,7 @@ describe("ChangesRail", () => {
     expect(spinners).toHaveLength(1)
   })
 
-  it("opens a workspace context menu with create pull request", () => {
+  it("opens a workspace context menu with create or update merge request", () => {
     const onCreatePullRequest = vi.fn()
     const workspaces = [
       { id: "ws-1", name: "feature", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
@@ -160,8 +160,54 @@ describe("ChangesRail", () => {
     )
 
     fireEvent.contextMenu(screen.getByText(/feature/), { clientX: 10, clientY: 20 })
-    fireEvent.click(screen.getByText("Create pull request"))
+    fireEvent.click(screen.getByText("Create or update merge request"))
 
     expect(onCreatePullRequest).toHaveBeenCalledWith("ws-1")
+  })
+
+  it("creates pull requests from the workspace row button", () => {
+    const onCreatePullRequest = vi.fn()
+    const workspaces = [
+      { id: "ws-1", name: "feature", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+    ]
+    render(
+      <ChangesRail
+        {...baseProps}
+        workspaces={workspaces}
+        onCreatePullRequest={onCreatePullRequest}
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle("Make pull request"))
+
+    expect(onCreatePullRequest).toHaveBeenCalledWith("ws-1")
+  })
+
+  it("shows attached branch and pull request for the active workspace", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "feature",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [],
+        publication: {
+          branchName: "logos/feature",
+          remote: "origin",
+          commit: "abc123",
+          changed: true,
+          updatedAt: 2000,
+          pullRequest: { number: 42, url: "https://github.com/acme/repo/pull/42", created: true },
+        },
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
+
+    expect(screen.getByText("origin/logos/feature")).toBeInTheDocument()
+    expect(screen.getByText("pull request")).toHaveAttribute("href", "https://github.com/acme/repo/pull/42")
+    expect(screen.getByText("PR #42")).toHaveAttribute("href", "https://github.com/acme/repo/pull/42")
   })
 })

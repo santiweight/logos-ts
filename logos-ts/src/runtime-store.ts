@@ -30,6 +30,19 @@ export interface StoredWorkspaceInstance {
   index: unknown
 }
 
+export interface StoredWorkspacePublication {
+  branchName: string
+  remote: string
+  commit: string
+  changed: boolean
+  pullRequest?: {
+    number: number | null
+    url: string
+    created: boolean
+  }
+  updatedAt: number
+}
+
 export interface StoredWorkspaceRecord {
   id: string
   name: string
@@ -40,6 +53,7 @@ export interface StoredWorkspaceRecord {
   activeInstanceId: string
   goals: StoredGoal[]
   instances: Record<string, StoredWorkspaceInstance>
+  publication?: StoredWorkspacePublication
 }
 
 export type WorkspacePolicyEventType =
@@ -109,7 +123,8 @@ export class LogosRuntimeStore {
         parent_id TEXT,
         created_at INTEGER NOT NULL,
         base_instance_id TEXT NOT NULL,
-        active_instance_id TEXT NOT NULL
+        active_instance_id TEXT NOT NULL,
+        publication_json TEXT
       );
       CREATE TABLE IF NOT EXISTS workspace_instances (
         id TEXT PRIMARY KEY,
@@ -181,6 +196,13 @@ export class LogosRuntimeStore {
       CREATE INDEX IF NOT EXISTS idx_events_session ON session_events(session_id, seq);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_goal ON sessions(goal_id);
     `)
+    this.addColumnIfMissing("workspaces", "publication_json", "TEXT")
+  }
+
+  private addColumnIfMissing(table: string, column: string, definition: string): void {
+    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name?: string }[]
+    if (rows.some((row) => row.name === column)) return
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
   }
 
   listWorkspaces(): StoredWorkspaceRecord[] {
@@ -197,7 +219,7 @@ export class LogosRuntimeStore {
     const instances = this.db.prepare(
       `SELECT * FROM workspace_instances WHERE workspace_id = ? ORDER BY created_at, id`
     ).all(id) as Record<string, unknown>[]
-    return {
+    const workspace: StoredWorkspaceRecord = {
       id: row["id"] as string,
       name: row["name"] as string,
       kind: row["kind"] === "arch" ? "arch" : "code",
@@ -211,21 +233,34 @@ export class LogosRuntimeStore {
         return [mapped.id, mapped]
       })),
     }
+    const publication = parsePublication(row["publication_json"])
+    if (publication) workspace.publication = publication
+    return workspace
   }
 
   saveWorkspace(ws: StoredWorkspaceRecord): void {
     this.transaction(() => {
       this.db.prepare(`
-        INSERT INTO workspaces (id, name, kind, parent_id, created_at, base_instance_id, active_instance_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO workspaces (id, name, kind, parent_id, created_at, base_instance_id, active_instance_id, publication_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           kind = excluded.kind,
           parent_id = excluded.parent_id,
           created_at = excluded.created_at,
           base_instance_id = excluded.base_instance_id,
-          active_instance_id = excluded.active_instance_id
-      `).run(ws.id, ws.name, ws.kind, ws.parentId, ws.createdAt, ws.baseInstanceId, ws.activeInstanceId)
+          active_instance_id = excluded.active_instance_id,
+          publication_json = excluded.publication_json
+      `).run(
+        ws.id,
+        ws.name,
+        ws.kind,
+        ws.parentId,
+        ws.createdAt,
+        ws.baseInstanceId,
+        ws.activeInstanceId,
+        ws.publication ? JSON.stringify(ws.publication) : null,
+      )
 
       this.db.prepare(`DELETE FROM workspace_instances WHERE workspace_id = ?`).run(ws.id)
       for (const inst of Object.values(ws.instances)) {
@@ -401,6 +436,17 @@ export class LogosRuntimeStore {
 
 function nullableString(value: unknown): string | null {
   return typeof value === "string" ? value : null
+}
+
+function parsePublication(value: unknown): StoredWorkspacePublication | undefined {
+  if (typeof value !== "string" || !value) return undefined
+  try {
+    const parsed = JSON.parse(value) as StoredWorkspacePublication
+    if (!parsed.branchName || !parsed.remote || !parsed.commit) return undefined
+    return parsed
+  } catch {
+    return undefined
+  }
 }
 
 function mapGoal(row: Record<string, unknown>): StoredGoal {

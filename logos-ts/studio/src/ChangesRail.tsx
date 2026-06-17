@@ -7,6 +7,7 @@ const branchIcon = svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0
 const plusIcon = svgIcon("M12 5v14M5 12h14", 12)
 const collapseIcon = svgIcon("M15 18l-6-6 6-6", 12)
 const resetIcon = svgIcon("M4 4v6h6M20 20v-6h-6M6.5 17.5a7.5 7.5 0 0 0 11-10.2L20 10M17.5 6.5a7.5 7.5 0 0 0-11 10.2L4 14", 12)
+const mergeIcon = svgIcon("M7 3v11a4 4 0 0 0 4 4h6M17 18l-3-3M17 18l-3 3M7 7h5", 12)
 
 interface Props {
   open: boolean
@@ -43,7 +44,11 @@ export function ChangesRail({
   onDeleteGoal,
   runningGoals,
 }: Props) {
-  const [menu, setMenu] = useState<{ x: number; y: number; workspaceId: string } | null>(null)
+  const [menu, setMenu] = useState<
+    | { kind: "workspace"; x: number; y: number; workspaceId: string }
+    | { kind: "goal"; x: number; y: number; workspaceId: string; goalId: string }
+    | null
+  >(null)
 
   useEffect(() => {
     if (!menu) return
@@ -109,7 +114,7 @@ export function ChangesRail({
                 onContextMenu={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  setMenu({ x: e.clientX, y: e.clientY, workspaceId: w.id })
+                  setMenu({ kind: "workspace", x: e.clientX, y: e.clientY, workspaceId: w.id })
                 }}
               >
                 <button
@@ -130,6 +135,28 @@ export function ChangesRail({
                     <span className="ag-spin">↻</span>
                   </span>
                 )}
+                {w.publication?.pullRequest?.url && (
+                  <a
+                    className="rail-pr-link"
+                    href={w.publication.pullRequest.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`${w.publication.remote}/${w.publication.branchName}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    PR{w.publication.pullRequest.number ? ` #${w.publication.pullRequest.number}` : ""}
+                  </a>
+                )}
+                <button
+                  className="rail-merge"
+                  title={w.publication ? "Update merge request" : "Make pull request"}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onCreatePullRequest(w.id)
+                  }}
+                >
+                  {mergeIcon}
+                </button>
                 {isActive && (
                   <button
                     className="rail-fork"
@@ -144,6 +171,25 @@ export function ChangesRail({
                 )}
               </div>
 
+              {isActive && w.publication && (
+                <div className="rail-publication">
+                  <span className="rail-publication-label">branch</span>
+                  <span className="rail-publication-value">
+                    {w.publication.remote}/{w.publication.branchName}
+                  </span>
+                  {w.publication.pullRequest?.url && (
+                    <a
+                      href={w.publication.pullRequest.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      pull request
+                    </a>
+                  )}
+                </div>
+              )}
+
               {isActive &&
                 goals
                   .slice()
@@ -157,6 +203,11 @@ export function ChangesRail({
                         onClick={(e) => {
                           e.stopPropagation()
                           onSelectGoal(g.id)
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setMenu({ kind: "goal", x: e.clientX, y: e.clientY, workspaceId: w.id, goalId: g.id })
                         }}
                       >
                         <button
@@ -186,14 +237,26 @@ export function ChangesRail({
           style={{ left: menu.x, top: menu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            onClick={() => {
-              onCreatePullRequest(menu.workspaceId)
-              setMenu(null)
-            }}
-          >
-            Create pull request
-          </button>
+          {menu.kind === "workspace" && (
+            <button
+              onClick={() => {
+                onCreatePullRequest(menu.workspaceId)
+                setMenu(null)
+              }}
+            >
+              Create or update merge request
+            </button>
+          )}
+          {menu.kind === "goal" && (
+            <button
+              onClick={() => {
+                onDeleteGoal(menu.workspaceId, menu.goalId)
+                setMenu(null)
+              }}
+            >
+              Delete goal
+            </button>
+          )}
         </div>
       )}
     </div>

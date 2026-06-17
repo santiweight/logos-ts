@@ -91,6 +91,19 @@ export interface Goal {
 
 export type WorkspaceKind = "code" | "arch"
 
+export interface WorkspacePublication {
+  branchName: string
+  remote: string
+  commit: string
+  changed: boolean
+  pullRequest?: {
+    number: number | null
+    url: string
+    created: boolean
+  }
+  updatedAt: number
+}
+
 export interface GoalApi {
   comments: Record<string, Goal[]>
   onComment: (target: string, label: string, x: number, y: number) => void
@@ -131,6 +144,7 @@ export interface WorkspaceMeta {
   baseInstanceId: string
   activeInstanceId: string
   goals: Goal[]
+  publication?: WorkspacePublication
 }
 
 export interface WorkspaceInstance {
