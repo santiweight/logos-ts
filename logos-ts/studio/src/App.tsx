@@ -8,7 +8,13 @@ import { ICONS, svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { ReviewPanel } from "./ReviewPanel"
 import { diffIndex } from "./diff"
-import { capturedTestChanges, selectReviewBaseIndex, selectWorkspaceReviewBaseIndex } from "./review"
+import {
+  capturedTestChanges,
+  selectReviewBaseIndex,
+  selectWorkspaceOutcomeBaseIndex,
+  selectWorkspaceReviewBaseIndex,
+  selectWorkspaceReviewIndex,
+} from "./review"
 import { indexToArchText } from "./arch-text"
 import type {
   Goal,
@@ -86,10 +92,14 @@ export function App() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
   const [workspaceBaselineIndex, setWorkspaceBaselineIndex] = useState<StudioIndex | null>(null)
+  const [workspaceReviewIndex, setWorkspaceReviewIndex] = useState<StudioIndex | null>(null)
+  const [workspaceOutcomeBaselineIndex, setWorkspaceOutcomeBaselineIndex] = useState<StudioIndex | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
 
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
   const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
+  const reviewWorkspaceIndex = workspaceReviewIndex ?? workspaceIndex
+  const outcomeBaseIndex = selectReviewBaseIndex(index, workspaceOutcomeBaselineIndex)
 
   const [storybookUrls, setStorybookUrls] = useState<Record<string, string>>({})
   const [storybookStates, setStorybookStates] = useState<Record<string, SbState>>({})
@@ -119,20 +129,20 @@ export function App() {
   }, [activeWorkspaceId, refreshStorybooks])
 
   const captureChanges = useMemo(
-    () => workspaceIndex ? capturedTestChanges(reviewBaseIndex, workspaceIndex) : [],
-    [reviewBaseIndex, workspaceIndex]
+    () => workspaceIndex ? capturedTestChanges(outcomeBaseIndex, workspaceIndex) : [],
+    [outcomeBaseIndex, workspaceIndex]
   )
 
   const diff = useMemo(() => {
-    if (!activeWorkspaceId || !workspaceIndex) return {}
-    const next: Record<string, DiffStatus> = { ...diffIndex(reviewBaseIndex, workspaceIndex) }
+    if (!activeWorkspaceId || !reviewWorkspaceIndex) return {}
+    const next: Record<string, DiffStatus> = { ...diffIndex(reviewBaseIndex, reviewWorkspaceIndex) }
     for (const change of captureChanges) {
       next[`capture:${change.testFile}::${change.exportName}`] = change.status
       const componentTarget = `component:${change.component}`
       next[componentTarget] = combineDiffStatus(next[componentTarget], change.status) ?? change.status
     }
     return next
-  }, [activeWorkspaceId, captureChanges, workspaceIndex, reviewBaseIndex])
+  }, [activeWorkspaceId, captureChanges, reviewWorkspaceIndex, reviewBaseIndex])
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
   const activeGoals = activeWs?.goals ?? []
@@ -183,6 +193,8 @@ export function App() {
         const ws = (await res.json()) as Workspace
         setWorkspaceIndex(ws.index)
         setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
+        setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws))
+        setWorkspaceOutcomeBaselineIndex(selectWorkspaceOutcomeBaseIndex(index, ws))
         setActiveWorkspaceId(id)
       }
     } catch {}
@@ -196,6 +208,9 @@ export function App() {
       if (res.ok) {
         const ws = (await res.json()) as Workspace
         setWorkspaceIndex(ws.index)
+        setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws))
+        setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
+        setWorkspaceOutcomeBaselineIndex(selectWorkspaceOutcomeBaseIndex(index, ws))
         await refreshWorkspaces()
       }
     } catch {}
@@ -459,6 +474,8 @@ export function App() {
     setReviewOpen(false)
     setWorkspaceIndex(null)
     setWorkspaceBaselineIndex(null)
+    setWorkspaceReviewIndex(null)
+    setWorkspaceOutcomeBaselineIndex(null)
     setActiveWorkspaceId(null)
 
     try {
@@ -473,6 +490,8 @@ export function App() {
         const ws = await wsRes.json() as Workspace
         setWorkspaceIndex(ws.index)
         setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
+        setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws))
+        setWorkspaceOutcomeBaselineIndex(selectWorkspaceOutcomeBaseIndex(index, ws))
         setActiveWorkspaceId(ws.id)
         setSelection({ file: ws.index.files[0]?.file ?? "", view: "code" })
       }
@@ -647,7 +666,7 @@ export function App() {
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
   const captureReviewCount = captureChanges.length
   const reviewCount = captureReviewCount + (
-    workspaceIndex && indexToArchText(reviewBaseIndex) !== indexToArchText(workspaceIndex) ? 1 : 0
+    reviewWorkspaceIndex && indexToArchText(reviewBaseIndex) !== indexToArchText(reviewWorkspaceIndex) ? 1 : 0
   )
   const activeDemo = demos.find((d) => d.id === activeDemoId)
   const demoLabel = demoSwitching
@@ -777,7 +796,9 @@ export function App() {
           {reviewOpen ? (
             <ReviewPanel
               base={reviewBaseIndex}
-              workspace={workspaceIndex}
+              workspace={reviewWorkspaceIndex ?? workspaceIndex}
+              captureBase={outcomeBaseIndex}
+              captureWorkspace={workspaceIndex}
               storybookUrl={activeStorybookUrl}
               storybookState={activeStorybookState}
               onRetryStorybook={retryStorybook}

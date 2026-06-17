@@ -11,6 +11,8 @@ import type { SbState, StudioIndex } from "./types"
 interface Props {
   base: StudioIndex
   workspace: StudioIndex
+  captureBase?: StudioIndex
+  captureWorkspace?: StudioIndex
   storybookUrl: string
   storybookState: SbState | null
   onRetryStorybook: () => void
@@ -30,6 +32,8 @@ interface ReviewFileDiff {
 export function ReviewPanel({
   base,
   workspace,
+  captureBase,
+  captureWorkspace,
   storybookUrl,
   storybookState,
   onRetryStorybook,
@@ -38,7 +42,10 @@ export function ReviewPanel({
     () => lineDiff(indexToArchText(base), indexToArchText(workspace)),
     [base, workspace]
   )
-  const captureChanges = useMemo(() => capturedTestChanges(base, workspace), [base, workspace])
+  const captureChanges = useMemo(
+    () => capturedTestChanges(captureBase ?? base, captureWorkspace ?? workspace),
+    [base, captureBase, captureWorkspace, workspace]
+  )
   const architectureStats = useMemo(() => diffStats(architectureLines), [architectureLines])
   const [tab, setTab] = useState<ReviewTab>(captureChanges.length > 0 ? "captured" : "architecture")
 

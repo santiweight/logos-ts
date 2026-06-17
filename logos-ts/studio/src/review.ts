@@ -36,6 +36,19 @@ export function selectWorkspaceReviewBaseIndex(projectIndex: StudioIndex, worksp
   return baseImplId ? workspace.implWsInstances[baseImplId]?.index ?? projectIndex : projectIndex
 }
 
+export function selectWorkspaceReviewIndex(workspace: Workspace | null): StudioIndex | null {
+  if (!workspace) return null
+  const arcId = workspace.activeArcWsInstanceId
+  if (arcId) return workspace.arcWsInstances[arcId]?.index ?? workspace.index
+  return workspace.index
+}
+
+export function selectWorkspaceOutcomeBaseIndex(projectIndex: StudioIndex, workspace: Workspace | null): StudioIndex {
+  if (!workspace) return projectIndex
+  const baseImplId = workspace.baseImplWsInstanceId
+  return baseImplId ? workspace.implWsInstances[baseImplId]?.index ?? projectIndex : projectIndex
+}
+
 function captureMap(index: StudioIndex): Map<string, IndexedCapture> {
   const captures = new Map<string, IndexedCapture>()
   for (const file of index.files) {

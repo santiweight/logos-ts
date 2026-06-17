@@ -4,7 +4,9 @@ import {
   extractSnapshotHtml,
   formatCapturedSnapshot,
   selectReviewBaseIndex,
+  selectWorkspaceOutcomeBaseIndex,
   selectWorkspaceReviewBaseIndex,
+  selectWorkspaceReviewIndex,
 } from "./review"
 import type { FileEntry, StudioIndex, Workspace } from "./types"
 
@@ -29,6 +31,17 @@ function indexWithCapture(
     },
   }
   return { root: "/test", files: [file] }
+}
+
+function namedIndex(name: string): StudioIndex {
+  return {
+    root: `/tmp/${name}`,
+    files: [{
+      file: `${name}.ts`,
+      code: name,
+      items: [],
+    }],
+  }
 }
 
 describe("capturedTestChanges", () => {
@@ -156,6 +169,75 @@ describe("selectWorkspaceReviewBaseIndex", () => {
     }
 
     expect(selectWorkspaceReviewBaseIndex(project, workspace)).toBe(project)
+  })
+
+  it("separates architecture review indexes from outcome indexes for arch workspaces", () => {
+    const project = namedIndex("project")
+    const baseArc = namedIndex("base-arc")
+    const activeArc = namedIndex("active-arc")
+    const baseImpl = namedIndex("base-impl")
+    const activeImpl = namedIndex("active-impl")
+    const workspace: Workspace = {
+      id: "ws-arch",
+      name: "arch workspace",
+      kind: "arch",
+      parentId: null,
+      createdAt: 1,
+      baseArcWsInstanceId: "arc-base",
+      activeArcWsInstanceId: "arc-active",
+      goldenArcWsInstanceId: "arc-base",
+      baseImplWsInstanceId: "impl-base",
+      activeImplWsInstanceId: "impl-active",
+      goals: [],
+      forkDir: "/tmp/ws-arch",
+      index: activeImpl,
+      arcWsInstances: {
+        "arc-base": {
+          id: "arc-base",
+          workspaceId: "ws-arch",
+          materializedRoot: "/tmp/ws-arch/arc-base",
+          bodyRecordsFile: null,
+          mutability: "immutable",
+          createdAt: 1,
+          index: baseArc,
+        },
+        "arc-active": {
+          id: "arc-active",
+          workspaceId: "ws-arch",
+          materializedRoot: "/tmp/ws-arch/arc-active",
+          bodyRecordsFile: null,
+          mutability: "writable",
+          createdAt: 2,
+          index: activeArc,
+        },
+      },
+      implWsInstances: {
+        "impl-base": {
+          id: "impl-base",
+          workspaceId: "ws-arch",
+          arcWsInstanceId: "arc-base",
+          materializedRoot: "/tmp/ws-arch/impl-base",
+          mutability: "immutable",
+          createdAt: 3,
+          index: baseImpl,
+          validation: null,
+        },
+        "impl-active": {
+          id: "impl-active",
+          workspaceId: "ws-arch",
+          arcWsInstanceId: "arc-active",
+          materializedRoot: "/tmp/ws-arch/impl-active",
+          mutability: "writable",
+          createdAt: 4,
+          index: activeImpl,
+          validation: null,
+        },
+      },
+    }
+
+    expect(selectWorkspaceReviewBaseIndex(project, workspace)).toBe(baseArc)
+    expect(selectWorkspaceReviewIndex(workspace)).toBe(activeArc)
+    expect(selectWorkspaceOutcomeBaseIndex(project, workspace)).toBe(baseImpl)
   })
 })
 
