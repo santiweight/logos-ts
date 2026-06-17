@@ -302,7 +302,11 @@ export class WorkspaceManager {
     mkdirSync(this.runsDir, { recursive: true })
     const dir = resolve(this.runsDir, instanceId)
     if (!existsSync(dir)) {
-      cpSync(sourceRoot, dir, {
+      const copySource = existsSync(sourceRoot) ? sourceRoot : this.projectRoot
+      if (copySource !== sourceRoot) {
+        console.warn(`[workspace] materialized source missing, falling back to project root: ${sourceRoot}`)
+      }
+      cpSync(copySource, dir, {
         recursive: true,
         filter: (s) => {
           const name = basename(s)
@@ -311,7 +315,7 @@ export class WorkspaceManager {
             name !== ".logos_cache" &&
             name !== ".vite-logos" &&
             name !== "dist" &&
-            !(name === ".logos" && dirname(s) === sourceRoot)
+            !(name === ".logos" && dirname(s) === copySource)
         },
       })
       for (const nmDir of this.caps.nodeModulesDirs) {
