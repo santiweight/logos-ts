@@ -48,6 +48,7 @@ export interface ArcWsInstance {
   id: string
   workspaceId: string
   materializedRoot: string
+  bodyRecordsFile: string | null
   mutability: "writable" | "immutable"
   createdAt: number
   index: unknown
@@ -61,7 +62,13 @@ export interface ImplWsInstance {
   mutability: "writable" | "immutable"
   createdAt: number
   index: unknown
-  validation: unknown | null
+  validation: ImplValidationResult | null
+}
+
+export interface ImplValidationResult {
+  status: "pass" | "fail"
+  checkedAt: number
+  issues: string[]
 }
 
 interface WorkspaceRecord {
@@ -143,6 +150,59 @@ type AgentSpawner = (command: string, args: string[], options: NonNullable<Param
 
 function indexComponents(file: { component?: { captured?: unknown[] }; components?: { captured?: unknown[] }[] }): { captured?: unknown[] }[] {
   return file.components?.length ? file.components : file.component ? [file.component] : []
+}
+
+function architectureTextFromIndex(index: unknown): string {
+  const files = (index as { files?: unknown[] } | null)?.files
+  if (!Array.isArray(files)) return ""
+  const lines: string[] = []
+  for (const file of files) {
+    const f = file as {
+      file?: string
+      items?: unknown[]
+      component?: unknown
+      components?: unknown[]
+    }
+    const items = Array.isArray(f.items) ? f.items : []
+    const components = Array.isArray(f.components) && f.components.length > 0
+      ? f.components
+      : f.component ? [f.component] : []
+    if (items.length === 0 && components.length === 0) continue
+    lines.push(`// ${f.file ?? "unknown"}`)
+    for (const item of items) {
+      const it = item as {
+        kind?: string
+        name?: string
+        signature?: string
+        fields?: { name: string; type: string }[]
+        methods?: { signature: string }[]
+      }
+      if (it.kind === "function" && it.signature) {
+        lines.push(`declare function ${it.signature}`)
+      } else if (it.kind === "class" && it.name) {
+        lines.push(`declare class ${it.name} {`)
+        for (const field of it.fields ?? []) lines.push(`  ${field.name}: ${field.type}`)
+        for (const method of it.methods ?? []) lines.push(`  ${method.signature}`)
+        lines.push("}")
+      }
+    }
+    for (const component of components) {
+      const c = component as {
+        signature?: string
+        propsName?: string
+        propsFields?: { name: string; type: string }[]
+      }
+      if (!c.signature) continue
+      lines.push(`declare function ${c.signature}`)
+      if (c.propsName) {
+        lines.push(`interface ${c.propsName} {`)
+        for (const prop of c.propsFields ?? []) lines.push(`  ${prop.name}: ${prop.type}`)
+        lines.push("}")
+      }
+    }
+    lines.push("")
+  }
+  return lines.join("\n").trim()
 }
 
 interface ProjectCaps {
@@ -305,13 +365,19 @@ export class WorkspaceManager {
     }
   }
 
-  private async createArcWsInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<ArcWsInstance> {
+  private async createArcWsInstance(
+    workspaceId: string,
+    sourceRoot: string,
+    index?: unknown,
+    bodyRecordsFile: string | null = null,
+  ): Promise<ArcWsInstance> {
     const id = `arc-${Date.now()}-${Math.round(Math.random() * 1e6)}`
     const materializedRoot = this.createMaterializedRoot(id, sourceRoot)
     return {
       id,
       workspaceId,
       materializedRoot,
+      bodyRecordsFile,
       mutability: "writable",
       createdAt: Date.now(),
       index: index ?? await this.snapshotIndex(materializedRoot),
@@ -640,8 +706,11 @@ export class WorkspaceManager {
     let baseImplWsInstanceId: string | null = null
     let activeImplWsInstanceId: string | null = null
 
+    const inheritedBodyRecordsFile = parentWs?.kind === "arch"
+      ? (parentInst as ArcWsInstance | null)?.bodyRecordsFile ?? null
+      : null
     const instance = kind === "arch"
-      ? await this.createArcWsInstance(id, sourceRoot, parentInst?.index)
+      ? await this.createArcWsInstance(id, sourceRoot, parentInst?.index, inheritedBodyRecordsFile)
       : await this.createImplWsInstance(id, sourceRoot, parentInst?.index)
 
     if (kind === "arch") {
@@ -928,10 +997,99 @@ export class WorkspaceManager {
     })
   }
 
+  private async reindexInstance(
+    ws: WorkspaceRecord,
+    inst: ArcWsInstance | ImplWsInstance,
+    baseIndex: unknown,
+  ): Promise<void> {
+    const baseSnapshots = new Map<string, string | null>()
+    const oldIndex = baseIndex as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null }[] } }[] } | null
+    if (oldIndex?.files) {
+      for (const f of oldIndex.files) {
+        for (const component of indexComponents(f)) {
+          if (!component.captured) continue
+          for (const c of component.captured as { exportName: string; testFile: string; snapshot: string | null }[]) {
+            baseSnapshots.set(`${c.testFile}::${c.exportName}`, c.snapshot)
+          }
+        }
+      }
+    }
+
+    const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
+    const wsSbUrl = this.sbManager.get(ws.id)
+    if (wsSbUrl) reindexArgs.push(wsSbUrl)
+    const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
+    inst.index = JSON.parse(stdout)
+
+    const newIndex = inst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }; components?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[] }[] }
+    if (newIndex.files) {
+      for (const f of newIndex.files) {
+        for (const component of indexComponents(f) as { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[]) {
+          if (!component.captured) continue
+          for (const c of component.captured) {
+            const prev = baseSnapshots.get(`${c.testFile}::${c.exportName}`) ?? null
+            c.previousSnapshot = prev !== c.snapshot ? prev : null
+          }
+        }
+      }
+    }
+  }
+
+  private validateImplConformance(implInst: ImplWsInstance, arcInst: ArcWsInstance): ImplValidationResult {
+    const arcText = architectureTextFromIndex(arcInst.index)
+    const implText = architectureTextFromIndex(implInst.index)
+    const issues = arcText === implText
+      ? []
+      : ["implementation architecture projection does not match source arc instance"]
+    return {
+      status: issues.length === 0 ? "pass" : "fail",
+      checkedAt: Date.now(),
+      issues,
+    }
+  }
+
+  private async implArcWsInstance(
+    ws: WorkspaceRecord,
+    arcInst: ArcWsInstance,
+    baseIndex: unknown,
+    onEvent: AgentEventCallback,
+  ): Promise<ImplWsInstance | null> {
+    onEvent({ type: "status", message: "preparing outcome instance…" })
+    const implInst = await this.createImplWsInstance(ws.id, arcInst.materializedRoot, arcInst.index, arcInst.id)
+    ws.implWsInstances[implInst.id] = implInst
+    this.save(ws)
+
+    if (arcInst.bodyRecordsFile && existsSync(arcInst.bodyRecordsFile)) {
+      try {
+        await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "splice", implInst.materializedRoot, arcInst.bodyRecordsFile], {
+          cwd: this.logosTsRoot, encoding: "utf8",
+        })
+      } catch (e) {
+        onEvent({ type: "stderr", message: "outcome preparation failed: " + String(e) })
+        return null
+      }
+    }
+
+    try {
+      await this.reindexInstance(ws, implInst, baseIndex)
+    } catch (e) {
+      console.error(`[logos] re-index failed for impl instance ${implInst.id}:`, e)
+    }
+
+    implInst.validation = this.validateImplConformance(implInst, arcInst)
+    ws.activeImplWsInstanceId = implInst.id
+    this.save(ws)
+    return implInst
+  }
+
   private async runGoalAgent(ws: WorkspaceRecord, goal: Goal, onEvent: AgentEventCallback): Promise<void> {
     const baseInst = this.activeInstance(ws)
+    const mode = goal.mode
+    const bodiesFile = resolve(this.runsDir, `${goal.id}.bodies.json`)
+    const inheritedBodyRecordsFile = ws.kind === "arch" ? (baseInst as ArcWsInstance).bodyRecordsFile : null
+    const arcBodyRecordsFile = inheritedBodyRecordsFile ?? bodiesFile
     const workingInst = ws.kind === "arch"
-      ? await this.createArcWsInstance(ws.id, baseInst.materializedRoot, baseInst.index)
+      ? await this.createArcWsInstance(ws.id, baseInst.materializedRoot, baseInst.index, arcBodyRecordsFile)
       : await this.createImplWsInstance(ws.id, baseInst.materializedRoot, baseInst.index)
     if (ws.kind === "arch") ws.arcWsInstances[workingInst.id] = workingInst as ArcWsInstance
     else ws.implWsInstances[workingInst.id] = workingInst as ImplWsInstance
@@ -939,9 +1097,7 @@ export class WorkspaceManager {
     const dir = workingInst.materializedRoot
 
     // Architecture mode: strip bodies for this single architecture agent.
-    const mode = goal.mode
-    const bodiesFile = resolve(this.runsDir, `${goal.id}.bodies.json`)
-    if (mode === "arch") {
+    if (mode === "arch" && inheritedBodyRecordsFile == null) {
       onEvent({ type: "status", message: "stripping to architecture view…" })
       try {
         await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "strip", dir, bodiesFile], {
@@ -1051,60 +1207,25 @@ export class WorkspaceManager {
         return
       }
 
-      if (mode === "arch") {
-        recordAndEmit({ type: "status", message: "splicing implementations + inferring imports…" })
-        try {
-          await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "splice", dir, bodiesFile], {
-            cwd: this.logosTsRoot, encoding: "utf8",
-          })
-        } catch (e) {
-          recordAndEmit({ type: "stderr", message: "splice failed: " + String(e) })
-        }
-      }
-
-      // Collect base snapshots before re-indexing so we can populate previousSnapshot
-      const baseSnapshots = new Map<string, string | null>()
-      const oldIndex = baseInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null }[] } }[] } | null
-      if (oldIndex?.files) {
-        for (const f of oldIndex.files) {
-          for (const component of indexComponents(f)) {
-          if (!component.captured) continue
-          for (const c of component.captured as { exportName: string; testFile: string; snapshot: string | null }[]) {
-            baseSnapshots.set(`${c.testFile}::${c.exportName}`, c.snapshot)
-          }
-          }
-        }
-      }
-
       // Re-index workspace
       try {
-        const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), dir, "-"]
-        const wsSbUrl = this.sbManager.get(ws.id)
-        if (wsSbUrl) reindexArgs.push(wsSbUrl)
-        const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
-        workingInst.index = JSON.parse(stdout)
-        // Merge previousSnapshot from the base index
-        const newIndex = workingInst.index as { files?: { component?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }; components?: { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[] }[] }
-        if (newIndex.files) {
-          for (const f of newIndex.files) {
-            for (const component of indexComponents(f) as { captured?: { exportName: string; testFile: string; snapshot: string | null; previousSnapshot: string | null }[] }[]) {
-            if (!component.captured) continue
-            for (const c of component.captured) {
-              const prev = baseSnapshots.get(`${c.testFile}::${c.exportName}`) ?? null
-              c.previousSnapshot = prev !== c.snapshot ? prev : null
-            }
-            }
-          }
-        }
+        await this.reindexInstance(ws, workingInst, baseInst.index)
       } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
 
       goal.status = code === 0 ? "done" : "error"
       if (code === 0) {
-        if (ws.kind === "arch") ws.activeArcWsInstanceId = workingInst.id
-        else ws.activeImplWsInstanceId = workingInst.id
+        let storybookRoot = workingInst.materializedRoot
+        if (ws.kind === "arch") {
+          const arcInst = workingInst as ArcWsInstance
+          ws.activeArcWsInstanceId = arcInst.id
+          const implInst = await this.implArcWsInstance(ws, arcInst, baseInst.index, recordAndEmit)
+          if (implInst) storybookRoot = implInst.materializedRoot
+        } else {
+          ws.activeImplWsInstanceId = workingInst.id
+        }
         this.sbManager.shutdown(ws.id)
         if (this.caps.storybook) {
-          this.startStorybook(ws.id, workingInst.materializedRoot).catch((e: any) => {
+          this.startStorybook(ws.id, storybookRoot).catch((e: any) => {
             console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
           })
         }

@@ -484,6 +484,48 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.nextPendingGoal(secondArch.id)?.id).toBe("pending")
   })
 
+  it("keeps architecture output in an arc instance and derives a linked impl instance", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const arch = await mgr.create({ kind: "arch" })
+    const initial = mgr.get(arch.id)
+    if (!initial) throw new Error("missing arch workspace")
+    writeFileSync(join(initial.forkDir, "thing.ts"), `export function add(a: number, b: number): number {
+  return a + b
+}
+`)
+    const g = expectGoal(await mgr.addGoal(arch.id, goal("shape", "arch"))).goal
+
+    expect(mgr.processById(arch.id, g.id, () => undefined)).toBe(g.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => {
+      expect(mgr.goalsForWorkspace(arch.id).map((candidate) => [candidate.id, candidate.status])).toEqual([
+        ["shape", "done"],
+      ])
+      const state = mgr.get(arch.id)
+      expect(state?.activeArcWsInstanceId).toBeTruthy()
+      expect(state?.activeImplWsInstanceId).toBeTruthy()
+    })
+
+    const state = mgr.get(arch.id)
+    if (!state?.activeArcWsInstanceId || !state.activeImplWsInstanceId) throw new Error("missing derived instances")
+    const arcInst = state.arcWsInstances[state.activeArcWsInstanceId]
+    const implInst = state.implWsInstances[state.activeImplWsInstanceId]
+    if (!arcInst || !implInst) throw new Error("missing instance records")
+
+    expect(implInst.arcWsInstanceId).toBe(arcInst.id)
+    expect(implInst.validation).toMatchObject({ status: "pass", issues: [] })
+
+    const arcSource = readFileSync(join(arcInst.materializedRoot, "thing.ts"), "utf8")
+    const implSource = readFileSync(join(implInst.materializedRoot, "thing.ts"), "utf8")
+    expect(arcSource).toContain("declare function add")
+    expect(arcSource).not.toContain("return a + b")
+    expect(implSource).toContain("return a + b")
+  })
+
   it("persists workspace state in the runtime database", async () => {
     const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
     tempDirs.push(root)

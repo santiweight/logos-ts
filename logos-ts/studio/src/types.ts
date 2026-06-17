@@ -140,9 +140,16 @@ export interface ArcWsInstance {
   id: string
   workspaceId: string
   materializedRoot: string
+  bodyRecordsFile: string | null
   mutability: "writable" | "immutable"
   createdAt: number
   index: StudioIndex
+}
+
+export interface ImplValidationResult {
+  status: "pass" | "fail"
+  checkedAt: number
+  issues: string[]
 }
 
 export interface ImplWsInstance {
@@ -153,7 +160,7 @@ export interface ImplWsInstance {
   mutability: "writable" | "immutable"
   createdAt: number
   index: StudioIndex
-  validation: unknown | null
+  validation: ImplValidationResult | null
 }
 
 export interface Workspace extends WorkspaceMeta {

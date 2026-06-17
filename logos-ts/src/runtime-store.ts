@@ -25,9 +25,16 @@ export interface StoredArcWsInstance {
   id: string
   workspaceId: string
   materializedRoot: string
+  bodyRecordsFile: string | null
   mutability: "writable" | "immutable"
   createdAt: number
   index: unknown
+}
+
+export interface StoredImplValidationResult {
+  status: "pass" | "fail"
+  checkedAt: number
+  issues: string[]
 }
 
 export interface StoredImplWsInstance {
@@ -38,7 +45,7 @@ export interface StoredImplWsInstance {
   mutability: "writable" | "immutable"
   createdAt: number
   index: unknown
-  validation: unknown | null
+  validation: StoredImplValidationResult | null
 }
 
 export interface StoredWorkspaceRecord {
@@ -133,6 +140,7 @@ export class LogosRuntimeStore {
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
         materialized_root TEXT NOT NULL,
+        body_records_file TEXT,
         mutability TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         index_json TEXT NOT NULL,
@@ -291,9 +299,9 @@ export class LogosRuntimeStore {
       this.db.prepare(`DELETE FROM arc_ws_instances WHERE workspace_id = ?`).run(ws.id)
       for (const inst of Object.values(ws.arcWsInstances)) {
         this.db.prepare(`
-          INSERT INTO arc_ws_instances (id, workspace_id, materialized_root, mutability, created_at, index_json)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(inst.id, ws.id, inst.materializedRoot, inst.mutability, inst.createdAt, JSON.stringify(inst.index))
+          INSERT INTO arc_ws_instances (id, workspace_id, materialized_root, body_records_file, mutability, created_at, index_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(inst.id, ws.id, inst.materializedRoot, inst.bodyRecordsFile, inst.mutability, inst.createdAt, JSON.stringify(inst.index))
       }
       for (const inst of Object.values(ws.implWsInstances)) {
         this.db.prepare(`
@@ -505,6 +513,7 @@ function mapArcWsInstance(row: Record<string, unknown>): StoredArcWsInstance {
     id: row["id"] as string,
     workspaceId: row["workspace_id"] as string,
     materializedRoot: row["materialized_root"] as string,
+    bodyRecordsFile: nullableString(row["body_records_file"]),
     mutability: row["mutability"] === "immutable" ? "immutable" : "writable",
     createdAt: row["created_at"] as number,
     index: JSON.parse(row["index_json"] as string),
@@ -521,7 +530,7 @@ function mapImplWsInstance(row: Record<string, unknown>): StoredImplWsInstance {
     mutability: row["mutability"] === "immutable" ? "immutable" : "writable",
     createdAt: row["created_at"] as number,
     index: JSON.parse(row["index_json"] as string),
-    validation: typeof validationJson === "string" ? JSON.parse(validationJson) : null,
+    validation: typeof validationJson === "string" ? JSON.parse(validationJson) as StoredImplValidationResult : null,
   }
 }
 
