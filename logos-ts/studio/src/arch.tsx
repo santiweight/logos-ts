@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from "react"
+import { CodeBlock } from "./highlight"
 import type { GoalApi, DiffStatus } from "./types"
 
 export const CommentCtx = createContext<GoalApi>({ comments: {}, onComment: () => {} })
@@ -50,7 +51,7 @@ export function Row({
       {open && (
         <div className="row-body">
           {desc && <div className="row-desc">{desc}</div>}
-          {code && <pre className="code">{code}</pre>}
+          {code && <CodeBlock code={code} />}
         </div>
       )}
     </div>
