@@ -681,6 +681,8 @@ body.resizing-rail * {
 }
 .main-nav button:hover { color: var(--text); }
 .main-nav button.active { color: #fff; border-bottom-color: var(--accent); }
+.main-nav .nav-back { border-bottom: none; padding: 0 8px; font-size: 14px; color: var(--muted); }
+.main-nav .nav-back:hover { color: var(--text); }
 .main-view { flex: 1; min-height: 0; overflow: hidden; }
 
 .content { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }

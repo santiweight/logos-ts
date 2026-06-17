@@ -131,10 +131,14 @@ export function App() {
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
   const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
 
+  const [navHistory, setNavHistory] = useState<Selection[]>([])
   const onGoto = useCallback((sym: { file: string; line: number }) => {
     const indexed = view.files.some((f) => f.file === sym.file)
     if (indexed) {
-      setSelection({ file: sym.file, view: "code" })
+      setSelection((prev) => {
+        setNavHistory((h) => [...h, prev])
+        return { file: sym.file, view: "code" }
+      })
     } else {
       fetch("/api/open", {
         method: "POST",
@@ -143,6 +147,13 @@ export function App() {
       })
     }
   }, [view.files])
+  const goBack = useCallback(() => {
+    setNavHistory((h) => {
+      if (h.length === 0) return h
+      setSelection(h[h.length - 1]!)
+      return h.slice(0, -1)
+    })
+  }, [])
   const gotoCtx = useMemo(() => ({ symbols: view.symbols ?? {}, onGoto }), [view.symbols, onGoto])
 
   const [storybookUrls, setStorybookUrls] = useState<Record<string, string>>({})
@@ -944,6 +955,9 @@ export function App() {
       <GotoCtx.Provider value={gotoCtx}>
       <main className="main">
         <nav className="main-nav">
+          {navHistory.length > 0 && (
+            <button className="nav-back" onClick={goBack} title="Go back">←</button>
+          )}
           <button className={!reviewOpen ? "active" : ""} onClick={() => setReviewOpen(false)}>
             Workspace
           </button>

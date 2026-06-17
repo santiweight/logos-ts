@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from "react"
-import { CodeBlock } from "./highlight"
+import { CodeBlock, GotoCtx, highlightTs } from "./highlight"
 import type { GoalApi, DiffStatus } from "./types"
 
 export const CommentCtx = createContext<GoalApi>({ comments: {}, onComment: () => {} })
@@ -28,6 +28,7 @@ export function Row({
   label: string
 }) {
   const { comments, onComment } = useContext(CommentCtx)
+  const { symbols, onGoto } = useContext(GotoCtx)
   const status = useContext(DiffCtx)[target]
   const [open, setOpen] = useState(false)
   const count = comments[target]?.length ?? 0
@@ -45,7 +46,7 @@ export function Row({
       >
         <span className="caret">{open ? "▾" : "▸"}</span>
         <span className={`tag ${tagClass}`}>{tag}</span>
-        <code className="row-title">{title}</code>
+        <code className="row-title">{highlightTs(title, symbols, onGoto)}</code>
         {count > 0 && <span className="cbadge">💬{count}</span>}
       </div>
       {open && (
