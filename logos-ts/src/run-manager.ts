@@ -10,6 +10,7 @@ export interface RunEntry {
   id: string
   workspaceId: string
   targetId: string
+  framework: "vite" | "next"
   pid: number
   port: number
   url: string
@@ -118,6 +119,10 @@ export class RunManager {
   }
 
   get(workspaceId: string, targetId: string): string | null {
+    return this.getEntry(workspaceId, targetId)?.url ?? null
+  }
+
+  getEntry(workspaceId: string, targetId: string): RunEntry | null {
     const id = RunManager.key(workspaceId, targetId)
     const entry = this.registry[id]
     if (!entry) return null
@@ -138,7 +143,7 @@ export class RunManager {
       })
       return null
     }
-    return entry.url
+    return entry
   }
 
   all(): Record<string, RunEntry> {
@@ -213,16 +218,16 @@ export class RunManager {
       const child = spawn(command, args, {
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          PORT: String(port),
-          HOST: "127.0.0.1",
-          BROWSER: "none",
-          LOGOS_SESSION: basename(this.projectRoot),
-          LOGOS_WS: workspaceId,
-          LOGOS_RUN_TARGET: target.id,
-          LOGOS_RUN_BASE: base,
-        },
+        env: runEnv({
+          port,
+          base,
+          workspaceId,
+          targetId: target.id,
+          projectRoot: this.projectRoot,
+          workspaceRoot,
+          cwd,
+          targetEnv: target.env,
+        }),
       })
 
       let settled = false
@@ -261,6 +266,7 @@ export class RunManager {
           id,
           workspaceId,
           targetId: target.id,
+          framework: target.framework,
           pid,
           port,
           url,
@@ -297,7 +303,9 @@ export class RunManager {
       const bufferLines = (d: Buffer) => {
         for (const line of d.toString().split("\n")) {
           const trimmed = line.trim()
-          if (trimmed) this.pushLog(id, trimmed)
+          if (!trimmed) continue
+          this.pushLog(id, trimmed)
+          if (isReadyLog(target, trimmed)) markReady()
         }
       }
 
@@ -378,6 +386,71 @@ function commandForCwd(cwd: string, command: string): string {
   return command
 }
 
+function copyEnv(name: string, env: NodeJS.ProcessEnv, out: Record<string, string>): void {
+  const value = env[name]
+  if (value != null) out[name] = value
+}
+
+function runEnv(opts: {
+  port: number
+  base: string
+  workspaceId: string
+  targetId: string
+  projectRoot: string
+  workspaceRoot: string
+  cwd: string
+  targetEnv?: Record<string, string> | undefined
+}): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const name of [
+    "PATH",
+    "HOME",
+    "SHELL",
+    "USER",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "SSH_AUTH_SOCK",
+  ]) copyEnv(name, process.env, out)
+
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value == null) continue
+    if (name.startsWith("npm_config_")) out[name] = value
+  }
+
+  out["PORT"] = String(opts.port)
+  out["HOST"] = "127.0.0.1"
+  out["BROWSER"] = "none"
+  out["LOGOS_SESSION"] = basename(opts.projectRoot)
+  out["LOGOS_WS"] = opts.workspaceId
+  out["LOGOS_RUN_TARGET"] = opts.targetId
+  out["LOGOS_RUN_BASE"] = opts.base
+  for (const [name, value] of Object.entries(opts.targetEnv ?? {})) {
+    out[name] = expandRunEnvValue(value, opts)
+  }
+  return out
+}
+
+function expandRunEnvValue(value: string, opts: {
+  port: number
+  base: string
+  workspaceId: string
+  targetId: string
+  projectRoot: string
+  workspaceRoot: string
+  cwd: string
+}): string {
+  return value
+    .replace(/\$\{PORT\}/g, String(opts.port))
+    .replace(/\$\{BASE\}/g, opts.base)
+    .replace(/\$\{WORKSPACE_ROOT\}/g, opts.workspaceRoot)
+    .replace(/\$\{CWD\}/g, opts.cwd)
+    .replace(/\$\{PROJECT_ROOT\}/g, opts.projectRoot)
+}
+
 function findFreePort(): Promise<number> {
   return new Promise((resolve_, reject) => {
     const server = createServer()
@@ -394,7 +467,7 @@ function probe(url: string): Promise<boolean> {
   return new Promise((resolve_) => {
     const req = httpRequest(url, { method: "GET", timeout: 1000 }, (res) => {
       res.resume()
-      resolve_((res.statusCode ?? 500) < 500)
+      resolve_(res.statusCode != null)
     })
     req.on("timeout", () => {
       req.destroy()
@@ -403,4 +476,10 @@ function probe(url: string): Promise<boolean> {
     req.on("error", () => resolve_(false))
     req.end()
   })
+}
+
+function isReadyLog(target: RunTargetCaps, line: string): boolean {
+  if (target.framework === "next") return /\bready\b/i.test(line)
+  if (target.framework === "vite") return /\blocal:\s+http:\/\//i.test(line)
+  return false
 }

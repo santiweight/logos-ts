@@ -160,7 +160,7 @@ interface ProjectCaps {
   root: string
   storybook?: { configDir: string; frontendDir: string }
   tests?: { command: string[]; watchDirs: string[] }
-  runs?: { id: string; label: string; cwd: string; command: string; args: string[] }[]
+  runs?: { id: string; label: string; cwd: string; command: string; args: string[]; framework: "vite" | "next"; env?: Record<string, string> }[]
   nodeModulesDirs: string[]
 }
 
@@ -641,8 +641,6 @@ export class WorkspaceManager {
         console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
       })
     }
-    this.startRuns(id, instance.materializedRoot)
-
     return this.toMeta(ws)
   }
 
@@ -657,14 +655,6 @@ export class WorkspaceManager {
     const ws = this.workspaces.get(wsId)
     if (!ws) return Promise.reject(new Error("no such workspace"))
     return this.startStorybook(wsId, this.activeInstance(ws).materializedRoot)
-  }
-
-  private startRuns(id: string, forkDir: string): void {
-    for (const target of this.caps.runs ?? []) {
-      this.runManager.ensure(id, forkDir, target).catch((e: any) => {
-        console.error(`[workspace] run ${target.id} for ${id} failed to start:`, e.message)
-      })
-    }
   }
 
   ensureRun(wsId: string, targetId: string, opts?: { restart?: boolean }): Promise<string> {
@@ -1079,7 +1069,6 @@ export class WorkspaceManager {
             console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
           })
         }
-        this.startRuns(ws.id, workingInst.materializedRoot)
       }
       const summary = extractAgentSummary(collectedEvents)
       if (summary) {

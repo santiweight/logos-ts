@@ -8,6 +8,7 @@ import type { RunManager } from "../../src/run-manager"
 interface ProxyTarget {
   workspaceId: string
   targetId: string
+  framework: "vite" | "next"
   path: string
   url: URL
 }
@@ -15,6 +16,42 @@ interface ProxyTarget {
 function proxyTarget(req: IncomingMessage, manager: RunManager): ProxyTarget | null {
   const url = new URL(req.url || "/", "http://logos.local")
   const match = url.pathname.match(/^\/runs\/([^/]+)\/([^/]+)(\/.*)?$/)
+  if (!match?.[1] || !match[2]) return refererProxyTarget(req, url, manager)
+
+  let workspaceId: string
+  let targetId: string
+  try {
+    workspaceId = decodeURIComponent(match[1])
+    targetId = decodeURIComponent(match[2])
+  } catch {
+    return null
+  }
+  const entry = manager.getEntry(workspaceId, targetId)
+  if (!entry) return null
+  const scopedPath = `${match[3] || "/"}${url.search}`
+  const routeThroughAppRoot = entry.framework === "next" || scopedPath.startsWith("/api") || scopedPath.startsWith("/ws")
+  return {
+    workspaceId,
+    targetId,
+    framework: entry.framework,
+    path: routeThroughAppRoot ? scopedPath : `${url.pathname}${url.search}`,
+    url: new URL(entry.url),
+  }
+}
+
+function isOwnRunBaseRequest(req: IncomingMessage): boolean {
+  const base = process.env.LOGOS_RUN_BASE
+  if (!base) return false
+  const url = new URL(req.url || "/", "http://logos.local")
+  return url.pathname === base.slice(0, -1) || url.pathname.startsWith(base)
+}
+
+function refererProxyTarget(req: IncomingMessage, url: URL, manager: RunManager): ProxyTarget | null {
+  if (!isFrameworkAbsolutePath(url.pathname)) return null
+  const rawReferer = req.headers.referer
+  if (typeof rawReferer !== "string") return null
+  const referer = new URL(rawReferer, "http://logos.local")
+  const match = referer.pathname.match(/^\/runs\/([^/]+)\/([^/]+)\//)
   if (!match?.[1] || !match[2]) return null
 
   let workspaceId: string
@@ -25,22 +62,31 @@ function proxyTarget(req: IncomingMessage, manager: RunManager): ProxyTarget | n
   } catch {
     return null
   }
-  const target = manager.get(workspaceId, targetId)
-  if (!target) return null
-  const scopedPath = `${match[3] || "/"}${url.search}`
-  const routeThroughAppRoot = scopedPath.startsWith("/api") || scopedPath.startsWith("/ws")
+
+  const entry = manager.getEntry(workspaceId, targetId)
+  if (!entry) return null
   return {
     workspaceId,
     targetId,
-    path: routeThroughAppRoot ? scopedPath : `${url.pathname}${url.search}`,
-    url: new URL(target),
+    framework: entry.framework,
+    path: `${url.pathname}${url.search}`,
+    url: new URL(entry.url),
   }
+}
+
+function isFrameworkAbsolutePath(pathname: string): boolean {
+  return pathname.startsWith("/_next/") ||
+    pathname.startsWith("/__nextjs") ||
+    pathname === "/favicon.ico" ||
+    pathname === "/robots.txt" ||
+    pathname === "/manifest.webmanifest"
 }
 
 function upstreamHeaders(req: IncomingMessage, target: URL): OutgoingHttpHeaders {
   const headers: OutgoingHttpHeaders = { ...req.headers }
   headers["host"] = target.host
   if (headers["origin"]) headers["origin"] = target.origin
+  headers["accept-encoding"] = "identity"
   return headers
 }
 
@@ -53,6 +99,13 @@ function rewriteRunHtml(html: string, target: ProxyTarget): string {
   const script = `<script>
 (() => {
   const base = ${JSON.stringify(base)};
+  const shouldRewriteNavigation = (value) => (
+    typeof value === "string" &&
+    value.startsWith("/") &&
+    !value.startsWith(base) &&
+    !value.startsWith("/_next/") &&
+    !value.startsWith("/__nextjs")
+  );
   const rewrite = (value) => {
     if (typeof value === "string" && (value.startsWith("/api") || value.startsWith("/ws"))) return base + value.slice(1);
     if (value instanceof URL && value.origin === window.location.origin && (value.pathname.startsWith("/api") || value.pathname.startsWith("/ws"))) {
@@ -84,6 +137,15 @@ function rewriteRunHtml(html: string, target: ProxyTarget): string {
   Object.defineProperty(window.WebSocket, "CONNECTING", { value: OriginalWebSocket.CONNECTING });
   Object.defineProperty(window.WebSocket, "CLOSING", { value: OriginalWebSocket.CLOSING });
   Object.defineProperty(window.WebSocket, "CLOSED", { value: OriginalWebSocket.CLOSED });
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+    const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!target || (target.target && target.target !== "_self")) return;
+    const href = target.getAttribute("href");
+    if (!shouldRewriteNavigation(href)) return;
+    event.preventDefault();
+    window.location.href = base + href.slice(1);
+  }, true);
 })();
 </script>`
   return html.includes("<head>")
@@ -91,11 +153,21 @@ function rewriteRunHtml(html: string, target: ProxyTarget): string {
     : `${script}${html}`
 }
 
+function rewriteLocationHeader(location: string, target: ProxyTarget): string {
+  const base = publicRunUrl(target.workspaceId, target.targetId)
+  if (location.startsWith(target.url.origin)) return location.replace(target.url.origin, base)
+  if (target.framework === "next" && location.startsWith("/") && !location.startsWith(base)) {
+    return `${base}${location.slice(1)}`
+  }
+  return location
+}
+
 export function runProxyPlugin(manager: RunManager): Plugin {
   return {
     name: "logos-run-proxy",
     configureServer(server) {
       server.httpServer?.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+        if (isOwnRunBaseRequest(req)) return
         const target = proxyTarget(req, manager)
         if (!target) return
 
@@ -127,6 +199,11 @@ export function runProxyPlugin(manager: RunManager): Plugin {
         res: ServerResponse,
         next: Connect.NextFunction,
       ) => {
+        if (isOwnRunBaseRequest(req)) {
+          next()
+          return
+        }
+
         const target = proxyTarget(req, manager)
         if (!target) {
           if ((req.url || "").startsWith("/runs/")) {
@@ -151,11 +228,11 @@ export function runProxyPlugin(manager: RunManager): Plugin {
           for (const [name, value] of Object.entries(proxyRes.headers)) {
             if (value == null) continue
             if (isHtml && name.toLowerCase() === "content-length") continue
+            if (isHtml && name.toLowerCase() === "content-encoding") continue
             if (name === "location") {
               const location = Array.isArray(value) ? value[0] : value
               if (!location) continue
-              const rewritten = location.replace(target.url.origin, publicRunUrl(target.workspaceId, target.targetId))
-              res.setHeader(name, rewritten)
+              res.setHeader(name, rewriteLocationHeader(location, target))
             } else {
               res.setHeader(name, value)
             }

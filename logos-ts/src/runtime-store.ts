@@ -95,6 +95,7 @@ export interface StoredRunEntry {
   id: string
   workspaceId: string
   targetId: string
+  framework: "vite" | "next"
   pid: number
   port: number
   url: string
@@ -208,6 +209,7 @@ export class LogosRuntimeStore {
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
         target_id TEXT NOT NULL,
+        framework TEXT NOT NULL DEFAULT 'vite',
         pid INTEGER NOT NULL,
         port INTEGER NOT NULL,
         url TEXT NOT NULL,
@@ -245,6 +247,7 @@ export class LogosRuntimeStore {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_goal ON sessions(goal_id);
     `)
     this.addColumnIfMissing("workspaces", "publication_json", "TEXT")
+    this.addColumnIfMissing("runs", "framework", "TEXT NOT NULL DEFAULT 'vite'")
   }
 
   private addColumnIfMissing(table: string, column: string, definition: string): void {
@@ -483,12 +486,13 @@ export class LogosRuntimeStore {
       this.db.prepare(`DELETE FROM runs`).run()
       for (const entry of Object.values(entries)) {
         this.db.prepare(`
-          INSERT INTO runs (id, workspace_id, target_id, pid, port, url, cwd, started_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO runs (id, workspace_id, target_id, framework, pid, port, url, cwd, started_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           entry.id,
           entry.workspaceId,
           entry.targetId,
+          entry.framework,
           entry.pid,
           entry.port,
           entry.url,
@@ -646,6 +650,7 @@ function mapRun(row: Record<string, unknown>): StoredRunEntry {
     id: row["id"] as string,
     workspaceId: row["workspace_id"] as string,
     targetId: row["target_id"] as string,
+    framework: row["framework"] as "vite" | "next",
     pid: row["pid"] as number,
     port: row["port"] as number,
     url: row["url"] as string,

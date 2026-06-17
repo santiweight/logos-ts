@@ -105,12 +105,25 @@ export function buildData(
   diff: Record<string, DiffStatus>,
   comments: Props["comments"],
   failingTests: Set<string> | null,
-  runTargets: RunTarget[],
-  runStates: Record<string, RunState | undefined>,
-  showFunctions: boolean,
-  showClasses: boolean,
-  showComponents: boolean
+  runTargetsOrShowFunctions: RunTarget[] | boolean,
+  runStatesOrShowClasses: Record<string, RunState | undefined> | boolean,
+  showFunctionsOrShowComponents: boolean,
+  showClasses = true,
+  showComponents = true
 ): { data: SNode[]; openIds: Record<string, boolean> } {
+  const runTargets = Array.isArray(runTargetsOrShowFunctions) ? runTargetsOrShowFunctions : []
+  const runStates = Array.isArray(runTargetsOrShowFunctions)
+    ? runStatesOrShowClasses as Record<string, RunState | undefined>
+    : {}
+  const showFunctions = Array.isArray(runTargetsOrShowFunctions)
+    ? showFunctionsOrShowComponents
+    : runTargetsOrShowFunctions
+  const resolvedShowClasses = Array.isArray(runTargetsOrShowFunctions)
+    ? showClasses
+    : runStatesOrShowClasses as boolean
+  const resolvedShowComponents = Array.isArray(runTargetsOrShowFunctions)
+    ? showComponents
+    : showFunctionsOrShowComponents
   const openIds: Record<string, boolean> = {}
   const allGoals = Object.values(comments).flat().filter(Boolean) as Goal[]
   const storyComments = new Map<string, number>()
@@ -169,7 +182,7 @@ export function buildData(
 
   const stripExt = (n: string) => n.replace(/\.(tsx?|jsx?)$/, "")
   const itemVisible = (it: FileItem): boolean =>
-    it.kind === "class" ? showClasses : showFunctions
+    it.kind === "class" ? resolvedShowClasses : showFunctions
 
   const fileNode = (f: FileEntry): SNode | null => {
     const rawName = f.file.split("/").pop() ?? f.file
@@ -178,7 +191,7 @@ export function buildData(
 
     const allComponents = componentsOf(f)
     if (allComponents.length > 0) {
-      const components = showComponents ? allComponents : []
+      const components = resolvedShowComponents ? allComponents : []
       const componentNames = new Set(allComponents.map((component) => component.name))
       const componentNode = (comp: ComponentEntry): SNode => {
       const compTarget = `component:${comp.name}`

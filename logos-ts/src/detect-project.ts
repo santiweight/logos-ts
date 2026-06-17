@@ -18,6 +18,8 @@ export interface RunTargetCaps {
   cwd: string
   command: string
   args: string[]
+  framework: "vite" | "next"
+  env?: Record<string, string>
 }
 
 export interface ProjectCaps {
@@ -124,31 +126,63 @@ function detectRuns(root: string): RunTargetCaps[] {
     const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) } as Record<string, string>
     const scripts = (pkg.scripts ?? {}) as Record<string, string>
     const hasVite = Boolean(deps["vite"])
+    const hasNext = Boolean(deps["next"])
     const devScript = scripts["dev"]
+    const hasViteEntrypoint = existsSync(join(dir, "index.html"))
+    const hasNextEntrypoint = existsSync(join(dir, "next.config.js")) ||
+      existsSync(join(dir, "next.config.mjs")) ||
+      existsSync(join(dir, "next.config.ts")) ||
+      existsSync(join(dir, "app")) ||
+      existsSync(join(dir, "pages"))
+    const env = runTargetEnv(pkg)
 
-    if (devScript && (hasVite || /\bvite\b/.test(devScript))) {
+    if (hasNext && hasNextEntrypoint) {
+      targets.push({
+        id: `${idBase}-app`,
+        label: targets.length === 0 ? "App" : `${labelBase} App`,
+        cwd: dir,
+        command: devScript ? "npm" : "node_modules/.bin/next",
+        args: devScript
+          ? ["run", "dev", "--", "-H", "127.0.0.1", "-p", "${PORT}"]
+          : ["dev", "-H", "127.0.0.1", "-p", "${PORT}"],
+        framework: "next",
+        ...(env ? { env } : {}),
+      })
+      continue
+    }
+
+    if (devScript && hasViteEntrypoint && (hasVite || /\bvite\b/.test(devScript))) {
       targets.push({
         id: `${idBase}-app`,
         label: targets.length === 0 ? "App" : `${labelBase} App`,
         cwd: dir,
         command: "npm",
         args: ["run", "dev", "--", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+        framework: "vite",
+        ...(env ? { env } : {}),
       })
       continue
     }
 
-    if (hasVite) {
+    if (hasVite && hasViteEntrypoint) {
       targets.push({
         id: `${idBase}-app`,
         label: targets.length === 0 ? "App" : `${labelBase} App`,
         cwd: dir,
         command: "node_modules/.bin/vite",
         args: ["--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+        framework: "vite",
+        ...(env ? { env } : {}),
       })
     }
   }
 
   return targets
+}
+
+function runTargetEnv(pkg: { name?: unknown }): Record<string, string> | undefined {
+  if (pkg.name === "logos-ts-studio") return { LOGOS_PROJECT: "${WORKSPACE_ROOT}" }
+  return undefined
 }
 
 function findPackageDirs(root: string): string[] {

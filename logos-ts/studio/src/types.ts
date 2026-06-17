@@ -143,6 +143,8 @@ export interface RunTarget {
   cwd: string
   command: string
   args: string[]
+  framework?: "vite" | "next"
+  env?: Record<string, string>
 }
 
 export interface RunState {

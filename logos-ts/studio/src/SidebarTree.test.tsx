@@ -256,6 +256,76 @@ describe("SidebarTree", () => {
     expect(screen.getByText("saveTaxonomy")).toBeInTheDocument()
     expect(screen.queryByText("AdminTaxonomyPage")).not.toBeInTheDocument()
   })
+
+  it("shows Play for stopped app runs and starts them when the row is clicked", () => {
+    const onRun = vi.fn()
+    const onSelect = vi.fn()
+    render(
+      <SidebarTree
+        files={files}
+        selection={{ file: "src/components/JobCard.tsx", view: "code" }}
+        onSelect={onSelect}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+        testState={null}
+        runTargets={[{
+          id: "root-app",
+          label: "App",
+          cwd: "/tmp/app",
+          command: "npm",
+          args: ["run", "dev"],
+          framework: "vite",
+        }]}
+        onRun={onRun}
+      />
+    )
+
+    expect(screen.getByTitle("Play")).toHaveTextContent("▶")
+
+    fireEvent.click(screen.getByText("App"))
+
+    expect(onSelect).toHaveBeenCalledWith({ file: "", view: "run", runTargetId: "root-app" })
+    expect(onRun).toHaveBeenCalledWith("root-app")
+  })
+
+  it("shows Restart for ready app runs", () => {
+    const onRun = vi.fn()
+    render(
+      <SidebarTree
+        files={files}
+        selection={{ file: "", view: "run", runTargetId: "root-app" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+        testState={null}
+        runTargets={[{
+          id: "root-app",
+          label: "App",
+          cwd: "/tmp/app",
+          command: "npm",
+          args: ["run", "dev"],
+          framework: "vite",
+        }]}
+        runStates={{
+          "root-app": {
+            id: "ws-1:root-app",
+            workspaceId: "ws-1",
+            targetId: "root-app",
+            status: "ready",
+            startedAt: 1000,
+            logs: [],
+          },
+        }}
+        onRun={onRun}
+      />
+    )
+
+    fireEvent.click(screen.getByTitle("Restart"))
+
+    expect(onRun).toHaveBeenCalledWith("root-app", true)
+  })
 })
 
 function makeGoal(overrides: Partial<Goal> & { target: string }): Goal {

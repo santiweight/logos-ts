@@ -30,6 +30,7 @@ import type {
 import seedData from "./studio-index.json"
 
 const seed = seedData as unknown as StudioIndex
+const SELECTION_STORAGE_KEY = "logos:selection:v1"
 
 interface DemoOption {
   id: string
@@ -60,15 +61,47 @@ function componentsOf(file: FileEntry | undefined): ComponentEntry[] {
   return file.components?.length ? file.components : file.component ? [file.component] : []
 }
 
+function defaultSelection(): Selection {
+  return {
+    file: seed.files[0]?.file ?? "",
+    view: "code",
+  }
+}
+
+function readStoredSelection(): Selection {
+  if (typeof window === "undefined") return defaultSelection()
+  try {
+    const raw = window.localStorage.getItem(SELECTION_STORAGE_KEY)
+    if (!raw) return defaultSelection()
+    const parsed = JSON.parse(raw) as Partial<Selection>
+    if (!parsed || typeof parsed.view !== "string") return defaultSelection()
+    if (!["code", "arch", "story", "run"].includes(parsed.view)) return defaultSelection()
+    if (parsed.view === "run") {
+      return {
+        file: "",
+        view: "run",
+        ...(typeof parsed.runTargetId === "string" ? { runTargetId: parsed.runTargetId } : {}),
+      }
+    }
+    return {
+      file: typeof parsed.file === "string" ? parsed.file : seed.files[0]?.file ?? "",
+      view: parsed.view,
+      ...(typeof parsed.symbol === "string" ? { symbol: parsed.symbol } : {}),
+      ...(typeof parsed.component === "string" ? { component: parsed.component } : {}),
+      ...(typeof parsed.storyId === "string" ? { storyId: parsed.storyId } : {}),
+      ...(typeof parsed.exportName === "string" ? { exportName: parsed.exportName } : {}),
+    }
+  } catch {
+    return defaultSelection()
+  }
+}
+
 export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
   const [goalError, setGoalError] = useState<string | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
-  const [selection, setSelection] = useState<Selection>({
-    file: seed.files[0]?.file ?? "",
-    view: "code",
-  })
+  const [selection, setSelection] = useState<Selection>(() => readStoredSelection())
   const [popup, setPopup] = useState<{ target: string; label: string; x: number; y: number } | null>(
     null
   )
@@ -105,7 +138,7 @@ export function App() {
   const [runStates, setRunStates] = useState<Record<string, RunState>>({})
   const refreshStorybooks = useCallback(async () => {
     try {
-      const res = await fetch("/api/storybooks")
+      const res = await fetch("/api/storybooks", { cache: "no-store" })
       if (res.ok) {
         const data = await res.json() as { urls: Record<string, string>; states: Record<string, SbState> }
         setStorybookUrls(data.urls)
@@ -129,7 +162,7 @@ export function App() {
   }, [activeWorkspaceId, refreshStorybooks])
   const refreshRunTargets = useCallback(async () => {
     try {
-      const res = await fetch("/api/run-targets")
+      const res = await fetch("/api/run-targets", { cache: "no-store" })
       if (res.ok) {
         const data = await res.json() as { targets: RunTarget[] }
         setRunTargets(data.targets)
@@ -138,7 +171,7 @@ export function App() {
   }, [])
   const refreshRuns = useCallback(async () => {
     try {
-      const res = await fetch("/api/runs")
+      const res = await fetch("/api/runs", { cache: "no-store" })
       if (res.ok) {
         const data = await res.json() as { urls: Record<string, string>; states: Record<string, RunState> }
         setRunUrls(data.urls)
@@ -320,21 +353,22 @@ export function App() {
   // Boot
   const bootedRef = useRef(false)
   useEffect(() => {
-    if (bootedRef.current) return
-    bootedRef.current = true
-    ;(async () => {
-      await Promise.all([refresh(), refreshTests(), refreshStorybooks(), refreshRunTargets(), refreshRuns(), refreshDemos()])
-      const wsRes = await fetch("/api/workspaces").catch(() => null)
-      const wsList = wsRes?.ok ? ((await wsRes.json()) as WorkspaceMeta[]) : []
-      setWorkspaces(wsList)
-      setWorkspacesLoading(false)
-      if (wsList.length > 0) {
-        const latest = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
-        if (latest != null) await openWorkspace(latest.id)
-      } else {
-        await createWorkspace()
-      }
-    })()
+    if (!bootedRef.current) {
+      bootedRef.current = true
+      ;(async () => {
+        await Promise.all([refresh(), refreshTests(), refreshStorybooks(), refreshRunTargets(), refreshRuns(), refreshDemos()])
+        const wsRes = await fetch("/api/workspaces", { cache: "no-store" }).catch(() => null)
+        const wsList = wsRes?.ok ? ((await wsRes.json()) as WorkspaceMeta[]) : []
+        setWorkspaces(wsList)
+        setWorkspacesLoading(false)
+        if (wsList.length > 0) {
+          const latest = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
+          if (latest != null) await openWorkspace(latest.id)
+        } else {
+          await createWorkspace()
+        }
+      })()
+    }
     const iv = setInterval(() => { refreshTests(); refreshStorybooks(); refreshRuns() }, 2_000)
     return () => clearInterval(iv)
   }, [])
@@ -367,6 +401,12 @@ export function App() {
       setDemoSwitching(null)
     }
   }, [activeDemoId, demoSwitching, demos])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify(selection))
+    } catch {}
+  }, [selection])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

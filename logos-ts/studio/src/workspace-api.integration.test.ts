@@ -7,11 +7,10 @@ import { fileURLToPath } from "node:url"
 
 const STUDIO_SRC = dirname(fileURLToPath(import.meta.url))
 const STUDIO = resolve(STUDIO_SRC, "..")
-const LOGOS_TS = resolve(STUDIO, "..")
-const AGENT_RUNS = resolve(LOGOS_TS, ".agent-runs")
 
 let projectRoot: string
 let binDir: string
+let agentRuns: string
 let server: ChildProcess
 let baseUrl: string
 let signalFile: string
@@ -148,6 +147,7 @@ describe("workspace API mode isolation", () => {
   beforeAll(async () => {
     projectRoot = createProject()
     binDir = createFakeClaude()
+    agentRuns = mkdtempSync(join(tmpdir(), "logos-api-agent-runs-"))
     server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
@@ -155,6 +155,7 @@ describe("workspace API mode isolation", () => {
       env: {
         ...process.env,
         LOGOS_PROJECT: projectRoot,
+        LOGOS_AGENT_RUNS_DIR: agentRuns,
         FAKE_CLAUDE_SIGNALS: signalFile,
         PATH: `${binDir}:${process.env["PATH"] ?? ""}`,
       },
@@ -169,7 +170,7 @@ describe("workspace API mode isolation", () => {
     server?.kill()
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
     if (binDir) rmSync(binDir, { recursive: true, force: true })
-    rmSync(AGENT_RUNS, { recursive: true, force: true })
+    if (agentRuns) rmSync(agentRuns, { recursive: true, force: true })
   })
 
   it("creates code workspaces by default and arch workspaces explicitly", async () => {

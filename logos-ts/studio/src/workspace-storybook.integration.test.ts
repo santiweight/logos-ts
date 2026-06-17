@@ -12,12 +12,11 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
-const LOGOS_TS = resolve(STUDIO, "../..")
-const AGENT_RUNS = resolve(LOGOS_TS, ".agent-runs")
 
 let server: ChildProcess
 let baseUrl: string
 let projectRoot: string
+let agentRuns: string
 let sbPid: number | null = null
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
@@ -125,7 +124,9 @@ function isLiveProcess(pid: number | null): boolean {
 }
 
 function cleanup() {
-  try { rmSync(AGENT_RUNS, { recursive: true, force: true }) } catch {}
+  if (agentRuns) {
+    try { rmSync(agentRuns, { recursive: true, force: true }) } catch {}
+  }
   if (projectRoot) {
     try { rmSync(projectRoot, { recursive: true, force: true }) } catch {}
   }
@@ -133,15 +134,15 @@ function cleanup() {
 
 describe("workspace + storybook integration", () => {
   beforeAll(async () => {
-    cleanup()
     projectRoot = createProject()
+    agentRuns = mkdtempSync(join(tmpdir(), "logos-storybook-agent-runs-"))
     // detached → own process group, so teardown can kill the whole tree
     // (npm → vite → storybooks) without touching unrelated dev servers.
     server = spawn("npm", ["run", "dev"], {
       cwd: resolve(STUDIO, ".."),
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, LOGOS_PROJECT: projectRoot },
+      env: { ...process.env, LOGOS_PROJECT: projectRoot, LOGOS_AGENT_RUNS_DIR: agentRuns },
     })
     baseUrl = await waitForServer(server)
   }, 60_000)

@@ -131,7 +131,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
 
   const wsMgr = new WorkspaceManager({
     store: runtimeStore,
-    runsDir: resolve(LOGOS_TS, ".agent-runs"),
+    runsDir: process.env.LOGOS_AGENT_RUNS_DIR ? resolve(process.env.LOGOS_AGENT_RUNS_DIR) : resolve(LOGOS_TS, ".agent-runs"),
     logosTsSrc: resolve(LOGOS_TS, "src"),
     logosTsRoot: LOGOS_TS,
     projectRoot,
@@ -298,6 +298,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
 
       server.middlewares.use("/api/storybooks", (_req, res) => {
         res.setHeader("content-type", "application/json")
+        res.setHeader("cache-control", "no-store")
         const entries = sbManager.all()
         const states = sbManager.allStates()
         const urls: Record<string, string> = {}
@@ -307,11 +308,13 @@ function studioApi(runtime: StudioRuntime): Plugin {
 
       server.middlewares.use("/api/run-targets", (_req, res) => {
         res.setHeader("content-type", "application/json")
+        res.setHeader("cache-control", "no-store")
         res.end(JSON.stringify({ targets: caps.runs }))
       })
 
       server.middlewares.use("/api/runs", (_req, res) => {
         res.setHeader("content-type", "application/json")
+        res.setHeader("cache-control", "no-store")
         for (const ws of wsMgr.list()) {
           for (const target of caps.runs) runManager.get(ws.id, target.id)
         }
