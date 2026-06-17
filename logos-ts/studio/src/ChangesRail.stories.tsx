@@ -58,37 +58,44 @@ const goalError: Goal = {
   status: "error",
 }
 
-const ws1: WorkspaceMeta = {
-  id: "ws-1",
-  name: "workspace-1",
+const codeWs = (id: string, name: string, createdAt: number, goals: Goal[] = [], parentId: string | null = null): WorkspaceMeta => ({
+  id,
+  name,
   kind: "code",
-  parentId: null,
-  createdAt: Date.now() - 300_000,
-  baseInstanceId: "inst-1",
-  activeInstanceId: "inst-1",
-  goals: [goal1, goal2],
+  parentId,
+  createdAt,
+  baseArcWsInstanceId: null,
+  activeArcWsInstanceId: null,
+  goldenArcWsInstanceId: null,
+  baseImplWsInstanceId: `impl-${id}`,
+  activeImplWsInstanceId: `impl-${id}`,
+  goals,
+})
+
+const archWs = (id: string, name: string, createdAt: number, goals: Goal[] = [], parentId: string | null = null): WorkspaceMeta => ({
+  id,
+  name,
+  kind: "arch",
+  parentId,
+  createdAt,
+  baseArcWsInstanceId: `arc-${id}`,
+  activeArcWsInstanceId: `arc-${id}`,
+  goldenArcWsInstanceId: `arc-${id}`,
+  baseImplWsInstanceId: null,
+  activeImplWsInstanceId: null,
+  goals,
+})
+
+const ws1: WorkspaceMeta = {
+  ...codeWs("ws-1", "workspace-1", Date.now() - 300_000, [goal1, goal2]),
 }
 
 const ws2: WorkspaceMeta = {
-  id: "ws-2",
-  name: "workspace-2",
-  kind: "code",
-  parentId: "ws-1",
-  createdAt: Date.now() - 60_000,
-  baseInstanceId: "inst-2",
-  activeInstanceId: "inst-2",
-  goals: [],
+  ...codeWs("ws-2", "workspace-2", Date.now() - 60_000, [], "ws-1"),
 }
 
 const wsArch: WorkspaceMeta = {
-  id: "ws-arch",
-  name: "workspace-arch",
-  kind: "arch",
-  parentId: null,
-  createdAt: Date.now() - 180_000,
-  baseInstanceId: "inst-arch",
-  activeInstanceId: "inst-arch",
-  goals: [goal2, goalError],
+  ...archWs("ws-arch", "workspace-arch", Date.now() - 180_000, [goal2, goalError]),
 }
 
 const baseArgs = {
@@ -221,26 +228,8 @@ export const ManyWorkspaces: Story = {
       ws1,
       ws2,
       wsArch,
-      {
-        id: "ws-3",
-        name: "workspace-3",
-        kind: "code",
-        parentId: null,
-        createdAt: Date.now() - 400_000,
-        baseInstanceId: "inst-3",
-        activeInstanceId: "inst-3",
-        goals: [],
-      },
-      {
-        id: "ws-4",
-        name: "workspace-4",
-        kind: "arch",
-        parentId: "ws-3",
-        createdAt: Date.now() - 10_000,
-        baseInstanceId: "inst-4",
-        activeInstanceId: "inst-4",
-        goals: [goalRunning],
-      },
+      codeWs("ws-3", "workspace-3", Date.now() - 400_000),
+      archWs("ws-4", "workspace-4", Date.now() - 10_000, [goalRunning], "ws-3"),
     ],
     activeWorkspaceId: "ws-1",
     runningGoals: new Set(["g-3"]),

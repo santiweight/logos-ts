@@ -136,7 +136,7 @@ export function App() {
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
   const activeGoals = activeWs?.goals ?? []
-  const activeStorybookRenderKey = `${activeWs?.activeInstanceId ?? ""}:${activeStorybookState?.startedAt ?? 0}`
+  const activeStorybookRenderKey = `${activeWs?.activeArcWsInstanceId ?? activeWs?.activeImplWsInstanceId ?? ""}:${activeStorybookState?.startedAt ?? 0}`
 
   const goalsByTarget = useMemo(() => {
     const m: Record<string, Goal[]> = {}

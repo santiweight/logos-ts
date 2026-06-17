@@ -3,7 +3,8 @@
 //
 // Ontology:
 //   Workspace  — user-facing intent container, typed as code or architecture
-//   Instance   — a materialized project tree on disk
+//   ArcWsInstance  — authored architecture tree on disk
+//   ImplWsInstance — derived/code tree on disk
 //   Goal       — a change request to be achieved in a workspace
 //   GoalQueue  — the ordered list of goals for a workspace (one per workspace)
 //   AgentRun   — executes one goal in a workspace instance directory
@@ -43,7 +44,7 @@ export interface Goal {
 
 export type { WorkspaceKind }
 
-export interface WorkspaceInstance {
+export interface ArcWsInstance {
   id: string
   workspaceId: string
   materializedRoot: string
@@ -52,16 +53,31 @@ export interface WorkspaceInstance {
   index: unknown
 }
 
+export interface ImplWsInstance {
+  id: string
+  workspaceId: string
+  arcWsInstanceId: string | null
+  materializedRoot: string
+  mutability: "writable" | "immutable"
+  createdAt: number
+  index: unknown
+  validation: unknown | null
+}
+
 interface WorkspaceRecord {
   id: string
   name: string
   kind: WorkspaceKind
   parentId: string | null
   createdAt: number
-  baseInstanceId: string
-  activeInstanceId: string
+  baseArcWsInstanceId: string | null
+  activeArcWsInstanceId: string | null
+  goldenArcWsInstanceId: string | null
+  baseImplWsInstanceId: string | null
+  activeImplWsInstanceId: string | null
   goals: Goal[]
-  instances: Record<string, WorkspaceInstance>
+  arcWsInstances: Record<string, ArcWsInstance>
+  implWsInstances: Record<string, ImplWsInstance>
 }
 
 export interface WorkspaceState {
@@ -70,12 +86,16 @@ export interface WorkspaceState {
   kind: WorkspaceKind
   parentId: string | null
   createdAt: number
-  baseInstanceId: string
-  activeInstanceId: string
+  baseArcWsInstanceId: string | null
+  activeArcWsInstanceId: string | null
+  goldenArcWsInstanceId: string | null
+  baseImplWsInstanceId: string | null
+  activeImplWsInstanceId: string | null
   forkDir: string
   index: unknown
   goals: Goal[]
-  instances: Record<string, WorkspaceInstance>
+  arcWsInstances: Record<string, ArcWsInstance>
+  implWsInstances: Record<string, ImplWsInstance>
 }
 
 export interface WorkspaceMeta {
@@ -84,8 +104,11 @@ export interface WorkspaceMeta {
   kind: WorkspaceKind
   parentId: string | null
   createdAt: number
-  baseInstanceId: string
-  activeInstanceId: string
+  baseArcWsInstanceId: string | null
+  activeArcWsInstanceId: string | null
+  goldenArcWsInstanceId: string | null
+  baseImplWsInstanceId: string | null
+  activeImplWsInstanceId: string | null
   goals: Goal[]
 }
 
@@ -227,9 +250,16 @@ export class WorkspaceManager {
     return dir
   }
 
-  private activeInstance(ws: WorkspaceRecord): WorkspaceInstance {
-    const inst = ws.instances[ws.activeInstanceId]
-    if (!inst) throw new Error(`active instance not found for workspace ${ws.id}: ${ws.activeInstanceId}`)
+  private activeInstance(ws: WorkspaceRecord): ArcWsInstance | ImplWsInstance {
+    if (ws.kind === "arch") {
+      const id = ws.activeArcWsInstanceId
+      const inst = id ? ws.arcWsInstances[id] : undefined
+      if (!inst) throw new Error(`active arc ws instance not found for workspace ${ws.id}: ${id ?? "<none>"}`)
+      return inst
+    }
+    const id = ws.activeImplWsInstanceId
+    const inst = id ? ws.implWsInstances[id] : undefined
+    if (!inst) throw new Error(`active impl ws instance not found for workspace ${ws.id}: ${id ?? "<none>"}`)
     return inst
   }
 
@@ -246,12 +276,16 @@ export class WorkspaceManager {
       kind: ws.kind,
       parentId: ws.parentId,
       createdAt: ws.createdAt,
-      baseInstanceId: ws.baseInstanceId,
-      activeInstanceId: ws.activeInstanceId,
+      baseArcWsInstanceId: ws.baseArcWsInstanceId,
+      activeArcWsInstanceId: ws.activeArcWsInstanceId,
+      goldenArcWsInstanceId: ws.goldenArcWsInstanceId,
+      baseImplWsInstanceId: ws.baseImplWsInstanceId,
+      activeImplWsInstanceId: ws.activeImplWsInstanceId,
       forkDir: inst.materializedRoot,
       index: inst.index,
       goals: ws.goals,
-      instances: ws.instances,
+      arcWsInstances: ws.arcWsInstances,
+      implWsInstances: ws.implWsInstances,
     }
   }
 
@@ -262,14 +296,17 @@ export class WorkspaceManager {
       kind: ws.kind,
       parentId: ws.parentId,
       createdAt: ws.createdAt,
-      baseInstanceId: ws.baseInstanceId,
-      activeInstanceId: ws.activeInstanceId,
+      baseArcWsInstanceId: ws.baseArcWsInstanceId,
+      activeArcWsInstanceId: ws.activeArcWsInstanceId,
+      goldenArcWsInstanceId: ws.goldenArcWsInstanceId,
+      baseImplWsInstanceId: ws.baseImplWsInstanceId,
+      activeImplWsInstanceId: ws.activeImplWsInstanceId,
       goals: ws.goals,
     }
   }
 
-  private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
-    const id = `inst-${Date.now()}-${Math.round(Math.random() * 1e6)}`
+  private async createArcWsInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<ArcWsInstance> {
+    const id = `arc-${Date.now()}-${Math.round(Math.random() * 1e6)}`
     const materializedRoot = this.createMaterializedRoot(id, sourceRoot)
     return {
       id,
@@ -278,6 +315,26 @@ export class WorkspaceManager {
       mutability: "writable",
       createdAt: Date.now(),
       index: index ?? await this.snapshotIndex(materializedRoot),
+    }
+  }
+
+  private async createImplWsInstance(
+    workspaceId: string,
+    sourceRoot: string,
+    index?: unknown,
+    arcWsInstanceId: string | null = null,
+  ): Promise<ImplWsInstance> {
+    const id = `impl-${Date.now()}-${Math.round(Math.random() * 1e6)}`
+    const materializedRoot = this.createMaterializedRoot(id, sourceRoot)
+    return {
+      id,
+      workspaceId,
+      arcWsInstanceId,
+      materializedRoot,
+      mutability: "writable",
+      createdAt: Date.now(),
+      index: index ?? await this.snapshotIndex(materializedRoot),
+      validation: null,
     }
   }
 
@@ -575,7 +632,28 @@ export class WorkspaceManager {
     const kind = opts?.kind ?? "code"
     const parentInst = parentWs ? this.activeInstance(parentWs) : null
     const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
-    const instance = await this.createInstance(id, sourceRoot, parentInst?.index)
+    const arcWsInstances: Record<string, ArcWsInstance> = {}
+    const implWsInstances: Record<string, ImplWsInstance> = {}
+    let baseArcWsInstanceId: string | null = null
+    let activeArcWsInstanceId: string | null = null
+    let goldenArcWsInstanceId: string | null = null
+    let baseImplWsInstanceId: string | null = null
+    let activeImplWsInstanceId: string | null = null
+
+    const instance = kind === "arch"
+      ? await this.createArcWsInstance(id, sourceRoot, parentInst?.index)
+      : await this.createImplWsInstance(id, sourceRoot, parentInst?.index)
+
+    if (kind === "arch") {
+      arcWsInstances[instance.id] = instance as ArcWsInstance
+      baseArcWsInstanceId = instance.id
+      activeArcWsInstanceId = instance.id
+      goldenArcWsInstanceId = instance.id
+    } else {
+      implWsInstances[instance.id] = instance as ImplWsInstance
+      baseImplWsInstanceId = instance.id
+      activeImplWsInstanceId = instance.id
+    }
 
     const ws: WorkspaceRecord = {
       id,
@@ -583,10 +661,14 @@ export class WorkspaceManager {
       kind,
       parentId,
       createdAt: Date.now(),
-      baseInstanceId: instance.id,
-      activeInstanceId: instance.id,
+      baseArcWsInstanceId,
+      activeArcWsInstanceId,
+      goldenArcWsInstanceId,
+      baseImplWsInstanceId,
+      activeImplWsInstanceId,
       goals: [],
-      instances: { [instance.id]: instance },
+      arcWsInstances,
+      implWsInstances,
     }
     this.workspaces.set(id, ws)
     this.save(ws)
@@ -632,7 +714,7 @@ export class WorkspaceManager {
     this.sessions.deleteByWorkspace(id)
 
     // Remove materialized instance directories
-    for (const inst of Object.values(ws.instances)) {
+    for (const inst of [...Object.values(ws.arcWsInstances), ...Object.values(ws.implWsInstances)]) {
       rmSync(inst.materializedRoot, { recursive: true, force: true })
     }
 
@@ -848,8 +930,11 @@ export class WorkspaceManager {
 
   private async runGoalAgent(ws: WorkspaceRecord, goal: Goal, onEvent: AgentEventCallback): Promise<void> {
     const baseInst = this.activeInstance(ws)
-    const workingInst = await this.createInstance(ws.id, baseInst.materializedRoot, baseInst.index)
-    ws.instances[workingInst.id] = workingInst
+    const workingInst = ws.kind === "arch"
+      ? await this.createArcWsInstance(ws.id, baseInst.materializedRoot, baseInst.index)
+      : await this.createImplWsInstance(ws.id, baseInst.materializedRoot, baseInst.index)
+    if (ws.kind === "arch") ws.arcWsInstances[workingInst.id] = workingInst as ArcWsInstance
+    else ws.implWsInstances[workingInst.id] = workingInst as ImplWsInstance
     this.save(ws)
     const dir = workingInst.materializedRoot
 
@@ -1015,7 +1100,8 @@ export class WorkspaceManager {
 
       goal.status = code === 0 ? "done" : "error"
       if (code === 0) {
-        ws.activeInstanceId = workingInst.id
+        if (ws.kind === "arch") ws.activeArcWsInstanceId = workingInst.id
+        else ws.activeImplWsInstanceId = workingInst.id
         this.sbManager.shutdown(ws.id)
         if (this.caps.storybook) {
           this.startStorybook(ws.id, workingInst.materializedRoot).catch((e: any) => {

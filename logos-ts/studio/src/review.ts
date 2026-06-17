@@ -30,7 +30,10 @@ export function selectReviewBaseIndex(projectIndex: StudioIndex, parentWorkspace
 
 export function selectWorkspaceReviewBaseIndex(projectIndex: StudioIndex, workspace: Workspace | null): StudioIndex {
   if (!workspace) return projectIndex
-  return workspace.instances[workspace.baseInstanceId]?.index ?? projectIndex
+  const baseArcId = workspace.goldenArcWsInstanceId ?? workspace.baseArcWsInstanceId
+  if (baseArcId) return workspace.arcWsInstances[baseArcId]?.index ?? projectIndex
+  const baseImplId = workspace.baseImplWsInstanceId
+  return baseImplId ? workspace.implWsInstances[baseImplId]?.index ?? projectIndex : projectIndex
 }
 
 function captureMap(index: StudioIndex): Map<string, IndexedCapture> {

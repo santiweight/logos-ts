@@ -5,6 +5,19 @@ import { ChangesRail } from "./ChangesRail"
 afterEach(cleanup)
 
 const noop = () => {}
+const codeWs = (id: string, name: string, createdAt: number, goals: any[] = []) => ({
+  id,
+  name,
+  kind: "code" as const,
+  parentId: null,
+  createdAt,
+  baseArcWsInstanceId: null,
+  activeArcWsInstanceId: null,
+  goldenArcWsInstanceId: null,
+  baseImplWsInstanceId: `impl-${id}`,
+  activeImplWsInstanceId: `impl-${id}`,
+  goals,
+})
 
 const baseProps = {
   open: true,
@@ -32,8 +45,8 @@ describe("ChangesRail", () => {
 
   it("shows workspace list when loaded with workspaces", () => {
     const workspaces = [
-      { id: "ws-1", name: "feature-branch", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
-      { id: "ws-2", name: "bugfix", kind: "code" as const, parentId: null, createdAt: 2000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
+      codeWs("ws-1", "feature-branch", 1000),
+      codeWs("ws-2", "bugfix", 2000),
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={false} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
@@ -43,7 +56,7 @@ describe("ChangesRail", () => {
 
   it("hides loading indicator once workspaces arrive", () => {
     const workspaces = [
-      { id: "ws-1", name: "my-workspace", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      codeWs("ws-1", "my-workspace", 1000),
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={true} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
@@ -57,18 +70,9 @@ describe("ChangesRail", () => {
 
   it("shows spinner when a goal is in runningGoals", () => {
     const workspaces = [
-      {
-        id: "ws-1",
-        name: "feature",
-        kind: "code" as const,
-        parentId: null,
-        createdAt: 1000,
-        baseInstanceId: "inst-1",
-        activeInstanceId: "inst-1",
-        goals: [
-          { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "running" as const },
-        ],
-      },
+      codeWs("ws-1", "feature", 1000, [
+        { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "running" as const },
+      ]),
     ]
     render(
       <ChangesRail
@@ -83,18 +87,9 @@ describe("ChangesRail", () => {
 
   it("does not show spinner when no goals are running", () => {
     const workspaces = [
-      {
-        id: "ws-1",
-        name: "feature",
-        kind: "code" as const,
-        parentId: null,
-        createdAt: 1000,
-        baseInstanceId: "inst-1",
-        activeInstanceId: "inst-1",
-        goals: [
-          { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "done" as const },
-        ],
-      },
+      codeWs("ws-1", "feature", 1000, [
+        { id: "g-1", text: "make it bold", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "done" as const },
+      ]),
     ]
     render(
       <ChangesRail
@@ -109,30 +104,12 @@ describe("ChangesRail", () => {
 
   it("shows spinner only for workspace with running goal, not others", () => {
     const workspaces = [
-      {
-        id: "ws-1",
-        name: "active-ws",
-        kind: "code" as const,
-        parentId: null,
-        createdAt: 2000,
-        baseInstanceId: "inst-1",
-        activeInstanceId: "inst-1",
-        goals: [
-          { id: "g-1", text: "running goal", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "running" as const },
-        ],
-      },
-      {
-        id: "ws-2",
-        name: "idle-ws",
-        kind: "code" as const,
-        parentId: null,
-        createdAt: 1000,
-        baseInstanceId: "inst-2",
-        activeInstanceId: "inst-2",
-        goals: [
-          { id: "g-2", text: "done goal", label: "span", target: "component:Y", mode: "code" as const, createdAt: 1000, status: "done" as const },
-        ],
-      },
+      codeWs("ws-1", "active-ws", 2000, [
+        { id: "g-1", text: "running goal", label: "div", target: "component:X", mode: "code" as const, createdAt: 1000, status: "running" as const },
+      ]),
+      codeWs("ws-2", "idle-ws", 1000, [
+        { id: "g-2", text: "done goal", label: "span", target: "component:Y", mode: "code" as const, createdAt: 1000, status: "done" as const },
+      ]),
     ]
     render(
       <ChangesRail
@@ -149,7 +126,7 @@ describe("ChangesRail", () => {
   it("opens a workspace context menu with create pull request", () => {
     const onCreatePullRequest = vi.fn()
     const workspaces = [
-      { id: "ws-1", name: "feature", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      codeWs("ws-1", "feature", 1000),
     ]
     render(
       <ChangesRail

@@ -14,8 +14,11 @@ function workspace(id = "ws-1"): StoredWorkspaceRecord {
     kind: "code",
     parentId: null,
     createdAt: 1000,
-    baseInstanceId: "inst-1",
-    activeInstanceId: "inst-1",
+    baseArcWsInstanceId: null,
+    activeArcWsInstanceId: null,
+    goldenArcWsInstanceId: null,
+    baseImplWsInstanceId: "impl-1",
+    activeImplWsInstanceId: "impl-1",
     goals: [{
       id: "goal-1",
       text: "change it",
@@ -25,14 +28,17 @@ function workspace(id = "ws-1"): StoredWorkspaceRecord {
       createdAt: 1001,
       status: "pending",
     }],
-    instances: {
-      "inst-1": {
-        id: "inst-1",
+    arcWsInstances: {},
+    implWsInstances: {
+      "impl-1": {
+        id: "impl-1",
         workspaceId: id,
-        materializedRoot: join(root, "inst-1"),
+        arcWsInstanceId: null,
+        materializedRoot: join(root, "impl-1"),
         mutability: "writable",
         createdAt: 1000,
         index: { files: [] },
+        validation: null,
       },
     },
   }

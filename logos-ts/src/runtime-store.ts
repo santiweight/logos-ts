@@ -21,7 +21,7 @@ export interface StoredGoal {
   sessionId?: string | null
 }
 
-export interface StoredWorkspaceInstance {
+export interface StoredArcWsInstance {
   id: string
   workspaceId: string
   materializedRoot: string
@@ -30,16 +30,31 @@ export interface StoredWorkspaceInstance {
   index: unknown
 }
 
+export interface StoredImplWsInstance {
+  id: string
+  workspaceId: string
+  arcWsInstanceId: string | null
+  materializedRoot: string
+  mutability: "writable" | "immutable"
+  createdAt: number
+  index: unknown
+  validation: unknown | null
+}
+
 export interface StoredWorkspaceRecord {
   id: string
   name: string
   kind: WorkspaceKind
   parentId: string | null
   createdAt: number
-  baseInstanceId: string
-  activeInstanceId: string
+  baseArcWsInstanceId: string | null
+  activeArcWsInstanceId: string | null
+  goldenArcWsInstanceId: string | null
+  baseImplWsInstanceId: string | null
+  activeImplWsInstanceId: string | null
   goals: StoredGoal[]
-  instances: Record<string, StoredWorkspaceInstance>
+  arcWsInstances: Record<string, StoredArcWsInstance>
+  implWsInstances: Record<string, StoredImplWsInstance>
 }
 
 export type WorkspacePolicyEventType =
@@ -108,10 +123,13 @@ export class LogosRuntimeStore {
         kind TEXT NOT NULL,
         parent_id TEXT,
         created_at INTEGER NOT NULL,
-        base_instance_id TEXT NOT NULL,
-        active_instance_id TEXT NOT NULL
+        base_arc_ws_instance_id TEXT,
+        active_arc_ws_instance_id TEXT,
+        golden_arc_ws_instance_id TEXT,
+        base_impl_ws_instance_id TEXT,
+        active_impl_ws_instance_id TEXT
       );
-      CREATE TABLE IF NOT EXISTS workspace_instances (
+      CREATE TABLE IF NOT EXISTS arc_ws_instances (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
         materialized_root TEXT NOT NULL,
@@ -120,7 +138,21 @@ export class LogosRuntimeStore {
         index_json TEXT NOT NULL,
         FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
       );
-      CREATE INDEX IF NOT EXISTS idx_workspace_instances_workspace ON workspace_instances(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_arc_ws_instances_workspace ON arc_ws_instances(workspace_id);
+      CREATE TABLE IF NOT EXISTS impl_ws_instances (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        arc_ws_instance_id TEXT,
+        materialized_root TEXT NOT NULL,
+        mutability TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        index_json TEXT NOT NULL,
+        validation_json TEXT,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (arc_ws_instance_id) REFERENCES arc_ws_instances(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_impl_ws_instances_workspace ON impl_ws_instances(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_impl_ws_instances_arc ON impl_ws_instances(arc_ws_instance_id);
       CREATE TABLE IF NOT EXISTS goals (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
@@ -194,8 +226,11 @@ export class LogosRuntimeStore {
     const goals = this.db.prepare(
       `SELECT * FROM goals WHERE workspace_id = ? ORDER BY position_index`
     ).all(id) as Record<string, unknown>[]
-    const instances = this.db.prepare(
-      `SELECT * FROM workspace_instances WHERE workspace_id = ? ORDER BY created_at, id`
+    const arcWsInstances = this.db.prepare(
+      `SELECT * FROM arc_ws_instances WHERE workspace_id = ? ORDER BY created_at, id`
+    ).all(id) as Record<string, unknown>[]
+    const implWsInstances = this.db.prepare(
+      `SELECT * FROM impl_ws_instances WHERE workspace_id = ? ORDER BY created_at, id`
     ).all(id) as Record<string, unknown>[]
     return {
       id: row["id"] as string,
@@ -203,11 +238,18 @@ export class LogosRuntimeStore {
       kind: row["kind"] === "arch" ? "arch" : "code",
       parentId: nullableString(row["parent_id"]),
       createdAt: row["created_at"] as number,
-      baseInstanceId: row["base_instance_id"] as string,
-      activeInstanceId: row["active_instance_id"] as string,
+      baseArcWsInstanceId: nullableString(row["base_arc_ws_instance_id"]),
+      activeArcWsInstanceId: nullableString(row["active_arc_ws_instance_id"]),
+      goldenArcWsInstanceId: nullableString(row["golden_arc_ws_instance_id"]),
+      baseImplWsInstanceId: nullableString(row["base_impl_ws_instance_id"]),
+      activeImplWsInstanceId: nullableString(row["active_impl_ws_instance_id"]),
       goals: goals.map(mapGoal),
-      instances: Object.fromEntries(instances.map((inst) => {
-        const mapped = mapInstance(inst)
+      arcWsInstances: Object.fromEntries(arcWsInstances.map((inst) => {
+        const mapped = mapArcWsInstance(inst)
+        return [mapped.id, mapped]
+      })),
+      implWsInstances: Object.fromEntries(implWsInstances.map((inst) => {
+        const mapped = mapImplWsInstance(inst)
         return [mapped.id, mapped]
       })),
     }
@@ -216,23 +258,59 @@ export class LogosRuntimeStore {
   saveWorkspace(ws: StoredWorkspaceRecord): void {
     this.transaction(() => {
       this.db.prepare(`
-        INSERT INTO workspaces (id, name, kind, parent_id, created_at, base_instance_id, active_instance_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO workspaces (
+          id, name, kind, parent_id, created_at,
+          base_arc_ws_instance_id, active_arc_ws_instance_id, golden_arc_ws_instance_id,
+          base_impl_ws_instance_id, active_impl_ws_instance_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           kind = excluded.kind,
           parent_id = excluded.parent_id,
           created_at = excluded.created_at,
-          base_instance_id = excluded.base_instance_id,
-          active_instance_id = excluded.active_instance_id
-      `).run(ws.id, ws.name, ws.kind, ws.parentId, ws.createdAt, ws.baseInstanceId, ws.activeInstanceId)
+          base_arc_ws_instance_id = excluded.base_arc_ws_instance_id,
+          active_arc_ws_instance_id = excluded.active_arc_ws_instance_id,
+          golden_arc_ws_instance_id = excluded.golden_arc_ws_instance_id,
+          base_impl_ws_instance_id = excluded.base_impl_ws_instance_id,
+          active_impl_ws_instance_id = excluded.active_impl_ws_instance_id
+      `).run(
+        ws.id,
+        ws.name,
+        ws.kind,
+        ws.parentId,
+        ws.createdAt,
+        ws.baseArcWsInstanceId,
+        ws.activeArcWsInstanceId,
+        ws.goldenArcWsInstanceId,
+        ws.baseImplWsInstanceId,
+        ws.activeImplWsInstanceId,
+      )
 
-      this.db.prepare(`DELETE FROM workspace_instances WHERE workspace_id = ?`).run(ws.id)
-      for (const inst of Object.values(ws.instances)) {
+      this.db.prepare(`DELETE FROM impl_ws_instances WHERE workspace_id = ?`).run(ws.id)
+      this.db.prepare(`DELETE FROM arc_ws_instances WHERE workspace_id = ?`).run(ws.id)
+      for (const inst of Object.values(ws.arcWsInstances)) {
         this.db.prepare(`
-          INSERT INTO workspace_instances (id, workspace_id, materialized_root, mutability, created_at, index_json)
+          INSERT INTO arc_ws_instances (id, workspace_id, materialized_root, mutability, created_at, index_json)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(inst.id, ws.id, inst.materializedRoot, inst.mutability, inst.createdAt, JSON.stringify(inst.index))
+      }
+      for (const inst of Object.values(ws.implWsInstances)) {
+        this.db.prepare(`
+          INSERT INTO impl_ws_instances (
+            id, workspace_id, arc_ws_instance_id, materialized_root, mutability, created_at, index_json, validation_json
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          inst.id,
+          ws.id,
+          inst.arcWsInstanceId,
+          inst.materializedRoot,
+          inst.mutability,
+          inst.createdAt,
+          JSON.stringify(inst.index),
+          inst.validation == null ? null : JSON.stringify(inst.validation),
+        )
       }
 
       this.db.prepare(`DELETE FROM goals WHERE workspace_id = ?`).run(ws.id)
@@ -265,7 +343,8 @@ export class LogosRuntimeStore {
   deleteWorkspace(id: string): void {
     this.transaction(() => {
       this.db.prepare(`DELETE FROM goals WHERE workspace_id = ?`).run(id)
-      this.db.prepare(`DELETE FROM workspace_instances WHERE workspace_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM impl_ws_instances WHERE workspace_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM arc_ws_instances WHERE workspace_id = ?`).run(id)
       this.db.prepare(`DELETE FROM storybooks WHERE id = ?`).run(id)
       this.db.prepare(`DELETE FROM storybook_states WHERE id = ?`).run(id)
       this.db.prepare(`DELETE FROM workspace_policy_events WHERE workspace_id = ?`).run(id)
@@ -276,7 +355,8 @@ export class LogosRuntimeStore {
   deleteAllWorkspaces(): void {
     this.transaction(() => {
       this.db.prepare(`DELETE FROM goals`).run()
-      this.db.prepare(`DELETE FROM workspace_instances`).run()
+      this.db.prepare(`DELETE FROM impl_ws_instances`).run()
+      this.db.prepare(`DELETE FROM arc_ws_instances`).run()
       this.db.prepare(`DELETE FROM storybooks`).run()
       this.db.prepare(`DELETE FROM storybook_states`).run()
       this.db.prepare(`DELETE FROM workspace_policy_events`).run()
@@ -420,7 +500,7 @@ function mapGoal(row: Record<string, unknown>): StoredGoal {
   }
 }
 
-function mapInstance(row: Record<string, unknown>): StoredWorkspaceInstance {
+function mapArcWsInstance(row: Record<string, unknown>): StoredArcWsInstance {
   return {
     id: row["id"] as string,
     workspaceId: row["workspace_id"] as string,
@@ -428,6 +508,20 @@ function mapInstance(row: Record<string, unknown>): StoredWorkspaceInstance {
     mutability: row["mutability"] === "immutable" ? "immutable" : "writable",
     createdAt: row["created_at"] as number,
     index: JSON.parse(row["index_json"] as string),
+  }
+}
+
+function mapImplWsInstance(row: Record<string, unknown>): StoredImplWsInstance {
+  const validationJson = row["validation_json"]
+  return {
+    id: row["id"] as string,
+    workspaceId: row["workspace_id"] as string,
+    arcWsInstanceId: nullableString(row["arc_ws_instance_id"]),
+    materializedRoot: row["materialized_root"] as string,
+    mutability: row["mutability"] === "immutable" ? "immutable" : "writable",
+    createdAt: row["created_at"] as number,
+    index: JSON.parse(row["index_json"] as string),
+    validation: typeof validationJson === "string" ? JSON.parse(validationJson) : null,
   }
 }
 

@@ -524,8 +524,8 @@ describe("WorkspaceManager workspace kinds", () => {
       id: created.id,
       name: "db-backed",
       kind: "arch",
-      activeInstanceId: created.activeInstanceId,
-      baseInstanceId: created.baseInstanceId,
+      activeArcWsInstanceId: created.activeArcWsInstanceId,
+      baseArcWsInstanceId: created.baseArcWsInstanceId,
     })
   })
 

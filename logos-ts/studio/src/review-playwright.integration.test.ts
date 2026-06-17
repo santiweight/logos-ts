@@ -83,27 +83,35 @@ function createWorkspace(base: StudioIndex, active: StudioIndex): Workspace {
     kind: "code",
     parentId: null,
     createdAt: 1,
-    baseInstanceId: "inst-base",
-    activeInstanceId: "inst-active",
+    baseArcWsInstanceId: null,
+    activeArcWsInstanceId: null,
+    goldenArcWsInstanceId: null,
+    baseImplWsInstanceId: "impl-base",
+    activeImplWsInstanceId: "impl-active",
     goals: [],
     forkDir: "/mock/workspace",
     index: active,
-    instances: {
-      "inst-base": {
-        id: "inst-base",
+    arcWsInstances: {},
+    implWsInstances: {
+      "impl-base": {
+        id: "impl-base",
         workspaceId: "ws-review",
+        arcWsInstanceId: null,
         materializedRoot: "/mock/workspace/base",
         mutability: "immutable",
         createdAt: 1,
         index: base,
+        validation: null,
       },
-      "inst-active": {
-        id: "inst-active",
+      "impl-active": {
+        id: "impl-active",
         workspaceId: "ws-review",
+        arcWsInstanceId: null,
         materializedRoot: "/mock/workspace/active",
         mutability: "writable",
         createdAt: 2,
         index: active,
+        validation: null,
       },
     },
   }
@@ -116,8 +124,11 @@ function workspaceMeta(workspace: Workspace): WorkspaceMeta {
     kind: workspace.kind,
     parentId: workspace.parentId,
     createdAt: workspace.createdAt,
-    baseInstanceId: workspace.baseInstanceId,
-    activeInstanceId: workspace.activeInstanceId,
+    baseArcWsInstanceId: workspace.baseArcWsInstanceId,
+    activeArcWsInstanceId: workspace.activeArcWsInstanceId,
+    goldenArcWsInstanceId: workspace.goldenArcWsInstanceId,
+    baseImplWsInstanceId: workspace.baseImplWsInstanceId,
+    activeImplWsInstanceId: workspace.activeImplWsInstanceId,
     goals: workspace.goals,
   }
 }
@@ -173,6 +184,7 @@ describe("review UI", () => {
       })
 
       if (path === "/api/index") return json(projectIndex)
+      if (path === "/api/demos") return json({ active: "test", demos: [] })
       if (path === "/api/test-results") return json(idleTests())
       if (path === "/api/storybooks") return json({ urls: {}, states: {} })
       if (path === "/api/workspaces") return json([workspaceMeta(workspace)])
@@ -221,6 +233,7 @@ describe("review UI", () => {
       })
 
       if (path === "/api/index") return json(projectIndex)
+      if (path === "/api/demos") return json({ active: "test", demos: [] })
       if (path === "/api/test-results") return json(idleTests())
       if (path === "/api/storybooks") {
         return json({

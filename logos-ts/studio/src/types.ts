@@ -128,12 +128,15 @@ export interface WorkspaceMeta {
   kind: WorkspaceKind
   parentId: string | null
   createdAt: number
-  baseInstanceId: string
-  activeInstanceId: string
+  baseArcWsInstanceId: string | null
+  activeArcWsInstanceId: string | null
+  goldenArcWsInstanceId: string | null
+  baseImplWsInstanceId: string | null
+  activeImplWsInstanceId: string | null
   goals: Goal[]
 }
 
-export interface WorkspaceInstance {
+export interface ArcWsInstance {
   id: string
   workspaceId: string
   materializedRoot: string
@@ -142,8 +145,20 @@ export interface WorkspaceInstance {
   index: StudioIndex
 }
 
+export interface ImplWsInstance {
+  id: string
+  workspaceId: string
+  arcWsInstanceId: string | null
+  materializedRoot: string
+  mutability: "writable" | "immutable"
+  createdAt: number
+  index: StudioIndex
+  validation: unknown | null
+}
+
 export interface Workspace extends WorkspaceMeta {
   forkDir: string
   index: StudioIndex
-  instances: Record<string, WorkspaceInstance>
+  arcWsInstances: Record<string, ArcWsInstance>
+  implWsInstances: Record<string, ImplWsInstance>
 }

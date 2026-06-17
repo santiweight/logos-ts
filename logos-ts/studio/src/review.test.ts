@@ -87,27 +87,35 @@ describe("selectWorkspaceReviewBaseIndex", () => {
       kind: "code",
       parentId: null,
       createdAt: 1,
-      baseInstanceId: "inst-base",
-      activeInstanceId: "inst-active",
+      baseArcWsInstanceId: null,
+      activeArcWsInstanceId: null,
+      goldenArcWsInstanceId: null,
+      baseImplWsInstanceId: "impl-base",
+      activeImplWsInstanceId: "impl-active",
       goals: [],
       forkDir: "/tmp/ws-1",
       index: active,
-      instances: {
-        "inst-base": {
-          id: "inst-base",
+      arcWsInstances: {},
+      implWsInstances: {
+        "impl-base": {
+          id: "impl-base",
           workspaceId: "ws-1",
+          arcWsInstanceId: null,
           materializedRoot: "/tmp/ws-1/base",
           mutability: "immutable",
           createdAt: 1,
           index: base,
+          validation: null,
         },
-        "inst-active": {
-          id: "inst-active",
+        "impl-active": {
+          id: "impl-active",
           workspaceId: "ws-1",
+          arcWsInstanceId: null,
           materializedRoot: "/tmp/ws-1/active",
           mutability: "writable",
           createdAt: 2,
           index: active,
+          validation: null,
         },
       },
     }
@@ -135,12 +143,16 @@ describe("selectWorkspaceReviewBaseIndex", () => {
       kind: "code",
       parentId: null,
       createdAt: 1,
-      baseInstanceId: "missing",
-      activeInstanceId: "inst-active",
+      baseArcWsInstanceId: null,
+      activeArcWsInstanceId: null,
+      goldenArcWsInstanceId: null,
+      baseImplWsInstanceId: "missing",
+      activeImplWsInstanceId: "impl-active",
       goals: [],
       forkDir: "/tmp/ws-1",
       index: active,
-      instances: {},
+      arcWsInstances: {},
+      implWsInstances: {},
     }
 
     expect(selectWorkspaceReviewBaseIndex(project, workspace)).toBe(project)
