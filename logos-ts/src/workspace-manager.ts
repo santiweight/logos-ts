@@ -298,7 +298,15 @@ export class WorkspaceManager {
     if (!existsSync(dir)) {
       cpSync(sourceRoot, dir, {
         recursive: true,
-        filter: (s) => !/node_modules|\.workspaces|\.logos$|\.logos_cache|\.vite-logos|dist/.test(s),
+        filter: (s) => {
+          const name = basename(s)
+          return name !== "node_modules" &&
+            name !== ".workspaces" &&
+            name !== ".logos_cache" &&
+            name !== ".vite-logos" &&
+            name !== "dist" &&
+            !(name === ".logos" && dirname(s) === sourceRoot)
+        },
       })
       for (const nmDir of this.caps.nodeModulesDirs) {
         const rel = relative(this.projectRoot, nmDir)
@@ -323,13 +331,21 @@ export class WorkspaceManager {
     return inst
   }
 
+  private visibleInstance(ws: WorkspaceRecord): ArcWsInstance | ImplWsInstance {
+    if (ws.kind === "arch" && ws.activeImplWsInstanceId) {
+      const inst = ws.implWsInstances[ws.activeImplWsInstanceId]
+      if (inst) return inst
+    }
+    return this.activeInstance(ws)
+  }
+
   private nextWorkspaceId(): string {
     this.workspaceSeq += 1
     return `ws-${Date.now()}-${this.workspaceSeq}`
   }
 
   private toState(ws: WorkspaceRecord): WorkspaceState {
-    const inst = this.activeInstance(ws)
+    const inst = this.visibleInstance(ws)
     return {
       id: ws.id,
       name: ws.name,
@@ -426,7 +442,7 @@ export class WorkspaceManager {
   reindex(id: string): WorkspaceState | undefined {
     const ws = this.workspaces.get(id)
     if (!ws) return undefined
-    const inst = this.activeInstance(ws)
+    const inst = this.visibleInstance(ws)
     const args = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
     const wsSbUrl = this.sbManager.get(ws.id)
     if (wsSbUrl) args.push(wsSbUrl)
@@ -453,7 +469,7 @@ export class WorkspaceManager {
 
     const remote = opts?.remote?.trim() || "origin"
     this.logPublishStep("start", { workspaceId: id, workspaceName: ws.name, branch, remote })
-    const inst = this.activeInstance(ws)
+    const inst = this.visibleInstance(ws)
     const sourceRoot = realpathSync(resolve(this.sourceProjectRoot))
     const gitRoot = realpathSync(execFileSync("git", ["-C", sourceRoot, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
@@ -742,7 +758,7 @@ export class WorkspaceManager {
     this.workspaces.set(id, ws)
     this.save(ws)
 
-    if (this.caps.storybook) {
+    if (this.caps.storybook && kind === "code") {
       this.startStorybook(id, instance.materializedRoot).catch((e: any) => {
         console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
       })
@@ -761,7 +777,8 @@ export class WorkspaceManager {
   ensureStorybook(wsId: string): Promise<string> {
     const ws = this.workspaces.get(wsId)
     if (!ws) return Promise.reject(new Error("no such workspace"))
-    return this.startStorybook(wsId, this.activeInstance(ws).materializedRoot)
+    if (ws.kind === "arch" && !ws.activeImplWsInstanceId) return Promise.reject(new Error("architecture workspace has no outcome instance yet"))
+    return this.startStorybook(wsId, this.visibleInstance(ws).materializedRoot)
   }
 
   delete(id: string): void {
