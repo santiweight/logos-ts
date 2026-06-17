@@ -296,6 +296,20 @@ function studioApi(runtime: StudioRuntime): Plugin {
         res.end(json)
       })
 
+      server.middlewares.use("/api/open", async (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; return res.end() }
+        const body = JSON.parse((await readBody(req)) || "{}")
+        const file = body.file as string | undefined
+        if (!file) { res.statusCode = 400; return res.end(JSON.stringify({ error: "file required" })) }
+        const abs = resolve(PROJECT_ROOT, file)
+        const target = body.line ? `${abs}:${body.line}` : abs
+        execFile("code", ["--goto", target], (err) => {
+          res.setHeader("content-type", "application/json")
+          if (err) { res.statusCode = 500; res.end(JSON.stringify({ error: String(err) })) }
+          else res.end(JSON.stringify({ ok: true }))
+        })
+      })
+
       server.middlewares.use("/api/storybooks", (_req, res) => {
         res.setHeader("content-type", "application/json")
         res.setHeader("cache-control", "no-store")

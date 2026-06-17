@@ -479,6 +479,11 @@ body.resizing-rail * {
   background: rgba(74,158,255,0.12);
   border-color: rgba(74,158,255,0.4);
 }
+.sidebar-filter.type.active {
+  color: #82aaff;
+  background: rgba(130,170,255,0.12);
+  border-color: rgba(130,170,255,0.4);
+}
 
 .sidebar-tree { flex: 1; min-height: 0; padding-top: 4px; }
 
@@ -835,6 +840,7 @@ body.resizing-rail * {
 .tag.impl, .tag.method { color: var(--muted); border: 1px solid var(--border); }
 .tag.cls { color: var(--accent); border: 1px solid #2c4a6e; }
 .tag.test { color: #06121f; background: var(--ok); font-weight: 700; }
+.tag.type { color: #82aaff; border: 1px solid #2c4a6e; }
 .badge.ok { color: var(--ok); }
 .hint a { color: var(--accent); cursor: pointer; }
 .small { font-size: 11px; }
@@ -1011,6 +1017,8 @@ body.resizing-rail * {
 .tok-function { color: #ffcb6b; }
 .tok-ident { color: #cfcfe2; }
 .tok-punc { color: #89ddff; }
+.tok-link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+.tok-link:hover { text-decoration-style: solid; background: rgba(255, 255, 255, 0.06); border-radius: 2px; }
 .capture-review {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);

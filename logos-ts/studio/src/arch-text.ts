@@ -17,6 +17,8 @@ export function indexToArchText(index: StudioIndex): string {
     for (const it of f.items) {
       if (it.kind === "function") {
         lines.push(`declare function ${it.signature}`)
+      } else if (it.kind === "type") {
+        lines.push(`declare ${it.signature}`)
       } else {
         lines.push(`declare class ${it.name} {`)
         for (const field of it.fields) lines.push(`  ${field.name}: ${field.type}`)

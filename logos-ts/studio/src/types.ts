@@ -42,7 +42,13 @@ export interface FileClass {
   tests: TestRef[]
   code: string
 }
-export type FileItem = FileFn | FileClass
+export interface FileType {
+  kind: "type"
+  name: string
+  signature: string
+  code: string
+}
+export type FileItem = FileFn | FileClass | FileType
 
 export interface FileEntry {
   file: string
@@ -53,9 +59,11 @@ export interface FileEntry {
   component?: ComponentEntry
 }
 
+export interface SymbolLocation { file: string; line: number }
 export interface StudioIndex {
   root: string
   files: FileEntry[]
+  symbols?: Record<string, SymbolLocation>
 }
 
 export type View = "code" | "arch" | "story" | "run"

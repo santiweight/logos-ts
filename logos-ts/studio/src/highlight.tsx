@@ -1,4 +1,5 @@
-import type { ReactNode } from "react"
+import { createContext, useContext, type ReactNode } from "react"
+import type { SymbolLocation } from "./types"
 
 const TOKEN_RE = /(".*?"|'.*?'|`.*?`|\b[A-Za-z_$][A-Za-z0-9_$]*\b|\b\d+(?:\.\d+)?\b|[{}()[\]:;,<>|&=?.])/g
 
@@ -29,7 +30,15 @@ function tokenClass(token: string, prev: string | null): string {
   return "tok-punc"
 }
 
-export function highlightTs(text: string): ReactNode[] {
+export type SymbolMap = Record<string, SymbolLocation>
+type GotoFn = (sym: SymbolLocation) => void
+
+export const GotoCtx = createContext<{ symbols: SymbolMap; onGoto: GotoFn }>({
+  symbols: {},
+  onGoto: () => {},
+})
+
+export function highlightTs(text: string, symbols?: SymbolMap, onGoto?: GotoFn): ReactNode[] {
   const nodes: ReactNode[] = []
   let last = 0
   let prev: string | null = null
@@ -38,7 +47,21 @@ export function highlightTs(text: string): ReactNode[] {
     const idx = match.index
     if (idx > last) nodes.push(text.slice(last, idx))
     const cls = tokenClass(token, prev)
-    nodes.push(<span key={`${idx}-${token}`} className={cls}>{token}</span>)
+    const sym = symbols?.[token]
+    if (sym && onGoto && (cls === "tok-symbol" || cls === "tok-type")) {
+      nodes.push(
+        <span
+          key={`${idx}-${token}`}
+          className={`${cls} tok-link`}
+          title={`${sym.file}:${sym.line}`}
+          onClick={(e) => { e.stopPropagation(); onGoto(sym) }}
+        >
+          {token}
+        </span>
+      )
+    } else {
+      nodes.push(<span key={`${idx}-${token}`} className={cls}>{token}</span>)
+    }
     last = idx + token.length
     prev = KEYWORDS.has(token) || BUILTIN_TYPES.has(token) || /^[A-Za-z_$]/.test(token) ? token : null
   }
@@ -47,9 +70,10 @@ export function highlightTs(text: string): ReactNode[] {
 }
 
 export function CodeBlock({ code, className }: { code: string; className?: string }) {
+  const { symbols, onGoto } = useContext(GotoCtx)
   return (
     <pre className={className ? `code ${className}` : "code"}>
-      {highlightTs(code)}
+      {highlightTs(code, symbols, onGoto)}
     </pre>
   )
 }

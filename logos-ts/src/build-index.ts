@@ -29,7 +29,7 @@ export interface ComponentEntry {
   stories: StoryNode[]
 }
 export interface FileItem {
-  kind: "function" | "class"
+  kind: "function" | "class" | "type"
   name: string
   signature: string
   code: string
@@ -38,9 +38,11 @@ export interface FileItem {
   fields?: { name: string; type: string }[]
   methods?: { name: string; signature: string; code: string; tests: { name: string; file: string; description?: string; code: string }[] }[]
 }
+export interface SymbolLocation { file: string; line: number }
 export interface StudioIndex {
   root: string
   files: FileEntry[]
+  symbols: Record<string, SymbolLocation>
 }
 
 function isComponentName(name: string): boolean {
@@ -213,6 +215,22 @@ function getSnapshotForStory(storyEntry: StoryEntry, absRoot: string, allSnaps: 
   return allSnaps.get(snapKey) ?? null
 }
 
+function extractSymbols(sfs: SourceFile[], absRoot: string): Record<string, SymbolLocation> {
+  const out: Record<string, SymbolLocation> = {}
+  for (const sf of sfs) {
+    const p = sf.getFilePath()
+    if (/\.stories\.|\.test\.|\.spec\./.test(p)) continue
+    const file = relative(absRoot, p)
+    for (const [name, decls] of sf.getExportedDeclarations()) {
+      if (name === "default" || out[name]) continue
+      const d = decls[0]
+      if (!d) continue
+      out[name] = { file, line: d.getStartLineNumber() }
+    }
+  }
+  return out
+}
+
 export function buildStudioIndex(root: string, existingProject?: ReturnType<typeof loadProject>): StudioIndex {
   const absRoot = resolve(root)
   const project = existingProject ?? loadProject(root)
@@ -300,8 +318,34 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
     }
   }
 
+  // Include files that only contain type/interface declarations (no functions or classes)
+  const indexed = new Set(files.map((f) => f.file))
+  for (const sf of sfs) {
+    const p = sf.getFilePath()
+    if (/\.stories\.|\.test\.|\.spec\./.test(p) || p.includes("/node_modules/")) continue
+    const file = relative(absRoot, p)
+    if (indexed.has(file)) continue
+    const typeItems: FileItem[] = []
+    for (const decl of sf.getTypeAliases()) {
+      const name = decl.getName()
+      typeItems.push({ kind: "type", name, signature: `type ${name}`, code: decl.getText(), deps: [], tests: [] })
+    }
+    for (const decl of sf.getInterfaces()) {
+      const name = decl.getName()
+      typeItems.push({ kind: "type", name, signature: `interface ${name}`, code: decl.getText(), deps: [], tests: [] })
+    }
+    for (const decl of sf.getEnums()) {
+      const name = decl.getName()
+      typeItems.push({ kind: "type", name, signature: `enum ${name}`, code: decl.getText(), deps: [], tests: [] })
+    }
+    if (typeItems.length) {
+      files.push({ file, code: sf.getFullText(), items: typeItems })
+    }
+  }
+
   files.sort((a, b) => a.file.localeCompare(b.file))
-  return { root: absRoot, files }
+  const symbols = extractSymbols(sfs, absRoot)
+  return { root: absRoot, files, symbols }
 }
 
 // CLI: tsx src/build-index.ts <root> <outFile>

@@ -16,6 +16,8 @@ function collectNodes(index: StudioIndex): Map<string, string> {
       if (it.kind === "function") {
         m.set(`fn:${it.name}`, it.signature + SEP + it.code)
         for (const t of it.tests) m.set(`test:${t.file}::${t.name}`, t.code)
+      } else if (it.kind === "type") {
+        m.set(`type:${it.name}`, it.signature + SEP + it.code)
       } else {
         m.set(`cls:${it.name}`, it.code)
         for (const cm of it.methods) {

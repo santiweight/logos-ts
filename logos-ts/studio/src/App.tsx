@@ -8,6 +8,7 @@ import { ICONS, svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { CommentSidebar } from "./CommentSidebar"
 import { ReviewPanel } from "./ReviewPanel"
+import { GotoCtx } from "./highlight"
 import { diffIndex } from "./diff"
 import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex } from "./review"
 import { indexToArchText } from "./arch-text"
@@ -118,6 +119,7 @@ export function App() {
     functions: true,
     classes: true,
     components: true,
+    types: true,
   })
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
@@ -128,6 +130,20 @@ export function App() {
 
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
   const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
+
+  const onGoto = useCallback((sym: { file: string; line: number }) => {
+    const indexed = view.files.some((f) => f.file === sym.file)
+    if (indexed) {
+      setSelection({ file: sym.file, view: "code" })
+    } else {
+      fetch("/api/open", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ file: sym.file, line: sym.line }),
+      })
+    }
+  }, [view.files])
+  const gotoCtx = useMemo(() => ({ symbols: view.symbols ?? {}, onGoto }), [view.symbols, onGoto])
 
   const [storybookUrls, setStorybookUrls] = useState<Record<string, string>>({})
   const [storybookStates, setStorybookStates] = useState<Record<string, SbState>>({})
@@ -897,6 +913,15 @@ export function App() {
           >
             {ICONS.comp}
           </button>
+          <button
+            className={`sidebar-filter type ${sidebarFilters.types ? "active" : ""}`}
+            type="button"
+            aria-pressed={sidebarFilters.types}
+            title={sidebarFilters.types ? "Hide types" : "Show types"}
+            onClick={() => setSidebarFilters((filters) => ({ ...filters, types: !filters.types }))}
+          >
+            T
+          </button>
         </div>
         <SidebarTree
           files={view.files}
@@ -912,9 +937,11 @@ export function App() {
           showFunctions={sidebarFilters.functions}
           showClasses={sidebarFilters.classes}
           showComponents={sidebarFilters.components}
+          showTypes={sidebarFilters.types}
         />
       </aside>
 
+      <GotoCtx.Provider value={gotoCtx}>
       <main className="main">
         <nav className="main-nav">
           <button className={!reviewOpen ? "active" : ""} onClick={() => setReviewOpen(false)}>
@@ -964,6 +991,7 @@ export function App() {
           <AgentPanel events={agentEvents} running={agentRunning} goal={activeGoals.find(g => g.id === agentGoalId) ?? null} onClose={closeAgent} />
         )}
       </main>
+      </GotoCtx.Provider>
 
       {commentSidebarOpen && (
         <CommentSidebar

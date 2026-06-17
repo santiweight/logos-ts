@@ -51,7 +51,7 @@ export function ContentPanel({
     : ["code", "arch"]
 
   const label = symbol
-    ? `${file.file} / ${symbol.kind === "class" ? "⬚" : "ƒ"} ${symbol.name}`
+    ? `${file.file} / ${symbol.kind === "class" ? "⬚" : symbol.kind === "type" ? "T" : "ƒ"} ${symbol.name}`
     : comp && selection.view === "arch"
       ? `${comp.name} / arch`
       : comp && selection.view === "story"
@@ -172,6 +172,23 @@ function SymbolView({ item }: { item: FileItem }) {
     )
   }
 
+  if (item.kind === "type") {
+    return (
+      <div className="content-body">
+        <div className="rows">
+          <Row
+            tag="type"
+            tagClass="type"
+            title={item.signature}
+            code={item.code}
+            target={`type:${item.name}`}
+            label={`T ${item.name}`}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="content-body">
       <div className="rows">
@@ -241,6 +258,16 @@ function FileCodeView({ file }: { file: FileEntry }) {
               code={it.code}
               target={`fn:${it.name}`}
               label={`ƒ ${it.name}`}
+            />
+          ) : it.kind === "type" ? (
+            <Row
+              key={it.name}
+              tag="type"
+              tagClass="type"
+              title={it.signature}
+              code={it.code}
+              target={`type:${it.name}`}
+              label={`T ${it.name}`}
             />
           ) : (
             <Row

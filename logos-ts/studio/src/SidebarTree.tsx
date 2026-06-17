@@ -15,7 +15,7 @@ import type {
   View,
 } from "./types"
 
-type Kind = "dir" | "file" | "fn" | "cls" | "comp" | "story" | "section" | "run"
+type Kind = "dir" | "file" | "fn" | "cls" | "type" | "comp" | "story" | "section" | "run"
 
 interface SNode {
   id: string
@@ -49,6 +49,7 @@ interface Props {
   showFunctions?: boolean
   showClasses?: boolean
   showComponents?: boolean
+  showTypes?: boolean
 }
 
 interface Ctx {
@@ -69,6 +70,7 @@ const SidebarCtx = createContext<Ctx>({
 const testsOf = (it: FileItem): number =>
   it.kind === "class"
     ? it.tests.length + it.methods.reduce((n, m) => n + m.tests.length, 0)
+    : it.kind === "type" ? 0
     : it.tests.length
 
 const componentsOf = (file: FileEntry): ComponentEntry[] =>
@@ -109,7 +111,8 @@ export function buildData(
   runStatesOrShowClasses: Record<string, RunState | undefined> | boolean,
   showFunctionsOrShowComponents: boolean,
   showClasses = true,
-  showComponents = true
+  showComponents = true,
+  showTypes = true
 ): { data: SNode[]; openIds: Record<string, boolean> } {
   const runTargets = Array.isArray(runTargetsOrShowFunctions) ? runTargetsOrShowFunctions : []
   const runStates = Array.isArray(runTargetsOrShowFunctions)
@@ -151,6 +154,7 @@ export function buildData(
 
   const symTestStatus = (it: FileItem): "pass" | "fail" | undefined => {
     if (!failingTests) return undefined
+    if (it.kind === "type") return undefined
     const allTests =
       it.kind === "class"
         ? [...it.tests, ...it.methods.flatMap((m) => m.tests)]
@@ -161,7 +165,8 @@ export function buildData(
 
   const symNode = (it: FileItem, file: string): SNode => {
     const isClass = it.kind === "class"
-    const target = `${isClass ? "cls" : "fn"}:${it.name}`
+    const isType = it.kind === "type"
+    const target = `${isClass ? "cls" : isType ? "type" : "fn"}:${it.name}`
     let status = diff[target]
     if (!status && isClass && it.methods.some((m) => diff[`method:${it.name}.${m.name}`]))
       status = "changed"
@@ -169,7 +174,7 @@ export function buildData(
     return {
       id: `sym:${file}:${it.name}`,
       name: it.name,
-      kind: isClass ? "cls" : "fn",
+      kind: isClass ? "cls" : isType ? "type" : "fn",
       target,
       label: it.name,
       ...(status ? { status } : {}),
@@ -182,7 +187,7 @@ export function buildData(
 
   const stripExt = (n: string) => n.replace(/\.(tsx?|jsx?)$/, "")
   const itemVisible = (it: FileItem): boolean =>
-    it.kind === "class" ? resolvedShowClasses : showFunctions
+    it.kind === "class" ? resolvedShowClasses : it.kind === "type" ? showTypes : showFunctions
 
   const fileNode = (f: FileEntry): SNode | null => {
     const rawName = f.file.split("/").pop() ?? f.file
@@ -366,6 +371,7 @@ const GLYPH: Record<Kind, ReactNode> = {
   file: ICONS.file,
   fn: ICONS.fn,
   cls: ICONS.cls,
+  type: "T",
   comp: ICONS.comp,
   story: ICONS.story,
   section: "§",
@@ -477,6 +483,7 @@ export function SidebarTree({
   showFunctions = true,
   showClasses = true,
   showComponents = true,
+  showTypes = true,
 }: Props) {
   const results = testState?.results ?? null
   const testsRunning = testState?.status === "running"
@@ -487,8 +494,8 @@ export function SidebarTree({
     return set
   }, [results])
   const { data, openIds } = useMemo(
-    () => buildData(files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents),
-    [files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents]
+    () => buildData(files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents, showTypes),
+    [files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents, showTypes]
   )
 
   const selectedId = selection.view === "run" && selection.runTargetId
@@ -524,7 +531,7 @@ export function SidebarTree({
     <SidebarCtx.Provider value={ctx}>
       <div className="sidebar-tree" ref={ref}>
         <Tree<SNode>
-          key={`${showFunctions ? "fn" : ""}:${showClasses ? "cls" : ""}:${showComponents ? "comp" : ""}:${runTargets.map(t => `${t.id}:${runStates[t.id]?.status ?? "stopped"}`).join("\0")}:${files.map(f => f.file).join("\0")}`}
+          key={`${showFunctions ? "fn" : ""}:${showClasses ? "cls" : ""}:${showComponents ? "comp" : ""}:${showTypes ? "type" : ""}:${runTargets.map(t => `${t.id}:${runStates[t.id]?.status ?? "stopped"}`).join("\0")}:${files.map(f => f.file).join("\0")}`}
           data={data}
           idAccessor="id"
           openByDefault={false}
