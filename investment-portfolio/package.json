@@ -1,0 +1,7 @@
+{
+  "name": "investment-portfolio",
+  "private": true,
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}

@@ -8,6 +8,7 @@ comments.json
 *.bodies.json
 .vite/
 dist/
+storybook-static/
 .logos/
 .logos_cache/
 .DS_Store

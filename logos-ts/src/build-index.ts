@@ -186,7 +186,9 @@ function parseSnapshotKeys(snapContent: string): Map<string, string> {
   const re = /^exports\[`(.+?)`\]\s*=\s*`([\s\S]*?)`;$/gm
   let m
   while ((m = re.exec(snapContent))) {
-    entries.set(m[1], m[2])
+    const key = m[1]
+    const value = m[2]
+    if (key != null && value != null) entries.set(key, value)
   }
   return entries
 }

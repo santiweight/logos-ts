@@ -13,6 +13,8 @@ const LOGOS_TS = resolve(STUDIO, "..")
 const DEMO_STATE_FILE = resolve(LOGOS_TS, ".logos", "active-demo.json")
 const DEMOS = [
   { id: "hn-jobs", name: "HN Jobs (Mini)", root: resolve(STUDIO, "../../hn-jobs") },
+  { id: "vinyl-collection", name: "Vinyl Collection", root: resolve(STUDIO, "../../vinyl-collection") },
+  { id: "investment-portfolio", name: "Investment Portfolio", root: resolve(STUDIO, "../../investment-portfolio") },
   { id: "logos-studio", name: "Logos Studio", root: LOGOS_TS },
 ] as const
 type DemoId = typeof DEMOS[number]["id"]

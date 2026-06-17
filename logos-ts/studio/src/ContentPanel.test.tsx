@@ -83,7 +83,6 @@ describe("ContentPanel", () => {
         storyCommentEditingByStoryId={{}}
         onRetryStorybook={() => {}}
         onView={() => {}}
-        onCapture={() => {}}
         comments={{}}
         onComment={() => {}}
         diff={{}}
@@ -115,7 +114,6 @@ describe("ContentPanel", () => {
         storyCommentEditingByStoryId={{ "jobcard--default": true }}
         onRetryStorybook={() => {}}
         onView={() => {}}
-        onCapture={() => {}}
         comments={{}}
         onComment={() => {}}
         diff={{}}

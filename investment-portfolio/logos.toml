@@ -1,0 +1,5 @@
+[project]
+name = "investment-portfolio"
+
+[typescript.frontend]
+root = "frontend"

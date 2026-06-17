@@ -1,0 +1,5 @@
+[project]
+name = "vinyl-collection"
+
+[typescript.frontend]
+root = "frontend"
