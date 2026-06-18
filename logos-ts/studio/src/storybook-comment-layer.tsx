@@ -65,7 +65,6 @@ function postStoryComment(comment: Omit<StoryComment, "id" | "createdAt">): void
   try {
     const message = { type: "logos:story-comment", ...comment }
     window.parent?.postMessage(message, "*")
-    if (window.top && window.top !== window.parent) window.top.postMessage(message, "*")
   } catch {}
 }
 
@@ -73,7 +72,6 @@ function postCommentEditing(storyId: string, active: boolean): void {
   try {
     const message = { type: "logos:story-comment-editing", storyId, active }
     window.parent?.postMessage(message, "*")
-    if (window.top && window.top !== window.parent) window.top.postMessage(message, "*")
   } catch {}
 }
 
@@ -81,7 +79,6 @@ function postCommentDraft(draft: StoryDraft | { storyId: string; active: false }
   try {
     const message = { type: "logos:story-comment-draft", ...draft }
     window.parent?.postMessage(message, "*")
-    if (window.top && window.top !== window.parent) window.top.postMessage(message, "*")
   } catch {}
 }
 

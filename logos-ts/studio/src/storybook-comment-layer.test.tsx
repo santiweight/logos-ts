@@ -6,6 +6,7 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  Object.defineProperty(window, "parent", { value: window, configurable: true })
 })
 
 beforeEach(() => {
@@ -23,6 +24,35 @@ function lastPosted(type: string): Record<string, unknown> | undefined {
 }
 
 describe("StorybookCommentLayer", () => {
+  it("emits one story comment for one submit when nested in a frame", async () => {
+    const messages: Record<string, unknown>[] = []
+    const parent = {
+      postMessage: vi.fn((message: unknown) => {
+        messages.push(message as Record<string, unknown>)
+      }),
+    }
+    Object.defineProperty(window, "parent", { value: parent, configurable: true })
+    vi.spyOn(window, "postMessage").mockImplementation((message: unknown) => {
+      messages.push(message as Record<string, unknown>)
+    })
+
+    render(
+      <StorybookCommentLayer storyId="jobcard--default" component="JobCard">
+        <section>
+          <button type="button">Apply</button>
+        </section>
+      </StorybookCommentLayer>
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }), { altKey: true })
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Make this clearer" } })
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+
+    await waitFor(() => {
+      expect(messages.filter((message) => message["type"] === "logos:story-comment")).toHaveLength(1)
+    })
+  })
+
   it("restores an in-progress draft sent back from Studio after an iframe reload", async () => {
     vi.spyOn(window.parent, "postMessage").mockImplementation(() => {})
 
