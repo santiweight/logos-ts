@@ -18,7 +18,7 @@ beforeEach(() => {
 })
 
 function lastPosted(type: string): Record<string, unknown> | undefined {
-  const mock = vi.mocked(window.parent.postMessage)
+  const mock = Reflect.get(window.parent, "postMessage") as unknown as { mock: { calls: Array<[unknown]> } }
   const calls = mock.mock.calls.map(([message]) => message as Record<string, unknown>)
   return calls.reverse().find((message) => message["type"] === type)
 }
@@ -114,6 +114,45 @@ describe("StorybookCommentLayer", () => {
         component: "JobCard",
         selector: ":scope > section",
         text: "Do not lose me",
+      })
+    })
+  })
+
+  it("moves a draft popover visually without changing the attached selector", async () => {
+    vi.spyOn(window.parent, "postMessage").mockImplementation(() => {})
+
+    render(
+      <StorybookCommentLayer storyId="jobcard--default" component="JobCard">
+        <section>
+          <button type="button">Apply</button>
+        </section>
+      </StorybookCommentLayer>
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }), { altKey: true })
+
+    const handle = screen.getByTitle("Drag comment")
+    const popover = handle.parentElement
+    if (!popover) throw new Error("Expected comment popover to contain the drag handle")
+    expect(popover).toHaveStyle({ left: "12px", top: "8px" })
+
+    fireEvent.pointerDown(handle, { button: 0, clientX: 10, clientY: 20, pointerId: 1 })
+    fireEvent.pointerMove(window, { clientX: 70, clientY: 50, pointerId: 1 })
+    fireEvent.pointerUp(window, { pointerId: 1 })
+
+    await waitFor(() => {
+      expect(popover).toHaveStyle({ left: "72px", top: "38px" })
+    })
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Move only the box" } })
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+
+    await waitFor(() => {
+      expect(lastPosted("logos:story-comment")).toMatchObject({
+        storyId: "jobcard--default",
+        component: "JobCard",
+        selector: ":scope > section > button",
+        text: "Move only the box",
       })
     })
   })

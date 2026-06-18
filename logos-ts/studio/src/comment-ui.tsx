@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-syntax */
-import React, { useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { iconForLabel } from "./icons"
 
 export interface GoalReply {
@@ -27,14 +27,20 @@ export interface SubmitPayload {
   fork: boolean
 }
 
-export interface DraftPayload extends SubmitPayload {}
+export type DraftPayload = SubmitPayload
 
 export interface ReplyPayload {
   goalId: string
   text: string
 }
 
+export interface DragOffset {
+  x: number
+  y: number
+}
+
 const FONT = "12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace"
+type DragHandleProps = React.HTMLAttributes<HTMLDivElement>
 
 // --- Thread: shows existing comments + reply box with mode/fork controls ------
 
@@ -49,6 +55,7 @@ export function CommentThread({
   onEditingChange,
   initialDraft,
   onDraftChange,
+  dragHandleProps,
 }: {
   label: string
   comments: CommentItem[]
@@ -60,6 +67,7 @@ export function CommentThread({
   onEditingChange?: (active: boolean) => void
   initialDraft?: Partial<DraftPayload> | undefined
   onDraftChange?: (payload: DraftPayload) => void
+  dragHandleProps?: DragHandleProps | undefined
 }) {
   const [text, setText] = useState(initialDraft?.text ?? "")
   const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
@@ -78,25 +86,27 @@ export function CommentThread({
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
-    if (!t) return
+    if (t.length === 0) return
     onAdd({ text: t, mode, fork })
     setText("")
   }
 
   const submitReply = () => {
     const t = replyText.trim()
-    if (!t || !replyGoalId || !onReply) return
+    if (t.length === 0 || replyGoalId == null || onReply == null) return
     onReply({ goalId: replyGoalId, text: t })
     setReplyText("")
     setReplyGoalId(null)
   }
 
   const canReply = (c: CommentItem) =>
-    onReply && (c.agentStatus === "done" || c.status === "done") && (c.agentId || c.sessionId)
+    onReply != null
+      && (c.agentStatus === "done" || c.status === "done")
+      && ((c.agentId != null && c.agentId.length > 0) || (c.sessionId != null && c.sessionId.length > 0))
 
   return (
     <>
-      <Header label={label} onClose={onClose} />
+      <Header label={label} onClose={onClose} dragHandleProps={dragHandleProps} />
       {comments.length > 0 && (
         <div style={{ maxHeight: 320, overflowY: "auto" }}>
           {comments.map((c) => (
@@ -107,7 +117,7 @@ export function CommentThread({
                     {c.author ?? "you"}
                   </span>
                   <span>{formatTime(c.createdAt)}</span>
-                  {onRemove && (
+                  {onRemove != null && (
                     <button
                       type="button"
                       onClick={() => onRemove(c.id)}
@@ -119,7 +129,7 @@ export function CommentThread({
                   )}
                 </div>
                 <div style={{ whiteSpace: "pre-wrap" }}>{c.text}</div>
-                {c.agentId && (
+                {c.agentId != null && c.agentId.length > 0 && (
                   <div style={agentBadgeStyle} title="Agent assigned to this comment">
                     <span>{c.agentId}</span>
                     <span style={agentStatusBadge(c.agentStatus)}>
@@ -165,7 +175,7 @@ export function CommentThread({
                   />
                   <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 12px 8px", gap: 6 }}>
                     <button type="button" onClick={() => { setReplyGoalId(null); setReplyText("") }} style={cancelBtnStyle}>Cancel</button>
-                    <button type="button" onClick={submitReply} style={primaryBtnStyle} disabled={!replyText.trim()}>Send</button>
+                    <button type="button" onClick={submitReply} style={primaryBtnStyle} disabled={replyText.trim().length === 0}>Send</button>
                   </div>
                 </div>
               )}
@@ -184,7 +194,7 @@ export function CommentThread({
         placeholder="Reply…"
         style={textareaStyle}
       />
-      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={!text.trim()} workspaceKind={workspaceKind} />
+      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={text.trim().length === 0} workspaceKind={workspaceKind} />
     </>
   )
 }
@@ -199,6 +209,7 @@ export function CommentComposer({
   onEditingChange,
   initialDraft,
   onDraftChange,
+  dragHandleProps,
 }: {
   label: string
   onSave: (payload: SubmitPayload) => void
@@ -207,6 +218,7 @@ export function CommentComposer({
   onEditingChange?: (active: boolean) => void
   initialDraft?: Partial<DraftPayload> | undefined
   onDraftChange?: (payload: DraftPayload) => void
+  dragHandleProps?: DragHandleProps | undefined
 }) {
   const [text, setText] = useState(initialDraft?.text ?? "")
   const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
@@ -223,12 +235,12 @@ export function CommentComposer({
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
-    if (t) onSave({ text: t, mode, fork })
+    if (t.length > 0) onSave({ text: t, mode, fork })
   }
 
   return (
     <>
-      <Header label={label} onClose={onCancel} />
+      <Header label={label} onClose={onCancel} dragHandleProps={dragHandleProps} />
       <textarea
         autoFocus
         value={text}
@@ -240,22 +252,40 @@ export function CommentComposer({
         placeholder="Add a comment…"
         style={textareaStyle}
       />
-      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={!text.trim()} workspaceKind={workspaceKind} />
+      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={text.trim().length === 0} workspaceKind={workspaceKind} />
     </>
   )
 }
 
 // --- Header: icon + label + close button -------------------------------------
 
-function Header({ label, onClose }: { label: string; onClose: () => void }) {
+function Header({
+  label,
+  onClose,
+  dragHandleProps,
+}: {
+  label: string
+  onClose: () => void
+  dragHandleProps?: DragHandleProps | undefined
+}) {
   const icon = iconForLabel(label)
   return (
-    <div style={headerStyle}>
+    <div
+      {...dragHandleProps}
+      data-comment-drag-handle={dragHandleProps ? "" : undefined}
+      style={{ ...headerStyle, ...dragHandleProps?.style }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
         <span style={{ color: "var(--muted)", display: "flex" }}>{icon}</span>
         <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       </div>
-      <button type="button" onClick={onClose} style={closeBtnStyle} title="Close">
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={onClose}
+        style={closeBtnStyle}
+        title="Close"
+      >
         ×
       </button>
     </div>
@@ -331,6 +361,77 @@ export const popoverShell: React.CSSProperties = {
   overflow: "hidden",
   font: FONT,
   color: "#1a1a1a",
+}
+
+export function applyPopoverDragOffset(
+  position: React.CSSProperties,
+  offset: DragOffset,
+): React.CSSProperties {
+  return {
+    ...position,
+    left: typeof position.left === "number" ? position.left + offset.x : position.left,
+    top: typeof position.top === "number" ? position.top + offset.y : position.top,
+  }
+}
+
+export function usePopoverDrag() {
+  const [offset, setOffset] = useState<DragOffset>({ x: 0, y: 0 })
+  const offsetRef = useRef(offset)
+  const cleanupRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    offsetRef.current = offset
+  }, [offset])
+
+  useEffect(() => () => cleanupRef.current?.(), [])
+
+  const reset = useCallback(() => setOffset({ x: 0, y: 0 }), [])
+
+  const onPointerDown = useCallback<React.PointerEventHandler<HTMLDivElement>>((e) => {
+    if (e.button !== 0) return
+    const startX = e.clientX
+    const startY = e.clientY
+    const startOffset = offsetRef.current
+    const previousUserSelect = document.body.style.userSelect
+    const previousCursor = document.body.style.cursor
+
+    e.preventDefault()
+    const setPointerCapture = Reflect.get(e.currentTarget, "setPointerCapture")
+    if (typeof setPointerCapture === "function") {
+      setPointerCapture.call(e.currentTarget, e.pointerId)
+    }
+    document.body.style.userSelect = "none"
+    document.body.style.cursor = "grabbing"
+
+    const onMove = (event: PointerEvent) => {
+      setOffset({
+        x: startOffset.x + event.clientX - startX,
+        y: startOffset.y + event.clientY - startY,
+      })
+    }
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", cleanup)
+      window.removeEventListener("pointercancel", cleanup)
+      document.body.style.userSelect = previousUserSelect
+      document.body.style.cursor = previousCursor
+      cleanupRef.current = null
+    }
+
+    cleanupRef.current?.()
+    cleanupRef.current = cleanup
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", cleanup)
+    window.addEventListener("pointercancel", cleanup)
+  }, [])
+
+  const dragHandleProps = useMemo<DragHandleProps>(() => ({
+    title: "Drag comment",
+    style: { cursor: "grab", userSelect: "none", touchAction: "none" },
+    onPointerDown,
+  }), [onPointerDown])
+
+  return { offset, reset, dragHandleProps }
 }
 
 // --- Styles -------------------------------------------------------------------

@@ -5,9 +5,11 @@ import {
   CommentToolbar,
   Highlight,
   Pin,
+  applyPopoverDragOffset,
   overlayStyle,
   popoverPos,
   popoverShell,
+  usePopoverDrag,
   type SubmitPayload,
 } from "./comment-ui"
 
@@ -49,36 +51,40 @@ interface StoryDraft extends Draft {
   kind: "new" | "reply"
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
 function portableStoryIdentity(): { storyId: string; component?: string } | null {
   const story = (window as typeof window & {
     __LOGOS_PORTABLE_STORY?: { storyId: string; storyTitle: string }
   }).__LOGOS_PORTABLE_STORY
-  if (!story) return null
+  if (story == null) return null
   const component = story.storyTitle.split(" / ")[0]
   return {
     storyId: story.storyId,
-    ...(component ? { component } : {}),
+    ...(component != null && component.length > 0 ? { component } : {}),
   }
 }
 
 function postStoryComment(comment: Omit<StoryComment, "id" | "createdAt">): void {
   try {
     const message = { type: "logos:story-comment", ...comment }
-    window.parent?.postMessage(message, "*")
+    window.parent.postMessage(message, "*")
   } catch {}
 }
 
 function postCommentEditing(storyId: string, active: boolean): void {
   try {
     const message = { type: "logos:story-comment-editing", storyId, active }
-    window.parent?.postMessage(message, "*")
+    window.parent.postMessage(message, "*")
   } catch {}
 }
 
 function postCommentDraft(draft: StoryDraft | { storyId: string; active: false }): void {
   try {
     const message = { type: "logos:story-comment-draft", ...draft }
-    window.parent?.postMessage(message, "*")
+    window.parent.postMessage(message, "*")
   } catch {}
 }
 
@@ -86,9 +92,13 @@ function onGoalsFromStudio(
   cb: (goals: StoryComment[], workspaceKind: "code" | "arch", drafts: StoryDraft[]) => void,
 ): () => void {
   const handler = (e: MessageEvent) => {
-    if (e.data?.type === "logos:story-goals") {
-      cb(e.data.goals as StoryComment[], e.data.workspaceKind === "arch" ? "arch" : "code", Array.isArray(e.data.drafts) ? e.data.drafts as StoryDraft[] : [])
-    }
+    const data: unknown = e.data
+    if (!isRecord(data) || data["type"] !== "logos:story-goals") return
+    cb(
+      Array.isArray(data["goals"]) ? data["goals"] as StoryComment[] : [],
+      data["workspaceKind"] === "arch" ? "arch" : "code",
+      Array.isArray(data["drafts"]) ? data["drafts"] as StoryDraft[] : [],
+    )
   }
   window.addEventListener("message", handler)
   return () => window.removeEventListener("message", handler)
@@ -100,9 +110,10 @@ function cssPath(el: Element, root: Element): string {
   let node: Element | null = el
   while (node && node !== root) {
     const parent: Element | null = node.parentElement
-    if (!parent) break
+    if (parent == null) break
     let part = node.tagName.toLowerCase()
-    const sameTag = Array.from(parent.children).filter((c) => c.tagName === node!.tagName)
+    const nodeTagName = node.tagName
+    const sameTag = Array.from(parent.children).filter((c) => c.tagName === nodeTagName)
     if (sameTag.length > 1) part += `:nth-of-type(${sameTag.indexOf(node) + 1})`
     parts.unshift(part)
     node = parent === root ? null : parent
@@ -121,21 +132,21 @@ function resolveSelector(root: Element, selector: string): Element | null {
 
 function resolveNearestSelector(root: Element, selector: string): { selector: string; element: Element } {
   const exact = resolveSelector(root, selector)
-  if (exact) return { selector, element: exact }
+  if (exact != null) return { selector, element: exact }
   if (!selector.startsWith(":scope > ")) return { selector: ":scope", element: root }
   const parts = selector.slice(":scope > ".length).split(" > ")
   for (let i = parts.length - 1; i > 0; i--) {
     const parentSelector = ":scope > " + parts.slice(0, i).join(" > ")
     const element = resolveSelector(root, parentSelector)
-    if (element) return { selector: parentSelector, element }
+    if (element != null) return { selector: parentSelector, element }
   }
   return { selector: ":scope", element: root }
 }
 
 function describeElement(el: Element): string {
   const tag = el.tagName.toLowerCase()
-  const text = (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 32)
-  return text ? `${tag} "${text}"` : `<${tag}>`
+  const text = el.textContent.trim().replace(/\s+/g, " ").slice(0, 32)
+  return text.length > 0 ? `${tag} "${text}"` : `<${tag}>`
 }
 
 export function StorybookCommentLayer({
@@ -155,6 +166,7 @@ export function StorybookCommentLayer({
   const [draft, setDraft] = useState<Draft | null>(null)
   const [openSelector, setOpenSelector] = useState<string | null>(null)
   const [workspaceKind, setWorkspaceKind] = useState<"code" | "arch">("code")
+  const { offset: popoverOffset, reset: resetPopoverOffset, dragHandleProps } = usePopoverDrag()
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick((t) => t + 1), [])
   const identity = portableStoryIdentity()
@@ -165,8 +177,8 @@ export function StorybookCommentLayer({
     return onGoalsFromStudio((goals, kind, drafts) => {
       setWorkspaceKind(kind)
       setComments(goals.filter((g) => g.storyId === effectiveStoryId))
-      const restored = drafts.find((d) => d.storyId === effectiveStoryId && d.text.trim())
-      if (restored) {
+      const restored = drafts.find((d): boolean => d.storyId === effectiveStoryId && d.text.trim().length > 0)
+      if (restored != null) {
         if (restored.kind === "reply") {
           setOpenSelector(restored.selector)
           setDraft(null)
@@ -182,11 +194,18 @@ export function StorybookCommentLayer({
     setDraft(null)
     setOpenSelector(null)
     setHover(null)
-  }, [effectiveStoryId])
+    resetPopoverOffset()
+  }, [effectiveStoryId, resetPopoverOffset])
 
-  const inStory = useCallback((el: Element | null): el is Element => (
-    !!(el && rootRef.current?.contains(el) && !el.closest("[data-comment-ui]"))
-  ), [])
+  useEffect(() => {
+    resetPopoverOffset()
+  }, [draft?.selector, draft?.kind, openSelector, resetPopoverOffset])
+
+  const inStory = useCallback((el: Element | null): el is Element => {
+    if (el == null) return false
+    const rootEl = rootRef.current
+    return rootEl != null && rootEl.contains(el) && el.closest("[data-comment-ui]") == null
+  }, [])
 
   useEffect(() => {
     if (!enabled) return
@@ -232,11 +251,12 @@ export function StorybookCommentLayer({
     const onClick = (e: MouseEvent) => {
       if (!e.altKey) return
       const target = e.target as Element
-      if (!inStory(target) || !rootRef.current) return
+      const rootEl = rootRef.current
+      if (!inStory(target) || rootEl == null) return
       e.preventDefault()
       e.stopPropagation()
       setDraft({
-        selector: cssPath(target, rootRef.current),
+        selector: cssPath(target, rootEl),
         label: describeElement(target),
         kind: "new",
       })
@@ -262,7 +282,7 @@ export function StorybookCommentLayer({
     const map = new Map<string, StoryComment[]>()
     for (const c of comments) {
       const sel = c.selector
-      if (!sel) continue
+      if (sel.length === 0) continue
       const arr = map.get(sel) ?? []
       arr.push(c)
       map.set(sel, arr)
@@ -318,9 +338,9 @@ export function StorybookCommentLayer({
   const rootLabel = effectiveComponent ?? effectiveStoryId
 
   const saveDraft = (p: SubmitPayload) => {
-    if (!draft) return
+    if (draft == null) return
     const rootEl = rootRef.current
-    if (!rootEl) throw new Error("Cannot attach comment because the story root disappeared.")
+    if (rootEl == null) throw new Error("Cannot attach comment because the story root disappeared.")
     const { selector } = resolveNearestSelector(rootEl, draft.selector)
     const label = selector === draft.selector ? draft.label : rootLabel
     sendComment(selector, label, p)
@@ -336,11 +356,11 @@ export function StorybookCommentLayer({
       </div>
 
       <div data-comment-ui style={overlayStyle}>
-        {enabled && altDown && hover && <Highlight rect={hover.rect} label={hover.label} />}
+        {enabled && altDown && hover != null && <Highlight rect={hover.rect} label={hover.label} />}
 
-        {enabled && root && Array.from(groups.entries()).map(([selector, list]) => {
+        {enabled && root != null && Array.from(groups.entries()).map(([selector, list]) => {
           const el = resolveSelector(root, selector)
-          if (!el) return null
+          if (el == null) return null
           const rect = el.getBoundingClientRect()
           return (
             <Pin
@@ -356,15 +376,25 @@ export function StorybookCommentLayer({
           )
         })}
 
-        {enabled && root && openSelector && (() => {
+        {enabled && root != null && openSelector != null && (() => {
           const list = groups.get(openSelector)
-          if (!list) return null
+          if (list == null) return null
           const nearest = resolveNearestSelector(root, openSelector)
           const selector = nearest.selector
           const label = selector === openSelector ? list[0]?.label ?? openSelector : rootLabel
           const rect = nearest.element.getBoundingClientRect()
+          const initialDraftProps = draft != null && draft.kind === "reply" && draft.selector === openSelector
+            ? { initialDraft: draft }
+            : {}
           return (
-            <div style={{ ...popoverShell, ...popoverPos(rect), position: "absolute", pointerEvents: "auto" }}>
+            <div
+              style={{
+                ...popoverShell,
+                ...applyPopoverDragOffset(popoverPos(rect), popoverOffset),
+                position: "absolute",
+                pointerEvents: "auto",
+              }}
+            >
               <CommentThread
                 label={label}
                 comments={list}
@@ -373,7 +403,7 @@ export function StorybookCommentLayer({
                   clearCommentDraft()
                   setDraft(null)
                 }}
-                initialDraft={draft?.kind === "reply" && draft.selector === openSelector ? draft : undefined}
+                {...initialDraftProps}
                 onDraftChange={(p) => {
                   const replyDraft = { selector: openSelector, label, kind: "reply" as const, ...p }
                   setDraft(replyDraft)
@@ -382,18 +412,26 @@ export function StorybookCommentLayer({
                 onEditingChange={sendCommentEditing}
                 workspaceKind={workspaceKind}
                 onClose={() => { clearCommentDraft(); setOpenSelector(null); setDraft(null) }}
+                dragHandleProps={dragHandleProps}
               />
             </div>
           )
         })()}
 
-        {enabled && draft && draft.kind !== "reply" && (
+        {enabled && draft != null && draft.kind !== "reply" && (
           (() => {
             const rootEl = rootRef.current
-            const nearest = rootEl ? resolveNearestSelector(rootEl, draft.selector) : null
-            const rect = nearest?.element.getBoundingClientRect() ?? new DOMRect()
+            const nearest = rootEl != null ? resolveNearestSelector(rootEl, draft.selector) : null
+            const rect = nearest == null ? new DOMRect() : nearest.element.getBoundingClientRect()
             return (
-              <div style={{ ...popoverShell, ...popoverPos(rect), position: "absolute", pointerEvents: "auto" }}>
+              <div
+                style={{
+                  ...popoverShell,
+                  ...applyPopoverDragOffset(popoverPos(rect), popoverOffset),
+                  position: "absolute",
+                  pointerEvents: "auto",
+                }}
+              >
                 <CommentComposer
                   label={draft.label}
                   onSave={saveDraft}
@@ -406,6 +444,7 @@ export function StorybookCommentLayer({
                   }}
                   onEditingChange={sendCommentEditing}
                   workspaceKind={workspaceKind}
+                  dragHandleProps={dragHandleProps}
                 />
               </div>
             )
