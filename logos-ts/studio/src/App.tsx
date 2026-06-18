@@ -63,6 +63,32 @@ function componentsOf(file: FileEntry | undefined): ComponentEntry[] {
   return file.components?.length ? file.components : file.component ? [file.component] : []
 }
 
+function commentTargetsOf(file: FileEntry | undefined): ReadonlySet<string> {
+  const targets = new Set<string>()
+  if (file == null) return targets
+  targets.add(`file:${file.file}`)
+  for (const component of componentsOf(file)) {
+    targets.add(`component:${component.name}`)
+    if (component.propsName != null && component.propsName.length > 0) targets.add(`props:${component.propsName}`)
+  }
+  for (const item of file.items) {
+    if (item.kind === "function") {
+      targets.add(`fn:${item.name}`)
+      for (const test of item.tests) targets.add(`test:${test.file}::${test.name}`)
+    } else if (item.kind === "type") {
+      targets.add(`type:${item.name}`)
+    } else {
+      targets.add(`cls:${item.name}`)
+      for (const test of item.tests) targets.add(`test:${test.file}::${test.name}`)
+      for (const method of item.methods) {
+        targets.add(`method:${item.name}.${method.name}`)
+        for (const test of method.tests) targets.add(`test:${test.file}::${test.name}`)
+      }
+    }
+  }
+  return targets
+}
+
 function defaultSelection(): Selection {
   return {
     file: seed.files[0]?.file ?? "",
@@ -793,6 +819,7 @@ export function App() {
   }, [postStoryGoals])
 
   const currentFile = view.files.find((f) => f.file === selection.file) ?? view.files[0]
+  const currentFileCommentTargets = useMemo(() => commentTargetsOf(currentFile), [currentFile])
 
   function setView(viewName: View) {
     if (!currentFile) return
@@ -1021,12 +1048,21 @@ export function App() {
         <CommentSidebar
           goals={activeGoals}
           selection={selection}
+          fileTargets={currentFileCommentTargets}
           runningGoals={effectiveRunningGoals}
           onNavigate={(goal) => {
             const target = goal.target
-            const comp = target.startsWith("component:") ? target.slice("component:".length) : undefined
-            const file = target.startsWith("file:") ? target.slice("file:".length) : undefined
-            if (comp) {
+            const comp = target.startsWith("component:") ? target.slice("component:".length) : null
+            const file = target.startsWith("file:") ? target.slice("file:".length) : null
+            const symbolPrefix = target.startsWith("fn:")
+              ? "fn:"
+              : target.startsWith("type:")
+                ? "type:"
+                : target.startsWith("cls:")
+                  ? "cls:"
+                  : null
+            const symbol = symbolPrefix != null ? target.slice(symbolPrefix.length) : null
+            if (comp != null && comp.length > 0) {
               const f = view.files.find((f) => f.component?.name === comp || f.components?.some((c) => c.name === comp))
               if (f) {
                 if (goal.storyId) {
@@ -1035,7 +1071,10 @@ export function App() {
                   setSelection({ file: f.file, component: comp, view: "code" })
                 }
               }
-            } else if (file) {
+            } else if (symbol != null && symbol.length > 0) {
+              const f = view.files.find((f) => f.items.some((item) => item.name === symbol))
+              if (f) setSelection({ file: f.file, symbol, view: "code" })
+            } else if (file != null && file.length > 0) {
               setSelection({ file, view: "code" })
             }
           }}

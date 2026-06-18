@@ -65,27 +65,35 @@ function ThreadCard({
   )
 }
 
-function goalMatchesSelection(g: Goal, sel: Selection): boolean {
-  if (sel.storyId && g.storyId === sel.storyId) return true
-  if (sel.component && g.target === `component:${sel.component}`) return true
+function symbolTargets(symbol: string): string[] {
+  return [`fn:${symbol}`, `type:${symbol}`, `cls:${symbol}`]
+}
+
+function goalMatchesSelection(g: Goal, sel: Selection, fileTargets: ReadonlySet<string>): boolean {
+  if (sel.storyId != null && sel.storyId.length > 0 && g.storyId === sel.storyId) return true
+  if (sel.component != null && sel.component.length > 0 && g.target === `component:${sel.component}`) return true
+  if (sel.symbol != null && sel.symbol.length > 0 && symbolTargets(sel.symbol).includes(g.target)) return true
   if (g.target === `file:${sel.file}`) return true
+  if (sel.storyId == null && sel.component == null && sel.symbol == null && fileTargets.has(g.target)) return true
   return false
 }
 
 export function CommentSidebar({
   goals,
   selection,
+  fileTargets,
   runningGoals,
   onNavigate,
   onClose,
 }: {
   goals: Goal[]
   selection: Selection
+  fileTargets: ReadonlySet<string>
   runningGoals: ReadonlySet<string>
   onNavigate: (goal: Goal) => void
   onClose: () => void
 }) {
-  const filtered = goals.filter((g) => goalMatchesSelection(g, selection))
+  const filtered = goals.filter((g) => goalMatchesSelection(g, selection, fileTargets))
 
   const sorted = [...filtered].sort((a, b) => {
     const sa = runningGoals.has(a.id) ? 0 : (statusOrder[a.status] ?? 4)
