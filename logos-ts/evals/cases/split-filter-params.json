@@ -1,6 +1,6 @@
 {
   "name": "split-filter-params",
-  "codebase": "../../../hn-jobs",
+  "codebase": "../../demos/hn-jobs",
   "comment": {
     "target": "file:backend/job-filters.ts",
     "label": "job-filters.ts",

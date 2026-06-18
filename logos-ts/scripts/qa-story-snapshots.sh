@@ -3,7 +3,7 @@
 # Run from the logos-ts root:  bash scripts/qa-story-snapshots.sh [hn-jobs-root]
 set -euo pipefail
 
-ROOT="${1:-../hn-jobs}"
+ROOT="${1:-demos/hn-jobs}"
 FRONTEND="$ROOT/frontend"
 VITEST="$FRONTEND/node_modules/.bin/vitest"
 SNAP="$FRONTEND/__snapshots__/stories.test.tsx.snap"

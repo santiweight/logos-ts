@@ -1,6 +1,6 @@
 {
   "name": "rename-company-header",
-  "codebase": "../../../hn-jobs",
+  "codebase": "../../demos/hn-jobs",
   "comment": {
     "target": "component:JobTable",
     "text": "Rename the 'Company' column header to 'Employer'.",

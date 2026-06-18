@@ -1,15 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { loadProject, extractArchitecture, buildDependencyTree, extractStoryMap } from "./index.js"
 import { SyntaxKind } from "ts-morph"
+import { resolve } from "node:path"
 
-const root = process.argv[2] ?? "../hn-jobs"
+const root = process.argv[2] ?? "demos/hn-jobs"
+const absRoot = resolve(root)
 const project = loadProject(root)
 const sfs = project.getSourceFiles().filter((s) => !s.getFilePath().includes("/node_modules/"))
 
 // ---- Architecture per file ----
 console.log("=== ARCHITECTURE (per file) ===")
 for (const sf of sfs) {
-  const rel = sf.getFilePath().replace(process.cwd() + "/../hn-jobs/", "")
+  const rel = sf.getFilePath().replace(`${absRoot}/`, "")
   const a = extractArchitecture(sf)
   const names = a.items.map((i) => (i.kind === "class" ? `class ${i.name}` : i.name))
   console.log(`${rel}: ${names.join(", ") || "(none)"}${a.tests.length ? `  tests=${a.tests.length}` : ""}`)

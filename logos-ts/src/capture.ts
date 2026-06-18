@@ -11,6 +11,6 @@ export function updateSnapshots(root: string): void {
 }
 
 // CLI: tsx src/capture.ts <root>
-const [, , root = "../hn-jobs"] = process.argv
+const [, , root = "demos/hn-jobs"] = process.argv
 updateSnapshots(root)
 console.log("updated story snapshots")

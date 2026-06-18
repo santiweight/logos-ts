@@ -1,6 +1,6 @@
 {
   "name": "fuzzy-search-arch",
-  "codebase": "../../../hn-jobs",
+  "codebase": "../../demos/hn-jobs",
   "comment": {
     "target": "component:DirectoryView",
     "label": "DirectoryView",

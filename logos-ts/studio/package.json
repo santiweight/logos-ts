@@ -7,7 +7,7 @@
     "logos-studio": "./bin/logos-studio.mjs"
   },
   "scripts": {
-    "index": "tsx ../src/build-index.ts ${LOGOS_PROJECT:-../../hn-jobs} src/studio-index.json",
+    "index": "tsx ../src/build-index.ts ${LOGOS_PROJECT:-../demos/hn-jobs} src/studio-index.json",
     "dev": "vite",
     "start": "node bin/serve.mjs",
     "build": "tsc --noEmit && vite build",

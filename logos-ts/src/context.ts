@@ -308,5 +308,5 @@ export function buildArchContext(root: string, targets: string[], budget = 40000
 }
 
 // CLI: tsx src/context.ts <root> <budget> <targetId...>
-const [, , root = "../hn-jobs", budgetStr = "40000", ...targets] = process.argv
+const [, , root = "demos/hn-jobs", budgetStr = "40000", ...targets] = process.argv
 process.stdout.write(buildArchContext(root, targets, Number(budgetStr) || 40000))

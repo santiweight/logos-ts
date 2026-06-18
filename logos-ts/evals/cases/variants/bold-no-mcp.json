@@ -1,6 +1,6 @@
 {
   "name": "bold-no-mcp",
-  "codebase": "../../../../hn-jobs",
+  "codebase": "../../../demos/hn-jobs",
   "comment": {
     "target": "component:JobRow",
     "text": "Make this text bold",

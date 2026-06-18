@@ -12,12 +12,9 @@ import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
 const DEMO_STATE_FILE = resolve(LOGOS_TS, ".logos", "active-demo.json")
-const REAL_HN_JOBS = process.env.LOGOS_HN_JOBS_PROJECT
-  ? resolve(process.env.LOGOS_HN_JOBS_PROJECT)
-  : resolve(LOGOS_TS, "demos/hn-jobs")
+const EMBEDDED_HN_JOBS = resolve(LOGOS_TS, "demos/hn-jobs")
 const DEMOS = [
-  { id: "hn-jobs-real", name: "HN Jobs", root: REAL_HN_JOBS },
-  { id: "hn-jobs", name: "HN Jobs (Mini)", root: resolve(STUDIO, "../../hn-jobs") },
+  { id: "hn-jobs", name: "HN Jobs", root: EMBEDDED_HN_JOBS },
   { id: "vinyl-collection", name: "Vinyl Collection", root: resolve(STUDIO, "../../vinyl-collection") },
   { id: "investment-portfolio", name: "Investment Portfolio", root: resolve(STUDIO, "../../investment-portfolio") },
   { id: "logos-studio", name: "Logos Studio", root: LOGOS_TS },

@@ -77,7 +77,7 @@ export function buildGraph(root: string): GraphData {
 
 // CLI: tsx src/build-graph.ts <root>
 if (process.argv[1]?.endsWith("build-graph.ts")) {
-  const [, , root = "../hn-jobs"] = process.argv
+  const [, , root = "demos/hn-jobs"] = process.argv
   const graph = buildGraph(root)
   process.stdout.write(JSON.stringify(graph))
 }

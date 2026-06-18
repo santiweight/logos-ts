@@ -7,7 +7,7 @@ import {
   storyMapToJSON,
 } from "./index.js"
 
-const root = process.argv[2] ?? "../hn-jobs"
+const root = process.argv[2] ?? "demos/hn-jobs"
 const project = loadProject(root)
 const sourceFiles = project.getSourceFiles()
 

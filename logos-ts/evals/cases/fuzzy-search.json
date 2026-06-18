@@ -1,6 +1,6 @@
 {
   "name": "fuzzy-search",
-  "codebase": "../../../hn-jobs",
+  "codebase": "../../demos/hn-jobs",
   "comment": {
     "target": "component:DirectoryView",
     "text": "Make search into a fuzzy search"

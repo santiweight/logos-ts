@@ -15,7 +15,7 @@ import { chromium, type Browser, type Frame, type Page } from "playwright"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "../..")
-const PROJECT_ROOT = resolve(LOGOS_TS, "../hn-jobs")
+const PROJECT_ROOT = resolve(LOGOS_TS, "demos/hn-jobs")
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
 let server: ChildProcess

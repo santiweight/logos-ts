@@ -1,6 +1,6 @@
 {
   "name": "empty-state-message",
-  "codebase": "../../../hn-jobs",
+  "codebase": "../../demos/hn-jobs",
   "comment": {
     "target": "component:JobTable",
     "text": "Change the empty-state message to exactly: No jobs found — try removing some filters.",

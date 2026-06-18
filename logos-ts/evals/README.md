@@ -28,7 +28,7 @@ npx tsx evals/run.ts fuzzy-search-arch --concurrency 1
 ```jsonc
 {
   "name": "rename-company-header",
-  "codebase": "../../../hn-jobs",          // fork source, relative to the case file
+  "codebase": "../../demos/hn-jobs",          // fork source, relative to the case file
   "comment": { "target": "component:JobTable", "text": "…", "component": "JobTable" },
   "agent": "implementation",               // or "architecture"
   "tier": "deterministic",                 // or "capability" (default)

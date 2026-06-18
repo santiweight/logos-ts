@@ -1,6 +1,6 @@
 {
   "name": "posted-date-column",
-  "codebase": "../../../hn-jobs",
+  "codebase": "../../demos/hn-jobs",
   "comment": {
     "target": "component:JobTable",
     "text": "Add a 'Posted' column as the last column (after Details) showing the job's postedAt date formatted as YYYY-MM-DD.",

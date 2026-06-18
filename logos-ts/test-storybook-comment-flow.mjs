@@ -8,7 +8,7 @@ import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const HN = resolve(__dirname, "../hn-jobs")
+const HN = resolve(__dirname, "demos/hn-jobs")
 
 function getStudioPort() {
   const explicit = process.argv[2]
@@ -190,7 +190,7 @@ async function run() {
   const sbOk = sbUrl ? await fetch(`${sbUrl}/api/story-comments`).then(r => r.ok).catch(() => false) : false
 
   if (!sbOk) {
-    skip("Storybook not reachable — run `cd hn-jobs/frontend && npm run storybook` to test this section")
+    skip("Storybook not reachable - run `cd demos/hn-jobs/frontend && npm run storybook` to test this section")
   } else {
     const sbCommentRes = await fetch(`${sbUrl}/api/story-comments`, {
       method: "POST",

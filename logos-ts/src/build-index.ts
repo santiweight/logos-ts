@@ -350,7 +350,7 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
 
 // CLI: tsx src/build-index.ts <root> <outFile>
 if (process.argv[1]?.match(/build-index\.[tj]s$/)) {
-  const [, , root = "../hn-jobs", outFile = "studio/src/studio-index.json"] = process.argv
+  const [, , root = "demos/hn-jobs", outFile = "studio/src/studio-index.json"] = process.argv
   const index = buildStudioIndex(root)
   if (outFile === "-") {
     process.stdout.write(JSON.stringify(index))

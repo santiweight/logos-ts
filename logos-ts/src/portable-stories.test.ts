@@ -1,11 +1,11 @@
 /* eslint-disable functional/no-let */
 import { describe, expect, it } from "vitest"
-import { mkdtempSync, cpSync, writeFileSync, rmSync, renameSync } from "node:fs"
+import { mkdtempSync, cpSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createPortableStoryResolver, storybookDirsForRoot } from "./portable-stories.js"
 
-const SOURCE = resolve("../hn-jobs")
+const SOURCE = resolve("demos/hn-jobs")
 
 function copyFixture(): string {
   const root = mkdtempSync(join(tmpdir(), "logos-portable-stories-"))
@@ -23,17 +23,17 @@ describe("portable story resolver", () => {
       const resolver = createPortableStoryResolver({
         projectRoot: root,
         storybook: {
-          frontendDir: join(root, "frontend"),
-          configDir: join(root, "frontend/.storybook"),
+          frontendDir: root,
+          configDir: join(root, ".storybook"),
         },
         workspaceRoot: () => root,
       })
 
-      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=views-directoryview--default")
-      expect(mod).toContain("DirectoryView.stories.tsx")
-      expect(mod).toContain(".storybook/preview.tsx")
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=admin-page--default")
+      expect(mod).toContain("app/admin/page.stories.tsx")
+      expect(mod).toContain(".storybook/preview.ts")
       expect(mod).toContain('composed["Default"]')
-      expect(mod).toContain('storyId = "views-directoryview--default"')
+      expect(mod).toContain('storyId = "admin-page--default"')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -46,15 +46,15 @@ describe("portable story resolver", () => {
       const resolver = createPortableStoryResolver({
         projectRoot: root,
         storybook: {
-          frontendDir: join(root, "frontend"),
-          configDir: join(root, "frontend/.storybook"),
+          frontendDir: root,
+          configDir: join(root, ".storybook"),
         },
         workspaceRoot: (id) => id === "ws-test" ? workspace : root,
       })
 
-      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=directory-jobrow--default&workspaceId=ws-test")
-      expect(mod).toContain(`${workspace}/frontend/components/JobRow.stories.tsx`)
-      expect(mod).toContain(`${workspace}/frontend/.storybook/preview.tsx`)
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=admin-page--default&workspaceId=ws-test")
+      expect(mod).toContain(`${workspace}/app/admin/page.stories.tsx`)
+      expect(mod).toContain(`${workspace}/.storybook/preview.ts`)
     } finally {
       rmSync(root, { recursive: true, force: true })
       rmSync(workspace, { recursive: true, force: true })
@@ -64,20 +64,16 @@ describe("portable story resolver", () => {
   it("accepts a TypeScript Storybook preview file", () => {
     const root = copyFixture()
     try {
-      renameSync(
-        join(root, "frontend/.storybook/preview.tsx"),
-        join(root, "frontend/.storybook/preview.ts"),
-      )
       const resolver = createPortableStoryResolver({
         projectRoot: root,
         storybook: {
-          frontendDir: join(root, "frontend"),
-          configDir: join(root, "frontend/.storybook"),
+          frontendDir: root,
+          configDir: join(root, ".storybook"),
         },
         workspaceRoot: () => root,
       })
 
-      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=views-directoryview--default")
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=admin-page--default")
       expect(mod).toContain(".storybook/preview.ts")
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -88,24 +84,24 @@ describe("portable story resolver", () => {
   it("invalidates cached story indexes when an existing story file changes", async () => {
     const root = copyFixture()
     try {
-      const storyFile = join(root, "frontend/components/ValueOrDash.stories.tsx")
+      const storyFile = join(root, "app/admin/page.stories.tsx")
       const resolver = createPortableStoryResolver({
         projectRoot: root,
         storybook: {
-          frontendDir: join(root, "frontend"),
-          configDir: join(root, "frontend/.storybook"),
+          frontendDir: root,
+          configDir: join(root, ".storybook"),
         },
         workspaceRoot: () => root,
       })
 
-      const missing = resolver.moduleFor("virtual:logos-portable-story?storyId=components-valueordash--cache-probe")
+      const missing = resolver.moduleFor("virtual:logos-portable-story?storyId=admin-page--cache-probe")
       expect(missing).toContain("Story unavailable")
-      expect(missing).toContain("story not found: components-valueordash--cache-probe")
+      expect(missing).toContain("story not found: admin-page--cache-probe")
 
       await new Promise((r) => setTimeout(r, 5))
       writeFileSync(storyFile, "\nexport const CacheProbe = { args: { value: \"probe\" } }\n", { flag: "a" })
 
-      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=components-valueordash--cache-probe")
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=admin-page--cache-probe")
       expect(mod).toContain('composed["CacheProbe"]')
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -122,13 +118,13 @@ describe("portable story resolver", () => {
       const resolver = createPortableStoryResolver({
         projectRoot: root,
         storybook: {
-          frontendDir: join(root, "frontend"),
-          configDir: join(root, "frontend/.storybook"),
+          frontendDir: root,
+          configDir: join(root, ".storybook"),
         },
         workspaceRoot: (id) => id === "missing-workspace" ? null : root,
       })
 
-      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=directory-jobrow--default&workspaceId=missing-workspace")
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=admin-page--default&workspaceId=missing-workspace")
       expect(mod).toContain("Story unavailable")
       expect(mod).toContain("workspace not found: missing-workspace")
     } finally {

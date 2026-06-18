@@ -1,6 +1,6 @@
 {
   "name": "onboard-storybook",
-  "codebase": "../../../hn-jobs",
+  "codebase": "../../demos/hn-jobs",
   "comment": {
     "target": "file:package.json",
     "label": "Storybook onboarding",

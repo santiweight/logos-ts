@@ -1,6 +1,6 @@
 {
   "name": "scheduled-ingest-arch",
-  "codebase": "../../../hn-jobs",
+  "codebase": "../../demos/hn-jobs",
   "comment": {
     "target": "file:backend/store.ts",
     "text": "Add scheduled ingestion of new job postings. Create backend/ingest.ts exporting: (1) an IngestDeps interface with findThreads(): Promise<HiringThread[]>, fetchComments(hnId: string): Promise<RawComment[]>, and store: JobStore, so tests can inject fakes; (2) async function ingestOnce(deps: IngestDeps): Promise<void> that discovers hiring threads, upserts each thread into the store, fetches its comments, parses each comment with parseJob, and upserts the resulting jobs keyed by hnCommentId; re-running it must not duplicate jobs; (3) function startIngestSchedule(deps: IngestDeps, intervalMs: number): () => void that runs ingestOnce immediately, then every intervalMs via setInterval, and returns a stop function that cancels the schedule. Wire the real findHiringThreads/fetchThreadComments as the default deps."
