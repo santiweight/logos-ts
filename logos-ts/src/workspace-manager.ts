@@ -621,6 +621,11 @@ export class WorkspaceManager {
         console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
       })
     }
+    for (const target of this.caps.runs ?? []) {
+      this.runManager.ensure(id, instance.materializedRoot, target).catch((e: any) => {
+        console.error(`[workspace] run ${target.id} for ${id} failed to start:`, e.message)
+      })
+    }
     return this.toMeta(ws)
   }
 

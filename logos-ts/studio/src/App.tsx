@@ -91,8 +91,8 @@ function commentTargetsOf(file: FileEntry | undefined): ReadonlySet<string> {
 
 function defaultSelection(): Selection {
   return {
-    file: seed.files[0]?.file ?? "",
-    view: "code",
+    file: "",
+    view: "run",
   }
 }
 
@@ -266,6 +266,12 @@ export function App() {
     for (const target of runTargets) out[target.id] = runStates[`${activeWorkspaceId}:${target.id}`]
     return out
   }, [activeWorkspaceId, runTargets, runStates])
+  useEffect(() => {
+    if (selection.view === "run" && !selection.runTargetId && runTargets.length > 0) {
+      setSelection((prev) => ({ ...prev, runTargetId: runTargets[0]!.id }))
+    }
+  }, [selection.view, selection.runTargetId, runTargets])
+
   const startRun = useCallback(async (targetId: string, restart = false) => {
     if (!activeWorkspaceId) return
     try {
@@ -617,7 +623,7 @@ export function App() {
         setWorkspaceIndex(ws.index)
         setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
         setActiveWorkspaceId(ws.id)
-        setSelection({ file: ws.index.files[0]?.file ?? "", view: "code" })
+        setSelection({ file: "", view: "run" })
       }
       await Promise.all([refreshTests(), refreshStorybooks(), refreshRuns()])
     } finally {
