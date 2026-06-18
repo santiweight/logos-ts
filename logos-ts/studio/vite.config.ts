@@ -328,7 +328,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         const states = runManager.allStates()
         const urls: Record<string, string> = {}
         for (const entry of Object.values(entries)) {
-          urls[entry.id] = publicRunUrl(entry.workspaceId, entry.targetId)
+          urls[entry.id] = entry.url
         }
         res.end(JSON.stringify({ urls, states, entries }))
       })
