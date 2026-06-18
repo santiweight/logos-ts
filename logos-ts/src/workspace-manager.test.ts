@@ -30,6 +30,8 @@ class FakeAgentProcess extends EventEmitter {
   stdout = new PassThrough()
   stderr = new PassThrough()
   killed = false
+  cwd = ""
+  args: string[] = []
 
   kill(): boolean {
     this.killed = true
@@ -49,12 +51,17 @@ function createSessions() {
   }
 }
 
-function createManager(opts?: { spawned?: FakeAgentProcess[] }): WorkspaceManager {
+function createManager(opts?: {
+  spawned?: FakeAgentProcess[]
+  setupProject?: (projectRoot: string) => void
+  caps?: Record<string, unknown>
+}): WorkspaceManager {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
   tempDirs.push(root)
   const projectRoot = join(root, "project")
   mkdirSync(projectRoot, { recursive: true })
   writeFileSync(join(projectRoot, "package.json"), "{}")
+  opts?.setupProject?.(projectRoot)
   const sessions = createSessions()
   const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
 
@@ -64,15 +71,17 @@ function createManager(opts?: { spawned?: FakeAgentProcess[] }): WorkspaceManage
     logosTsSrc: join(LOGOS_TS_ROOT, "src"),
     logosTsRoot: LOGOS_TS_ROOT,
     projectRoot,
-    caps: { root: projectRoot, nodeModulesDirs: [] },
+    caps: { root: projectRoot, nodeModulesDirs: [], ...(opts?.caps ?? {}) },
     sbManager: { get: () => null, shutdown: () => undefined } as any,
     sessions: sessions as any,
     tsx: TSX,
     getIndex: async () => ({ root: projectRoot, files: [] }),
     ...(opts?.spawned
       ? {
-          spawnAgent: () => {
+          spawnAgent: (_command, args, options) => {
             const child = new FakeAgentProcess()
+            child.cwd = String(options.cwd ?? "")
+            child.args = args
             opts.spawned!.push(child)
             return child as any
           },
@@ -374,8 +383,9 @@ describe("WorkspaceManager workspace kinds", () => {
     ])
   })
 
-  it("queues a requested pending goal while another goal owns the workspace", async () => {
-    const mgr = createManager()
+  it("starts a requested code goal while another code goal owns the workspace", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
     const code = await mgr.create({ kind: "code" })
     const running = expectGoal(await mgr.addGoal(code.id, goal("running", "code"))).goal
     const pending = expectGoal(await mgr.addGoal(code.id, goal("pending", "code"))).goal
@@ -387,19 +397,13 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(result).toBe(pending.id)
     expect(mgr.goalsForWorkspace(code.id).map((g) => [g.id, g.status])).toEqual([
       ["running", "running"],
-      ["pending", "pending"],
+      ["pending", "running"],
     ])
-    expect(events).toEqual([
-      {
-        type: "queued",
-        goalId: "pending",
-        runningGoalId: "running",
-        message: "goal queued behind running agent",
-      },
-    ])
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    expect(events.some((event) => event.type === "queued")).toBe(false)
   })
 
-  it("streams a queued requested goal when it starts after the active agent finishes", async () => {
+  it("streams requested code goals while they run in parallel instances", async () => {
     const spawned: FakeAgentProcess[] = []
     const mgr = createManager({ spawned })
     const code = await mgr.create({ kind: "code" })
@@ -416,17 +420,14 @@ describe("WorkspaceManager workspace kinds", () => {
     ])
 
     expect(mgr.processById(code.id, second.id, (event) => secondEvents.push(event))).toBe(second.id)
-    expect(secondEvents).toEqual([
-      {
-        type: "queued",
-        goalId: "second",
-        runningGoalId: "first",
-        message: "goal queued behind running agent",
-      },
+    await waitFor(() => expect(spawned).toHaveLength(2))
+    expect(spawned[0]!.cwd).not.toBe(spawned[1]!.cwd)
+    expect(mgr.goalsForWorkspace(code.id).map((g) => [g.id, g.status])).toEqual([
+      ["first", "running"],
+      ["second", "running"],
     ])
 
     spawned[0]!.emit("close", 0)
-    await waitFor(() => expect(spawned).toHaveLength(2))
     await waitFor(() => {
       expect(mgr.goalsForWorkspace(code.id).map((g) => [g.id, g.status])).toEqual([
         ["first", "done"],
@@ -446,6 +447,164 @@ describe("WorkspaceManager workspace kinds", () => {
       ])
     })
   })
+
+  it("resumes a code agent in its conflicted instance when rebase conflicts", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    const state = mgr.get(code.id)
+    if (!state) throw new Error("missing workspace")
+    writeFileSync(join(state.forkDir, "thing.txt"), "base\n")
+    execFileSync("git", ["add", "thing.txt"], { cwd: state.forkDir, encoding: "utf8" })
+    execFileSync("git", ["commit", "-m", "base thing"], { cwd: state.forkDir, encoding: "utf8" })
+
+    const first = expectGoal(await mgr.addGoal(code.id, goal("first", "code"))).goal
+    const second = expectGoal(await mgr.addGoal(code.id, goal("second", "code"))).goal
+    const secondEvents: { type: string; message?: unknown; goalId?: unknown }[] = []
+
+    expect(mgr.processById(code.id, first.id, () => undefined)).toBe(first.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    expect(mgr.processById(code.id, second.id, (event) => secondEvents.push(event))).toBe(second.id)
+    await waitFor(() => expect(spawned).toHaveLength(2))
+
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "first\n")
+    writeFileSync(join(spawned[1]!.cwd, "thing.txt"), "second\n")
+
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === first.id)?.status).toBe("done"))
+
+    spawned[1]!.emit("close", 0)
+    await waitFor(() => expect(spawned).toHaveLength(3))
+
+    expect(spawned[2]!.cwd).toBe(spawned[1]!.cwd)
+    expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === second.id)?.status).toBe("running")
+    expect(secondEvents.some((event) => String(event.message ?? "").includes("rebase conflicts"))).toBe(true)
+    const rebasePrompt = spawned[2]!.args.join("\n")
+    expect(rebasePrompt).toContain("git status --short")
+    expect(rebasePrompt).toContain("Unmerged files")
+    expect(rebasePrompt).toContain("thing.txt")
+    expect(rebasePrompt).toContain("Conflict marker counts")
+  }, 15000)
+
+  it("accepts a code agent edit without looping on excluded untracked runtime directories", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "thing.txt"), "base\n")
+      },
+    })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("edit", "code"))).goal
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+
+    expect(mgr.processById(code.id, task.id, (event) => events.push(event))).toBe(task.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "edited\n")
+    mkdirSync(join(spawned[0]!.cwd, ".logos_cache"), { recursive: true })
+    mkdirSync(join(spawned[0]!.cwd, "frontend", "node_modules"), { recursive: true })
+    writeFileSync(join(spawned[0]!.cwd, ".logos_cache", "run.json"), "{}\n")
+    writeFileSync(join(spawned[0]!.cwd, "frontend", "node_modules", "dep.txt"), "dep\n")
+
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("done"))
+    expect(spawned).toHaveLength(1)
+    expect(events.some((event) => String(event.message ?? "").includes("rebase needs agent attention"))).toBe(false)
+    const state = mgr.get(code.id)
+    if (!state) throw new Error("missing workspace")
+    expect(readFileSync(join(state.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
+  })
+
+  it("auto-resolves snapshot-only rebase conflicts without resuming the agent", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject: (projectRoot) => {
+        mkdirSync(join(projectRoot, "frontend", "__snapshots__"), { recursive: true })
+        writeFileSync(join(projectRoot, "frontend", "__snapshots__", "stories.test.tsx.snap"), "base snapshot\n")
+      },
+    })
+    const code = await mgr.create({ kind: "code" })
+    const first = expectGoal(await mgr.addGoal(code.id, goal("first", "code"))).goal
+    const second = expectGoal(await mgr.addGoal(code.id, goal("second", "code"))).goal
+    const secondEvents: { type: string; message?: unknown; goalId?: unknown }[] = []
+
+    expect(mgr.processById(code.id, first.id, () => undefined)).toBe(first.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    expect(mgr.processById(code.id, second.id, (event) => secondEvents.push(event))).toBe(second.id)
+    await waitFor(() => expect(spawned).toHaveLength(2))
+
+    writeFileSync(join(spawned[0]!.cwd, "frontend", "__snapshots__", "stories.test.tsx.snap"), "first snapshot\n")
+    writeFileSync(join(spawned[1]!.cwd, "frontend", "__snapshots__", "stories.test.tsx.snap"), "second snapshot\n")
+
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === first.id)?.status).toBe("done"))
+    spawned[1]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === second.id)?.status).toBe("done"))
+
+    expect(spawned).toHaveLength(2)
+    expect(secondEvents.some((event) => String(event.message ?? "").includes("auto-resolved generated snapshot conflicts"))).toBe(true)
+  }, 15000)
+
+  it("commits acceptance-test regenerated artifacts before promotion", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject: (projectRoot) => {
+        mkdirSync(join(projectRoot, "frontend", "__snapshots__"), { recursive: true })
+        writeFileSync(join(projectRoot, "thing.txt"), "base\n")
+        writeFileSync(join(projectRoot, "frontend", "__snapshots__", "stories.test.tsx.snap"), "base snapshot\n")
+        writeFileSync(join(projectRoot, "regen-test.js"), [
+          "const { writeFileSync } = require('node:fs')",
+          "writeFileSync('frontend/__snapshots__/stories.test.tsx.snap', 'regenerated snapshot\\n')",
+        ].join("\n"))
+      },
+      caps: { tests: { command: ["node", "regen-test.js"], watchDirs: [] } },
+    })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("edit", "code"))).goal
+
+    expect(mgr.processById(code.id, task.id, () => undefined)).toBe(task.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "edited\n")
+
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("done"))
+    const state = mgr.get(code.id)
+    if (!state) throw new Error("missing workspace")
+    expect(readFileSync(join(state.forkDir, "frontend", "__snapshots__", "stories.test.tsx.snap"), "utf8")).toBe("regenerated snapshot\n")
+    expect(execFileSync("git", ["log", "--oneline", "-1"], { cwd: state.forkDir, encoding: "utf8" })).toContain("Logos acceptance updates")
+    expect(execFileSync("git", ["status", "--short"], { cwd: state.forkDir, encoding: "utf8" })).not.toContain("stories.test.tsx.snap")
+  }, 15000)
+
+  it("resumes a code agent in the same instance when acceptance tests fail", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "thing.txt"), "base\n")
+        writeFileSync(join(projectRoot, "fail-test.js"), "console.error('expected failure'); process.exit(1)\n")
+      },
+      caps: { tests: { command: ["node", "fail-test.js"], watchDirs: [] } },
+    })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("edit", "code"))).goal
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+
+    expect(mgr.processById(code.id, task.id, (event) => events.push(event))).toBe(task.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "edited\n")
+
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => expect(spawned).toHaveLength(2))
+    expect(spawned[1]!.cwd).toBe(spawned[0]!.cwd)
+    expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("running")
+    expect(spawned[1]!.args.join("\n")).toContain("acceptance tests failed")
+    expect(events.some((event) => String(event.message ?? "").includes("acceptance tests failed"))).toBe(true)
+  }, 15000)
 
   it("reports a missing requested goal without starting another queued goal", async () => {
     const mgr = createManager()
