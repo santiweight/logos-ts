@@ -79,6 +79,10 @@ function fakeClaudeSignals(): string {
   return signalFile && existsSync(signalFile) ? readFileSync(signalFile, "utf8") : ""
 }
 
+function removeTempDir(path: string): void {
+  rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+}
+
 function jsonPost(path: string, body: unknown): Promise<Response> {
   return api(path, {
     method: "POST",
@@ -168,9 +172,9 @@ describe("workspace API mode isolation", () => {
       try { process.kill(-server.pid, "SIGTERM") } catch {}
     }
     server?.kill()
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
-    if (binDir) rmSync(binDir, { recursive: true, force: true })
-    if (agentRuns) rmSync(agentRuns, { recursive: true, force: true })
+    if (projectRoot) removeTempDir(projectRoot)
+    if (binDir) removeTempDir(binDir)
+    if (agentRuns) removeTempDir(agentRuns)
   })
 
   it("creates code workspaces by default and arch workspaces explicitly", async () => {
