@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, symlinkSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { execFile, execFileSync } from "node:child_process"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
@@ -200,6 +200,20 @@ export class WorkspaceCodeService {
   private configureRepo(root: string): void {
     execFileSync("git", ["config", "user.email", "logos@example.com"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
     execFileSync("git", ["config", "user.name", "Logos"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    const excludePath = join(root, ".git", "info", "exclude")
+    mkdirSync(dirname(excludePath), { recursive: true })
+    const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : ""
+    const excludes = [
+      "node_modules",
+      "*/node_modules",
+      ".logos_cache",
+      ".vite-logos",
+      "dist",
+    ]
+    const missing = excludes.filter((entry) => !existing.split(/\r?\n/).includes(entry))
+    if (missing.length > 0) {
+      writeFileSync(excludePath, `${existing}${existing && !existing.endsWith("\n") ? "\n" : ""}${missing.join("\n")}\n`)
+    }
   }
 
   private async commitWorkingTree(root: string, message: string): Promise<boolean> {
@@ -217,7 +231,7 @@ export class WorkspaceCodeService {
   }
 
   private gitAddWorkspace(root: string): void {
-    execFileSync("git", ["add", "-A", "--", ".", ":(exclude)node_modules", ":(exclude)*/node_modules", ":(exclude).logos_cache", ":(exclude).vite-logos", ":(exclude)dist"], {
+    execFileSync("git", ["add", "-A", "--", "."], {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -225,7 +239,7 @@ export class WorkspaceCodeService {
   }
 
   private async gitAddWorkspaceAsync(root: string): Promise<void> {
-    await this.runGit(root, ["add", "-A", "--", ".", ":(exclude)node_modules", ":(exclude)*/node_modules", ":(exclude).logos_cache", ":(exclude).vite-logos", ":(exclude)dist"])
+    await this.runGit(root, ["add", "-A", "--", "."])
   }
 
   private async hasRebaseConflictState(root: string): Promise<boolean> {

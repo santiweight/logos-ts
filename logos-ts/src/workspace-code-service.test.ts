@@ -7,7 +7,7 @@ import { WorkspaceCodeService } from "./workspace-code-service.js"
 
 const tempDirs: string[] = []
 
-function createService() {
+function createService(opts?: { nodeModulesDirs?: string[] }) {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-code-service-"))
   tempDirs.push(root)
   const projectRoot = join(root, "project")
@@ -15,7 +15,7 @@ function createService() {
   mkdirSync(projectRoot, { recursive: true })
   writeFileSync(join(projectRoot, "package.json"), "{}\n")
   writeFileSync(join(projectRoot, "shared.txt"), "base\n")
-  const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [] })
+  const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: opts?.nodeModulesDirs ?? [] })
   return { root, projectRoot, runsDir, service }
 }
 
@@ -92,7 +92,23 @@ describe("WorkspaceCodeService", () => {
     const result = await service.rebaseInstance({ workspaceId: "ws", instance: agent, onto: active })
 
     expect(result.status).toBe("clean")
-    expect(git(agent.materializedRoot, ["status", "--porcelain"])).toContain(".logos_cache")
+    expect(readFileSync(join(agent.materializedRoot, ".logos_cache", "run.json"), "utf8")).toBe("{}\n")
+    expect(git(agent.materializedRoot, ["status", "--porcelain"])).toBe("")
     expect(git(agent.materializedRoot, ["diff", "--cached", "--name-only"])).toBe("")
+  })
+
+  it("creates a baseline repo when ignored node_modules is symlinked into the instance", () => {
+    const { projectRoot, runsDir } = createService()
+    const nodeModules = join(projectRoot, "node_modules")
+    mkdirSync(nodeModules, { recursive: true })
+    writeFileSync(join(nodeModules, "dep.txt"), "dep\n")
+    writeFileSync(join(projectRoot, ".gitignore"), "node_modules\n")
+    const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [nodeModules] })
+
+    const instance = service.createInstance("ws", projectRoot, {})
+
+    expect(readFileSync(join(instance.materializedRoot, "node_modules", "dep.txt"), "utf8")).toBe("dep\n")
+    expect(git(instance.materializedRoot, ["status", "--porcelain"])).toBe("")
+    expect(git(instance.materializedRoot, ["ls-files"])).not.toContain("node_modules")
   })
 })
