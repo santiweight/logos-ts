@@ -36,9 +36,9 @@ function createProject(): string {
   writeFileSync(script, [
     "#!/usr/bin/env node",
     "const http = require('node:http')",
-    "const server = http.createServer((_req, res) => {",
+    "const server = http.createServer((req, res) => {",
     "  res.writeHead(200, { 'content-type': 'text/plain' })",
-    "  res.end('fake storybook')",
+    "  res.end(`fake storybook ${req.url}`)",
     "})",
     "server.listen(0, '127.0.0.1', () => {",
     "  const { port } = server.address()",
@@ -177,6 +177,14 @@ describe("workspace + storybook integration", () => {
 
     const sbRes = await fetch(`${baseUrl}${url!}`)
     expect(sbRes.ok).toBe(true)
+    expect(await sbRes.text()).toContain("fake storybook /")
+
+    const rootAssetRes = await fetch(`${baseUrl}/vite-inject-mocker-entry.js`, {
+      headers: { referer: `${baseUrl}${url!}/iframe.html?id=example--default` },
+    })
+    expect(rootAssetRes.ok).toBe(true)
+    expect(await rootAssetRes.text()).toContain("fake storybook /vite-inject-mocker-entry.js")
+
     expect(latestStorybookStates[wsId]).toMatchObject({ status: "ready" })
     expect(latestStorybookStates[wsId]?.logs.some((line) => line.includes("http://localhost:"))).toBe(true)
   }, 180_000)

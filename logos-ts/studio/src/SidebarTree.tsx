@@ -41,6 +41,7 @@ interface Props {
   onSelect: (sel: Selection) => void
   comments: Record<string, Goal[] | undefined>
   onComment: (target: string, label: string, x: number, y: number) => void
+  onWriteStories?: (target: string, label: string) => void
   diff: Record<string, DiffStatus>
   testState: TestState | null
   runTargets?: RunTarget[]
@@ -56,6 +57,7 @@ interface Ctx {
   selectedId: string | null
   testsRunning: boolean
   onComment: Props["onComment"]
+  onComponentContextMenu: (target: string, label: string, x: number, y: number) => void
   onSelect: Props["onSelect"]
   onRun: NonNullable<Props["onRun"]>
 }
@@ -63,6 +65,7 @@ const SidebarCtx = createContext<Ctx>({
   selectedId: null,
   testsRunning: false,
   onComment: () => {},
+  onComponentContextMenu: () => {},
   onSelect: () => {},
   onRun: () => {},
 })
@@ -380,7 +383,7 @@ const GLYPH: Record<Kind, ReactNode> = {
 
 function Node({ node, style }: NodeRendererProps<SNode>) {
   const d = node.data
-  const { selectedId, testsRunning, onComment, onSelect, onRun } = useContext(SidebarCtx)
+  const { selectedId, testsRunning, onComment, onComponentContextMenu, onSelect, onRun } = useContext(SidebarCtx)
   const isActive = selectedId === d.id
   const showDot = d.testStatus && (node.isLeaf || !node.isOpen)
 
@@ -398,6 +401,14 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
     if (!node.isLeaf) node.toggle()
   }
 
+  const onContextMenu = (e: React.MouseEvent) => {
+    if (d.kind !== "comp" || !d.target) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (d.sel) onSelect(d.sel)
+    onComponentContextMenu(d.target, d.label ?? d.name, e.clientX, e.clientY)
+  }
+
   const guides = []
   for (let i = 1; i < node.level; i++) {
     guides.push(<span key={i} className="indent-guide" style={{ left: i * 12 + 3 }} />)
@@ -408,6 +419,8 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
       className={`anode ${d.kind} ${isActive ? "active" : ""} ${d.status ? `diff-${d.status}` : ""}`}
       style={style}
       onClick={onClick}
+      onContextMenu={onContextMenu}
+      title={d.kind === "comp" ? "Right-click for component actions" : undefined}
     >
       {guides}
       {showDot ? (
@@ -475,6 +488,7 @@ export function SidebarTree({
   onSelect,
   comments,
   onComment,
+  onWriteStories,
   diff,
   testState,
   runTargets = [],
@@ -485,6 +499,8 @@ export function SidebarTree({
   showComponents = true,
   showTypes = true,
 }: Props) {
+  const [componentMenu, setComponentMenu] = useState<{ target: string; label: string; x: number; y: number } | null>(null)
+  const canWriteStories = onWriteStories != null
   const results = testState?.results ?? null
   const testsRunning = testState?.status === "running"
   const failingTests = useMemo(() => {
@@ -521,15 +537,32 @@ export function SidebarTree({
         })()
 
   const ctx = useMemo<Ctx>(
-    () => ({ selectedId, testsRunning, onComment, onSelect, onRun }),
-    [selectedId, testsRunning, onComment, onSelect, onRun]
+    () => ({
+      selectedId,
+      testsRunning,
+      onComment,
+      onComponentContextMenu: (target, label, x, y) => {
+        if (canWriteStories) setComponentMenu({ target, label, x, y })
+      },
+      onSelect,
+      onRun,
+    }),
+    [selectedId, testsRunning, onComment, onSelect, onRun, canWriteStories]
   )
 
   const [ref, size] = useSize()
+  useEffect(() => {
+    if (!componentMenu) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setComponentMenu(null)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [componentMenu])
 
   return (
     <SidebarCtx.Provider value={ctx}>
-      <div className="sidebar-tree" ref={ref}>
+      <div className="sidebar-tree" ref={ref} onClick={() => setComponentMenu(null)}>
         <Tree<SNode>
           key={`${showFunctions ? "fn" : ""}:${showClasses ? "cls" : ""}:${showComponents ? "comp" : ""}:${showTypes ? "type" : ""}:${runTargets.map(t => `${t.id}:${runStates[t.id]?.status ?? "stopped"}`).join("\0")}:${files.map(f => f.file).join("\0")}`}
           data={data}
@@ -547,6 +580,26 @@ export function SidebarTree({
         >
           {Node}
         </Tree>
+        {componentMenu && (
+          <div
+            className="sidebar-context-menu"
+            style={{
+              left: Math.min(componentMenu.x, window.innerWidth - 180),
+              top: Math.min(componentMenu.y, window.innerHeight - 60),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                onWriteStories?.(componentMenu.target, componentMenu.label)
+                setComponentMenu(null)
+              }}
+            >
+              Generate stories
+            </button>
+          </div>
+        )}
       </div>
     </SidebarCtx.Provider>
   )

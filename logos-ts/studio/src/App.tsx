@@ -12,6 +12,7 @@ import { GotoCtx } from "./highlight"
 import { diffIndex } from "./diff"
 import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex } from "./review"
 import { indexToArchText } from "./arch-text"
+import { buildStoryWritingPrompt } from "./story-goals"
 import type {
   Goal,
   ComponentEntry,
@@ -690,6 +691,13 @@ export function App() {
     [activeWorkspaceId, refreshWorkspaces, refreshTests, refreshStorybooks, openWorkspace],
   )
 
+  const addStoryWritingGoal = useCallback(
+    (target: string, label: string) => {
+      addGoal(target, label, buildStoryWritingPrompt(label), "code", false, { component: label })
+    },
+    [addGoal]
+  )
+
   const storyGoalsMessage = useMemo(() => {
     const storyGoals = activeGoals
       .filter((g) => g.storyId)
@@ -940,6 +948,7 @@ export function App() {
           onSelect={onSelect}
           comments={goalsByTarget}
           onComment={openComment}
+          onWriteStories={addStoryWritingGoal}
           diff={diff}
           testState={testState}
           runTargets={runTargets}
