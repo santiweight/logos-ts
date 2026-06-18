@@ -1,3 +1,0 @@
-I'm seeing slow updates to registering changes from the backend in the frontend. The agent is making edits, but I can't see the edits until much later, it seems. I don't know why.
-# Local story-comment store + agent-trace artifacts (generated at dev time)
-.logos/

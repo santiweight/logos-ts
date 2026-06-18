@@ -71,8 +71,8 @@ async function run() {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      target: "file:frontend/components/JobRow.tsx",
-      label: "JobRow.tsx",
+      target: "file:app/admin/page.stories.tsx",
+      label: "AdminDashboard story",
       text: "Test sidebar comment",
       mode: "code",
       workspaceId: wsMeta.id,
@@ -138,8 +138,8 @@ async function run() {
       label: 'table "test"',
       text: "Test orphan comment",
       mode: "code",
-      component: "JobRow",
-      storyId: "components-jobrow--default",
+      component: "AdminDashboard",
+      storyId: "admin-page--default",
       selector: ":scope > div > table",
     }),
   }).then(r => r.json())
@@ -171,12 +171,12 @@ async function run() {
   const { execFileSync } = await import("node:child_process")
   const tsx = resolve(__dirname, "node_modules/.bin/tsx")
   try {
-    const ctx = execFileSync(tsx, [resolve(__dirname, "src/context.ts"), HN, "40000", "component:JobRow"], {
+    const ctx = execFileSync(tsx, [resolve(__dirname, "src/context.ts"), HN, "40000", "component:AdminDashboard"], {
       cwd: __dirname,
       encoding: "utf8",
       maxBuffer: 4 * 1024 * 1024,
     })
-    assert(ctx.includes("JobRow"), "context includes JobRow")
+    assert(ctx.includes("AdminDashboard"), "context includes AdminDashboard")
     assert(ctx.includes("FILE(S) TO EDIT"), "context includes full source section")
     assert(ctx.length > 500, `context has substance (${ctx.length} chars)`)
   } catch (e) {
@@ -190,14 +190,14 @@ async function run() {
   const sbOk = sbUrl ? await fetch(`${sbUrl}/api/story-comments`).then(r => r.ok).catch(() => false) : false
 
   if (!sbOk) {
-    skip("Storybook not reachable - run `cd demos/hn-jobs/frontend && npm run storybook` to test this section")
+    skip("Storybook not reachable - run `cd demos/hn-jobs && npm run storybook` to test this section")
   } else {
     const sbCommentRes = await fetch(`${sbUrl}/api/story-comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         id: `test-sb-${Date.now()}`,
-        storyId: "components-jobrow--default",
+        storyId: "admin-page--default",
         selector: ":scope > div > table > tbody > tr:nth-of-type(1)",
         label: 'tr "Test storybook comment"',
         body: "Make the job title bold",

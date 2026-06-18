@@ -101,15 +101,15 @@ describe("portable story browser integration", () => {
     }
   }, 30_000)
 
-  it("renders DirectoryView with real CSS applied", async () => {
+  it("renders the embedded HN Jobs admin story with real CSS applied", async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     try {
-      await page.goto(`${baseUrl}/portable-story.html?storyId=views-directoryview--default&logosReload=test`, {
+      await page.goto(`${baseUrl}/portable-story.html?storyId=admin-page--default&logosReload=test`, {
         waitUntil: "domcontentloaded",
       })
-      await page.locator("[data-portable-story-rendered='views-directoryview--default'] table.data").waitFor({ timeout: 30_000 })
-      expect(await page.locator("table.data").textContent()).toContain("Acme")
-      expect(await page.locator(".layout").evaluate((el) => getComputedStyle(el).display)).toBe("grid")
+      await page.locator("[data-portable-story-rendered='admin-page--default'] table.fact-table").waitFor({ timeout: 30_000 })
+      expect(await page.locator("table.fact-table").textContent()).toContain("Visible postings")
+      expect(await page.locator("table.fact-table").evaluate((el) => getComputedStyle(el).borderCollapse)).toBe("collapse")
     } finally {
       await page.close()
     }
@@ -120,17 +120,17 @@ describe("portable story browser integration", () => {
     try {
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.locator(".sidebar-tree .anode").first().waitFor({ timeout: 45_000 })
-      await page.locator(".sidebar-tree .anode", { hasText: "JobTable" }).first().click()
+      await page.locator(".sidebar-tree .anode", { hasText: "AdminDashboard" }).first().click()
       await page.locator("button.tab", { hasText: "Story" }).click()
 
       const frameEl = page.locator("iframe.story-frame")
       await frameEl.waitFor({ timeout: 20_000 })
       expect(await frameEl.getAttribute("sandbox")).toBe("allow-scripts allow-forms allow-same-origin")
-      expect(await frameEl.getAttribute("src")).toContain("/portable-story.html?storyId=components-jobtable--default")
+      expect(await frameEl.getAttribute("src")).toContain("/portable-story.html?storyId=admin-page--default")
 
-      const frame = await waitForPortableFrame(page, "components-jobtable--default")
-      await expect.poll(async () => await frame.locator("table.data").count(), { timeout: 30_000 }).toBe(1)
-      expect(await frame.locator("table.data").textContent()).toContain("Acme")
+      const frame = await waitForPortableFrame(page, "admin-page--default")
+      await expect.poll(async () => await frame.locator("table.fact-table").count(), { timeout: 30_000 }).toBe(1)
+      expect(await frame.locator("table.fact-table").textContent()).toContain("Visible postings")
     } finally {
       await page.close()
     }
@@ -138,11 +138,11 @@ describe("portable story browser integration", () => {
 
   it("renders workspace edits through the portable iframe after reindex", async () => {
     const ws = await createWorkspace()
-    const componentFile = resolve(ws.forkDir, "frontend/components/JobRow.tsx")
+    const componentFile = resolve(ws.forkDir, "app/admin/page.stories.tsx")
     const original = readFileSync(componentFile, "utf8")
     writeFileSync(
       componentFile,
-      original.replace("{role}</div>)", "<strong>{role}</strong></div>)")
+      original.replace("Visible postings", "Published postings")
     )
 
     const reindex = await api(`/api/workspaces/${ws.id}/reindex`, { method: "POST" })
@@ -151,33 +151,12 @@ describe("portable story browser integration", () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     try {
       await page.goto(
-        `${baseUrl}/portable-story.html?storyId=components-jobtable--default&workspaceId=${encodeURIComponent(ws.id)}&logosReload=test`,
+        `${baseUrl}/portable-story.html?storyId=admin-page--default&workspaceId=${encodeURIComponent(ws.id)}&logosReload=test`,
         { waitUntil: "domcontentloaded" }
       )
-      await page.locator("[data-portable-story-rendered='components-jobtable--default'] table.data").waitFor({ timeout: 30_000 })
-      await expect.poll(async () => page.locator("tbody td").nth(1).innerHTML(), { timeout: 20_000 })
-        .toContain("<strong>Senior Engineer</strong>")
-    } finally {
-      await page.close()
-    }
-  }, 60_000)
-
-  it("renders captured output through the portable iframe", async () => {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-    try {
-      await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
-      await page.locator(".sidebar-tree .anode").first().waitFor({ timeout: 45_000 })
-      await page.locator(".sidebar-tree .anode", { hasText: "FactTable" }).first().click()
-      await page.locator("button.tab", { hasText: "Captured" }).click()
-
-      const frameEl = page.locator("iframe.story-frame")
-      await frameEl.waitFor({ timeout: 20_000 })
-      expect(await frameEl.getAttribute("src")).toContain("/portable-story.html?storyId=components-facttable--complete")
-
-      const frame = page.frameLocator("iframe.story-frame")
-      await frame.locator("table.fact-table").waitFor({ timeout: 30_000 })
-      expect(await frame.locator("table.fact-table").textContent()).toContain("Acme")
-      expect(await frame.locator("table.fact-table").evaluate((el) => getComputedStyle(el).borderCollapse)).toBe("collapse")
+      await page.locator("[data-portable-story-rendered='admin-page--default'] table.fact-table").waitFor({ timeout: 30_000 })
+      await expect.poll(async () => page.locator("table.fact-table").textContent(), { timeout: 20_000 })
+        .toContain("Published postings")
     } finally {
       await page.close()
     }
