@@ -247,6 +247,28 @@ export class WorkspaceManager {
     )
   }
 
+  private dependencyDirs(sourceRoot: string): string[] {
+    const dirs: string[] = []
+    const rootNodeModules = join(sourceRoot, "node_modules")
+    if (existsSync(rootNodeModules)) dirs.push(rootNodeModules)
+
+    for (const entry of readdirSync(sourceRoot)) {
+      if (entry === "node_modules" || entry.startsWith(".")) continue
+      const nestedNodeModules = join(sourceRoot, entry, "node_modules")
+      if (existsSync(nestedNodeModules)) dirs.push(nestedNodeModules)
+    }
+
+    return dirs
+  }
+
+  private symlinkDependencyDir(dir: string, baseRoot: string, dependencyDir: string): void {
+    const rel = relative(baseRoot, dependencyDir)
+    if (!rel || rel.startsWith(`..${sep}`) || rel === "..") return
+    const target = join(dir, rel)
+    try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
+    try { symlinkSync(dependencyDir, target) } catch { /* exists */ }
+  }
+
   private createMaterializedRoot(instanceId: string, sourceRoot = this.projectRoot): string {
     mkdirSync(this.runsDir, { recursive: true })
     const dir = resolve(this.runsDir, instanceId)
@@ -256,10 +278,10 @@ export class WorkspaceManager {
         filter: (s) => !/node_modules|\.workspaces|\.logos$|\.logos_cache|\.vite-logos|dist/.test(s),
       })
       for (const nmDir of this.caps.nodeModulesDirs) {
-        const rel = relative(this.projectRoot, nmDir)
-        const target = join(dir, rel)
-        try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
-        try { symlinkSync(nmDir, target) } catch { /* exists */ }
+        this.symlinkDependencyDir(dir, this.projectRoot, nmDir)
+      }
+      for (const dependencyDir of this.dependencyDirs(sourceRoot)) {
+        this.symlinkDependencyDir(dir, sourceRoot, dependencyDir)
       }
     }
     return dir

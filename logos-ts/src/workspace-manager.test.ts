@@ -238,6 +238,21 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(readFileSync(join(childState.forkDir, "parent-only.txt"), "utf8")).toBe("from parent")
   })
 
+  it("forks dependency folders from the parent workspace instance", async () => {
+    const mgr = createManager()
+    const parent = await mgr.create({ kind: "code" })
+    const parentState = mgr.get(parent.id)
+    if (!parentState) throw new Error("missing parent workspace")
+    mkdirSync(join(parentState.forkDir, "node_modules", ".bin"), { recursive: true })
+    writeFileSync(join(parentState.forkDir, "node_modules", ".bin", "storybook"), "storybook bin")
+
+    const child = await mgr.create({ fromWorkspaceId: parent.id, kind: "code" })
+    const childState = mgr.get(child.id)
+    if (!childState) throw new Error("missing child workspace")
+
+    expect(readFileSync(join(childState.forkDir, "node_modules", ".bin", "storybook"), "utf8")).toBe("storybook bin")
+  })
+
   function expectGoal(result: AddGoalResult): { goal: Goal; workspaceId: string } {
     if ("error" in result) throw new Error(result.error)
     return result
