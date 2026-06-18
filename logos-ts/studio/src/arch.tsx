@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react"
+import { createContext, useContext, useEffect, useRef, useState } from "react"
 import { CodeBlock, GotoCtx, highlightTs } from "./highlight"
 import type { GoalApi, DiffStatus } from "./types"
 
@@ -34,8 +34,12 @@ export function Row({
   const status = useContext(DiffCtx)[target]
   const [open, setOpen] = useState(initialOpen)
   const count = comments[target]?.length ?? 0
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (initialOpen) ref.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+  }, [initialOpen])
   return (
-    <div className={`row ${indent ? "indent" : ""} ${status ? `diff-${status}` : ""}`}>
+    <div ref={ref} className={`row ${indent ? "indent" : ""} ${status ? `diff-${status}` : ""}`}>
       <div
         className="row-head"
         onClick={(e) => {
