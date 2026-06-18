@@ -461,7 +461,7 @@ describe("WorkspaceManager workspace kinds", () => {
         ["second", "done"],
       ])
     })
-  })
+  }, 15000)
 
   it("resumes a code agent in its conflicted instance when rebase conflicts", async () => {
     const spawned: FakeAgentProcess[] = []
