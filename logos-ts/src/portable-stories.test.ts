@@ -1,18 +1,31 @@
 /* eslint-disable functional/no-let */
 import { describe, expect, it } from "vitest"
-import { mkdtempSync, cpSync, writeFileSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { createPortableStoryResolver, storybookDirsForRoot } from "./portable-stories.js"
-
-const SOURCE = resolve("demos/hn-jobs")
 
 function copyFixture(): string {
   const root = mkdtempSync(join(tmpdir(), "logos-portable-stories-"))
-  cpSync(SOURCE, root, {
-    recursive: true,
-    filter: (s) => !/node_modules|\.logos_cache|\.logos$|\.vite-logos|dist$/.test(s),
-  })
+  mkdirSync(join(root, "app/admin"), { recursive: true })
+  mkdirSync(join(root, ".storybook"), { recursive: true })
+  writeFileSync(join(root, "app/admin/page.tsx"), `
+    export function Page() {
+      return <main>Admin page</main>
+    }
+  `)
+  writeFileSync(join(root, "app/admin/page.stories.tsx"), `
+    import { Page } from "./page"
+
+    const meta = {
+      title: "Admin/Page",
+      component: Page,
+    }
+
+    export default meta
+    export const Default = { args: {} }
+  `)
+  writeFileSync(join(root, ".storybook/preview.ts"), "export default {}\n")
   return root
 }
 
