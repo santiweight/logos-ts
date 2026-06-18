@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, symlinkSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readdirSync, symlinkSync } from "node:fs"
 import { execFile, execFileSync } from "node:child_process"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
@@ -149,13 +149,35 @@ export class WorkspaceCodeService {
         },
       })
       for (const nmDir of this.opts.nodeModulesDirs) {
-        const rel = relative(this.opts.projectRoot, nmDir)
-        const target = join(dir, rel)
-        try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
-        try { symlinkSync(nmDir, target) } catch { /* exists */ }
+        this.symlinkDependencyDir(dir, this.opts.projectRoot, nmDir)
+      }
+      for (const dependencyDir of this.dependencyDirs(sourceRoot)) {
+        this.symlinkDependencyDir(dir, sourceRoot, dependencyDir)
       }
     }
     return dir
+  }
+
+  private dependencyDirs(sourceRoot: string): string[] {
+    const dirs: string[] = []
+    const rootNodeModules = join(sourceRoot, "node_modules")
+    if (existsSync(rootNodeModules)) dirs.push(rootNodeModules)
+
+    for (const entry of readdirSync(sourceRoot)) {
+      if (entry === "node_modules" || entry.startsWith(".")) continue
+      const nestedNodeModules = join(sourceRoot, entry, "node_modules")
+      if (existsSync(nestedNodeModules)) dirs.push(nestedNodeModules)
+    }
+
+    return dirs
+  }
+
+  private symlinkDependencyDir(dir: string, baseRoot: string, dependencyDir: string): void {
+    const rel = relative(baseRoot, dependencyDir)
+    if (!rel || rel.startsWith(`..${sep}`) || rel === "..") return
+    const target = join(dir, rel)
+    try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
+    try { symlinkSync(dependencyDir, target) } catch { /* exists */ }
   }
 
   private ensureRepo(root: string): void {
