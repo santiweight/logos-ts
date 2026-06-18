@@ -621,6 +621,33 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(events.some((event) => String(event.message ?? "").includes("acceptance tests failed"))).toBe(true)
   }, 15000)
 
+  it("stops retrying when acceptance tests still fail after a repair attempt", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "thing.txt"), "base\n")
+        writeFileSync(join(projectRoot, "fail-test.js"), "console.error('still failing'); process.exit(1)\n")
+      },
+      caps: { tests: { command: ["node", "fail-test.js"], watchDirs: [] } },
+    })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("edit", "code"))).goal
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+
+    expect(mgr.processById(code.id, task.id, (event) => events.push(event))).toBe(task.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "edited\n")
+
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(spawned).toHaveLength(2))
+    spawned[1]!.emit("close", 0)
+
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("error"))
+    expect(spawned).toHaveLength(2)
+    expect(events.some((event) => String(event.message ?? "").includes("acceptance tests still failed"))).toBe(true)
+  }, 15000)
+
   it("reports a missing requested goal without starting another queued goal", async () => {
     const mgr = createManager()
     const code = await mgr.create({ kind: "code" })

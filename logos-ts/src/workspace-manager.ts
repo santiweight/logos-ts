@@ -131,6 +131,7 @@ export interface AgentEvent {
 type AgentEventCallback = (event: AgentEvent) => void
 type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
 type RunManagerLike = Pick<RunManager, "ensure" | "restart" | "shutdownWorkspace" | "shutdownAll">
+const MAX_ACCEPTANCE_REPAIR_ATTEMPTS = 1
 
 const noopRunManager: RunManagerLike = {
   ensure: () => Promise.resolve(""),
@@ -196,6 +197,7 @@ export class WorkspaceManager {
   private spawnAgent: AgentSpawner
   private codeService: WorkspaceCodeService
   private goalWorkingInstances = new Map<string, string>()
+  private acceptanceRepairAttempts = new Map<string, number>()
 
   constructor(opts: {
     store: LogosRuntimeStore
@@ -1181,6 +1183,18 @@ export class WorkspaceManager {
       onEvent({ type: "status", goalId: goal.id, message: "running acceptance tests…" })
       const tests = await this.runAcceptanceTests(workingInst)
       if (!tests.ok) {
+        const attempts = this.acceptanceRepairAttempts.get(goal.id) ?? 0
+        if (attempts >= MAX_ACCEPTANCE_REPAIR_ATTEMPTS) {
+          goal.status = "error"
+          this.save(ws)
+          onEvent({
+            type: "error",
+            goalId: goal.id,
+            message: `acceptance tests still failed after ${attempts} repair attempt${attempts === 1 ? "" : "s"}; stopping automatic retries\n\n${tests.output}`,
+          })
+          return true
+        }
+        this.acceptanceRepairAttempts.set(goal.id, attempts + 1)
         onEvent({ type: "status", goalId: goal.id, message: "acceptance tests failed; asking agent to fix…" })
         if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(tests.output), workingInst, onEvent)) {
           goal.status = "error"
@@ -1197,6 +1211,7 @@ export class WorkspaceManager {
       goal.status = "done"
       ws.activeInstanceId = workingInst.id
       this.goalWorkingInstances.delete(goal.id)
+      this.acceptanceRepairAttempts.delete(goal.id)
       this.restartWorkspaceServices(ws, workingInst)
       this.save(ws)
       onEvent({ type: "status", goalId: goal.id, message: "workspace instance accepted" })
