@@ -1,0 +1,4 @@
+#!/bin/sh
+# Auto-init submodules after checkout (including git worktree add).
+# Activated by: git config core.hooksPath .githooks
+git submodule update --init --recursive

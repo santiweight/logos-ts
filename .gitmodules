@@ -1,4 +1,4 @@
 [submodule "logos-ts/demos/hn-jobs"]
 	path = logos-ts/demos/hn-jobs
 	url = https://github.com/edrickwong/hn-jobs.git
-	branch = santi-changes
+	branch = fix-public-install-with-local-css
