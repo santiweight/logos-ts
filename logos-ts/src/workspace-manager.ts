@@ -13,8 +13,8 @@
 // to an arch workspace join its queue unless the caller explicitly asks to fork.
 // Each architecture workspace runs at most one architecture agent at a time.
 
-import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, symlinkSync, readdirSync, realpathSync } from "node:fs"
-import { resolve, relative, join, dirname, basename, sep } from "node:path"
+import { mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync } from "node:fs"
+import { resolve, relative, join, basename, sep } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
 import { promisify } from "node:util"
 
@@ -23,6 +23,7 @@ import type { StorybookManager } from "./storybook-manager.js"
 import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
+import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
 import type {
   LogosRuntimeStore,
   StoredWorkspacePublication,
@@ -152,10 +153,6 @@ function extractAgentSummary(events: AgentEvent[]): string | null {
   return null
 }
 
-function indexComponents(file: { component?: { stories?: unknown[] }; components?: { stories?: unknown[] }[] }): { stories?: unknown[] }[] {
-  return file.components?.length ? file.components : file.component ? [file.component] : []
-}
-
 interface ProjectCaps {
   root: string
   storybook?: { configDir: string; frontendDir: string }
@@ -197,6 +194,8 @@ export class WorkspaceManager {
   private getIndex: (() => Promise<unknown>) | null
   private goalSubscribers = new Map<string, Set<AgentEventCallback>>()
   private spawnAgent: AgentSpawner
+  private codeService: WorkspaceCodeService
+  private goalWorkingInstances = new Map<string, string>()
 
   constructor(opts: {
     store: LogosRuntimeStore
@@ -226,6 +225,11 @@ export class WorkspaceManager {
     this.tsx = opts.tsx
     this.getIndex = opts.getIndex ?? null
     this.spawnAgent = opts.spawnAgent ?? spawn
+    this.codeService = new WorkspaceCodeService({
+      runsDir: this.runsDir,
+      projectRoot: this.projectRoot,
+      nodeModulesDirs: this.caps.nodeModulesDirs,
+    })
 
     this.loadAll()
   }
@@ -245,24 +249,6 @@ export class WorkspaceManager {
     return JSON.parse(
       execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 })
     )
-  }
-
-  private createMaterializedRoot(instanceId: string, sourceRoot = this.projectRoot): string {
-    mkdirSync(this.runsDir, { recursive: true })
-    const dir = resolve(this.runsDir, instanceId)
-    if (!existsSync(dir)) {
-      cpSync(sourceRoot, dir, {
-        recursive: true,
-        filter: (s) => !/node_modules|\.workspaces|\.logos$|\.logos_cache|\.vite-logos|dist/.test(s),
-      })
-      for (const nmDir of this.caps.nodeModulesDirs) {
-        const rel = relative(this.projectRoot, nmDir)
-        const target = join(dir, rel)
-        try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
-        try { symlinkSync(nmDir, target) } catch { /* exists */ }
-      }
-    }
-    return dir
   }
 
   private activeInstance(ws: WorkspaceRecord): WorkspaceInstance {
@@ -311,16 +297,8 @@ export class WorkspaceManager {
   }
 
   private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
-    const id = `inst-${Date.now()}-${Math.round(Math.random() * 1e6)}`
-    const materializedRoot = this.createMaterializedRoot(id, sourceRoot)
-    return {
-      id,
-      workspaceId,
-      materializedRoot,
-      mutability: "writable",
-      createdAt: Date.now(),
-      index: index ?? await this.snapshotIndex(materializedRoot),
-    }
+    const nextIndex = index ?? await this.snapshotIndex(sourceRoot)
+    return this.codeService.createInstance(workspaceId, sourceRoot, nextIndex)
   }
 
   // --- public API ---
@@ -825,7 +803,13 @@ export class WorkspaceManager {
       return null
     }
     const runningGoal = this.runningGoal(ws)
-    if (runningGoal) {
+    if (requestedGoal && (requestedGoal.status === "running" || this.runningAgents.has(requestedGoal.id))) {
+      this.subscribeGoalEvents(requestedGoal.id, onEvent)
+      onEvent({ type: "status", goalId: requestedGoal.id, message: "attached to running agent" })
+      return requestedGoal.id
+    }
+
+    if (runningGoal && ws.kind === "arch") {
       if (requestedGoal?.id === runningGoal.id || (requestedGoal && this.runningAgents.has(requestedGoal.id))) {
         this.subscribeGoalEvents(requestedGoal.id, onEvent)
         onEvent({ type: "status", goalId: requestedGoal.id, message: "attached to running agent" })
@@ -907,6 +891,7 @@ export class WorkspaceManager {
     const baseInst = this.activeInstance(ws)
     const workingInst = await this.createInstance(ws.id, baseInst.materializedRoot, baseInst.index)
     ws.instances[workingInst.id] = workingInst
+    this.goalWorkingInstances.set(goal.id, workingInst.id)
     this.save(ws)
     const dir = workingInst.materializedRoot
 
@@ -1036,69 +1021,190 @@ export class WorkspaceManager {
         }
       }
 
-      // Collect base snapshots before re-indexing so we can detect changes
-      const baseSnapshots = new Map<string, string | null>()
-      const oldIndex = baseInst.index as { files?: { components?: { stories?: { exportName: string; snapshot: string | null }[] }[] }[] } | null
-      if (oldIndex?.files) {
-        for (const f of oldIndex.files) {
-          for (const component of indexComponents(f)) {
-            if (!component.stories) continue
-            for (const s of component.stories as { exportName: string; snapshot: string | null }[]) {
-              baseSnapshots.set(s.exportName, s.snapshot)
-            }
-          }
-        }
-      }
-
-      // Re-index workspace
-      try {
-        const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), dir, "-"]
-        const wsSbUrl = this.sbManager.get(ws.id)
-        if (wsSbUrl) reindexArgs.push(wsSbUrl)
-        const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
-        workingInst.index = JSON.parse(stdout)
-      } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
-
-      goal.status = code === 0 ? "done" : "error"
-      if (code === 0) {
-        ws.activeInstanceId = workingInst.id
-        this.sbManager.shutdown(ws.id)
-        this.runManager.shutdownWorkspace(ws.id)
-        if (this.caps.storybook) {
-          this.startStorybook(ws.id, workingInst.materializedRoot).catch((e: any) => {
-            console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
-          })
-        }
-      }
-      const summary = extractAgentSummary(collectedEvents)
-      if (summary) {
-        if (!goal.replies) goal.replies = []
-        goal.replies.push({ author: "agent", text: summary, createdAt: Date.now() })
-      }
-      this.save(ws)
       rmSync(mcpConfigPath, { force: true })
-      recordAndEmit({ type: "done", code })
-      this.maybeStartNextQueued(ws.id)
+      if (code !== 0) {
+        goal.status = "error"
+        this.appendAgentSummary(goal, collectedEvents)
+        this.save(ws)
+        recordAndEmit({ type: "done", code })
+        this.maybeStartNextQueued(ws.id)
+        return
+      }
+
+      if (mode === "arch") {
+        await this.reindexInstance(ws, workingInst)
+        goal.status = "done"
+        ws.activeInstanceId = workingInst.id
+        this.restartWorkspaceServices(ws, workingInst)
+        this.appendAgentSummary(goal, collectedEvents)
+        this.save(ws)
+        recordAndEmit({ type: "done", code })
+        this.maybeStartNextQueued(ws.id)
+        return
+      }
+
+      const accepted = await this.acceptCodeGoalResult(ws, goal, workingInst, recordAndEmit)
+      if (accepted) {
+        this.appendAgentSummary(goal, collectedEvents)
+        recordAndEmit({ type: "done", code })
+        this.maybeStartNextQueued(ws.id)
+      }
     })
   }
 
-  continueGoal(wsId: string, goalId: string, replyText: string, onEvent: AgentEventCallback): boolean {
-    const ws = this.workspaces.get(wsId)
-    if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return false }
-    const goal = ws.goals.find((g) => g.id === goalId)
-    if (!goal) { onEvent({ type: "error", message: "goal not found" }); return false }
-    if (!goal.sessionId) { onEvent({ type: "error", message: "no session to continue" }); return false }
-    if (this.runningAgents.has(goalId)) { onEvent({ type: "error", message: "goal is already running" }); return false }
-
+  private appendAgentSummary(goal: Goal, events: AgentEvent[]): void {
+    const summary = extractAgentSummary(events)
+    if (!summary) return
     if (!goal.replies) goal.replies = []
-    goal.replies.push({ author: "user", text: replyText, createdAt: Date.now() })
-    goal.status = "running"
-    this.save(ws)
+    goal.replies.push({ author: "agent", text: summary, createdAt: Date.now() })
+  }
 
-    const dir = this.activeInstance(ws).materializedRoot
-    const collectedEvents: AgentEvent[] = []
-    let sessionId = goal.sessionId
+  private async reindexInstance(ws: WorkspaceRecord, inst: WorkspaceInstance): Promise<void> {
+    try {
+      const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
+      const wsSbUrl = this.sbManager.get(ws.id)
+      if (wsSbUrl) reindexArgs.push(wsSbUrl)
+      const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
+      inst.index = JSON.parse(stdout)
+    } catch (e) {
+      console.error(`[logos] re-index failed for ${ws.id}:`, e)
+    }
+  }
 
+  private restartWorkspaceServices(ws: WorkspaceRecord, inst: WorkspaceInstance): void {
+    this.sbManager.shutdown(ws.id)
+    this.runManager.shutdownWorkspace(ws.id)
+    if (this.caps.storybook) {
+      this.startStorybook(ws.id, inst.materializedRoot).catch((e: any) => {
+        console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
+      })
+    }
+  }
+
+  private async runAcceptanceTests(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
+    if (!this.caps.tests) return { ok: true, output: "no acceptance tests configured" }
+    const [cmd, ...args] = this.caps.tests.command
+    if (!cmd) return { ok: true, output: "no acceptance tests configured" }
+    try {
+      const { stdout, stderr } = await execFileAsync(cmd, args, {
+        cwd: inst.materializedRoot,
+        encoding: "utf8",
+        timeout: 120_000,
+        maxBuffer: 16 * 1024 * 1024,
+        env: {
+          ...process.env,
+          LOGOS_VITEST_CACHE_DIR: resolve(inst.materializedRoot, ".logos_cache", "acceptance-tests"),
+          NODE_ENV: "test",
+        },
+      })
+      return { ok: true, output: `${stdout}${stderr}`.trim() }
+    } catch (error) {
+      const e = error as { stdout?: string; stderr?: string; message?: string }
+      return { ok: false, output: `${e.stdout ?? ""}${e.stderr ?? ""}${e.message ?? ""}`.trim() }
+    }
+  }
+
+  private buildRebasePrompt(result: Extract<RebaseInstanceResult, { status: "conflicts" }>): string {
+    const contextLines = [
+      result.context.status && `git status --short:\n${result.context.status}`,
+      result.context.unmergedFiles.length > 0 && `Unmerged files:\n${result.context.unmergedFiles.map((file) => `- ${file}`).join("\n")}`,
+      result.context.generatedSnapshotFiles.length > 0 && `Generated snapshot conflicts:\n${result.context.generatedSnapshotFiles.map((file) => `- ${file}`).join("\n")}`,
+      result.context.conflictedFiles.length > 0 && `Conflict marker counts:\n${result.context.conflictedFiles.map((file) => `- ${file.path}: ${file.conflictMarkers}`).join("\n")}`,
+    ].filter(Boolean).join("\n\n")
+
+    return `Your changes need to be rebased onto the latest workspace instance, and the rebase has conflicts.\n\n` +
+      `Here is the current rebase state so you do not need to rediscover it with obvious status commands:\n\n` +
+      `${contextLines || "(no additional conflict context available)"}\n\n` +
+      `Use command-line commands through the UI with \`!\` only for the edits and rebase steps you still need. Useful commands:\n` +
+      `${result.suggestedCommands.map((cmd) => `- ${cmd}`).join("\n")}\n\n` +
+      `After resolving conflicts, run the configured tests, continue the rebase if needed, and finish again with a brief summary.\n\n` +
+      `Rebase output:\n${result.message}`
+  }
+
+  private buildTestFailurePrompt(output: string): string {
+    const testCommand = this.caps.tests?.command.join(" ") ?? "the configured test command"
+    return `Your changes rebased cleanly, but acceptance tests failed after integration.\n\n` +
+      `Use command-line commands through the UI with \`!\`. Run \`!${testCommand}\`, fix the failures, rerun tests, and finish again with a brief summary.\n\n` +
+      `Test output:\n${output}`
+  }
+
+  private async acceptCodeGoalResult(
+    ws: WorkspaceRecord,
+    goal: Goal,
+    workingInst: WorkspaceInstance,
+    onEvent: AgentEventCallback,
+  ): Promise<boolean> {
+    return this.codeService.withWorkspaceLock(ws.id, async () => {
+      const activeInst = this.activeInstance(ws)
+      onEvent({ type: "status", goalId: goal.id, message: "rebasing workspace instance…" })
+      let rebase: RebaseInstanceResult
+      try {
+        rebase = await this.codeService.rebaseInstance({
+          workspaceId: ws.id,
+          instance: workingInst,
+          onto: activeInst,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        goal.status = "error"
+        this.save(ws)
+        onEvent({ type: "error", goalId: goal.id, message: `workspace rebase failed: ${message}` })
+        return true
+      }
+
+      if (rebase.status === "conflicts") {
+        onEvent({ type: "status", goalId: goal.id, message: "rebase conflicts; asking agent to resolve…" })
+        if (!this.resumeGoalInInstance(ws, goal, this.buildRebasePrompt(rebase), workingInst, onEvent)) {
+          goal.status = "error"
+          this.save(ws)
+          onEvent({ type: "error", message: "failed to resume agent for rebase conflicts" })
+          return true
+        }
+        return false
+      }
+
+      if (rebase.status === "error") {
+        goal.status = "error"
+        this.save(ws)
+        onEvent({ type: "error", goalId: goal.id, message: `workspace rebase failed: ${rebase.message}` })
+        return true
+      }
+
+      if (rebase.message.startsWith("Auto-resolved generated snapshot rebase conflicts")) {
+        onEvent({
+          type: "status",
+          goalId: goal.id,
+          message: "auto-resolved generated snapshot conflicts; acceptance tests will regenerate artifacts",
+        })
+      }
+      await this.reindexInstance(ws, workingInst)
+      onEvent({ type: "status", goalId: goal.id, message: "running acceptance tests…" })
+      const tests = await this.runAcceptanceTests(workingInst)
+      if (!tests.ok) {
+        onEvent({ type: "status", goalId: goal.id, message: "acceptance tests failed; asking agent to fix…" })
+        if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(tests.output), workingInst, onEvent)) {
+          goal.status = "error"
+          this.save(ws)
+          onEvent({ type: "error", message: "failed to resume agent after test failure" })
+          return true
+        }
+        return false
+      }
+
+      const committedGeneratedChanges = await this.codeService.commitWorkspaceChanges(workingInst, "Logos acceptance updates")
+      if (committedGeneratedChanges) onEvent({ type: "status", goalId: goal.id, message: "committed acceptance test updates" })
+      await this.reindexInstance(ws, workingInst)
+      goal.status = "done"
+      ws.activeInstanceId = workingInst.id
+      this.goalWorkingInstances.delete(goal.id)
+      this.restartWorkspaceServices(ws, workingInst)
+      this.save(ws)
+      onEvent({ type: "status", goalId: goal.id, message: "workspace instance accepted" })
+      return true
+    })
+  }
+
+  private writeMcpConfig(goalId: string, dir: string, suffix: string): string {
     const mcpConfig: { mcpServers: Record<string, unknown> } = { mcpServers: {} }
     if (this.caps.tests) {
       const testRunnerConfig = JSON.stringify({
@@ -1112,8 +1218,34 @@ export class WorkspaceManager {
         args: [resolve(this.logosTsRoot, "src/test-runner-mcp.ts"), testRunnerConfig],
       }
     }
-    const mcpConfigPath = resolve(this.runsDir, `${goalId}-cont-${Date.now()}.mcp.json`)
+    const mcpConfigPath = resolve(this.runsDir, `${goalId}-${suffix}.mcp.json`)
     writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
+    return mcpConfigPath
+  }
+
+  private resumeGoalInInstance(
+    ws: WorkspaceRecord,
+    goal: Goal,
+    replyText: string,
+    inst: WorkspaceInstance,
+    onEvent: AgentEventCallback,
+    opts?: { recordUserReply?: boolean },
+  ): boolean {
+    if (!goal.sessionId) { onEvent({ type: "error", message: "no session to continue" }); return false }
+    if (this.runningAgents.has(goal.id)) { onEvent({ type: "error", message: "goal is already running" }); return false }
+
+    if (opts?.recordUserReply !== false) {
+      if (!goal.replies) goal.replies = []
+      goal.replies.push({ author: "user", text: replyText, createdAt: Date.now() })
+    }
+    goal.status = "running"
+    this.goalWorkingInstances.set(goal.id, inst.id)
+    this.save(ws)
+
+    const dir = inst.materializedRoot
+    const collectedEvents: AgentEvent[] = []
+    let sessionId = goal.sessionId
+    const mcpConfigPath = this.writeMcpConfig(goal.id, dir, `cont-${Date.now()}`)
 
     const recordAndEmit = (evt: AgentEvent) => {
       if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) return
@@ -1125,10 +1257,10 @@ export class WorkspaceManager {
         throw error
       }
       onEvent(evt)
-      this.publishGoalEvent(goalId, evt, onEvent)
+      this.publishGoalEvent(goal.id, evt, onEvent)
     }
 
-    onEvent({ type: "status", message: "continuing conversation…" })
+    onEvent({ type: "status", goalId: goal.id, message: "continuing conversation…" })
 
     const child = this.spawnAgent(
       "claude",
@@ -1139,7 +1271,7 @@ export class WorkspaceManager {
         env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
-    this.runningAgents.set(goalId, child)
+    this.runningAgents.set(goal.id, child)
 
     let buf = ""
     child.stdout?.on("data", (d: Buffer) => {
@@ -1155,32 +1287,51 @@ export class WorkspaceManager {
     child.stderr?.on("data", (d: Buffer) => recordAndEmit({ type: "stderr", message: d.toString() }))
     child.on("error", (e) => recordAndEmit({ type: "error", message: String(e) }))
     child.on("close", async (code) => {
-      this.runningAgents.delete(goalId)
-      if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) {
-        rmSync(mcpConfigPath, { force: true })
+      this.runningAgents.delete(goal.id)
+      rmSync(mcpConfigPath, { force: true })
+      if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) return
+
+      if (code !== 0) {
+        goal.status = "error"
+        this.appendAgentSummary(goal, collectedEvents)
+        this.save(ws)
+        recordAndEmit({ type: "done", code })
+        this.maybeStartNextQueued(ws.id)
         return
       }
 
-      try {
-        const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), dir, "-"]
-        const wsSbUrl = this.sbManager.get(ws.id)
-        if (wsSbUrl) reindexArgs.push(wsSbUrl)
-        const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
-        const inst = this.activeInstance(ws)
-        inst.index = JSON.parse(stdout)
-      } catch (e) { console.error(`[logos] re-index failed for ${ws.id}:`, e) }
-
-      goal.status = code === 0 ? "done" : "error"
-      const summary = extractAgentSummary(collectedEvents)
-      if (summary) {
-        goal.replies!.push({ author: "agent", text: summary, createdAt: Date.now() })
+      if (goal.mode === "arch") {
+        await this.reindexInstance(ws, inst)
+        goal.status = "done"
+        ws.activeInstanceId = inst.id
+        this.restartWorkspaceServices(ws, inst)
+        this.appendAgentSummary(goal, collectedEvents)
+        this.save(ws)
+        recordAndEmit({ type: "done", code })
+        this.maybeStartNextQueued(ws.id)
+        return
       }
-      this.save(ws)
-      rmSync(mcpConfigPath, { force: true })
-      recordAndEmit({ type: "done", code })
+
+      const accepted = await this.acceptCodeGoalResult(ws, goal, inst, recordAndEmit)
+      if (accepted) {
+        this.appendAgentSummary(goal, collectedEvents)
+        recordAndEmit({ type: "done", code })
+        this.maybeStartNextQueued(ws.id)
+      }
     })
 
     return true
+  }
+
+  continueGoal(wsId: string, goalId: string, replyText: string, onEvent: AgentEventCallback): boolean {
+    const ws = this.workspaces.get(wsId)
+    if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return false }
+    const goal = ws.goals.find((g) => g.id === goalId)
+    if (!goal) { onEvent({ type: "error", message: "goal not found" }); return false }
+    const workingInstanceId = this.goalWorkingInstances.get(goalId)
+    const inst = workingInstanceId ? ws.instances[workingInstanceId] : this.activeInstance(ws)
+    if (!inst) { onEvent({ type: "error", message: "working instance not found" }); return false }
+    return this.resumeGoalInInstance(ws, goal, replyText, inst, onEvent)
   }
 
   get sessionManager(): ClaudeSessionManager {
