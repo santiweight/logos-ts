@@ -10,11 +10,11 @@ WORKDIR /app
 
 COPY logos-ts/package.json logos-ts/package-lock.json ./logos-ts/
 COPY logos-ts/studio/package.json logos-ts/studio/package-lock.json ./logos-ts/studio/
-COPY logos-ts/demos/hn-jobs/package.json logos-ts/demos/hn-jobs/package-lock.json ./logos-ts/demos/hn-jobs/
+COPY investment-portfolio/frontend/package.json investment-portfolio/frontend/package-lock.json ./investment-portfolio/frontend/
 
 RUN npm ci --prefix logos-ts \
     && npm ci --prefix logos-ts/studio \
-    && npm ci --prefix logos-ts/demos/hn-jobs \
+    && npm ci --prefix investment-portfolio/frontend \
     && npm install --global @anthropic-ai/claude-code@2.1.175 \
     && npx --prefix logos-ts playwright install --with-deps chromium
 
@@ -23,7 +23,7 @@ COPY --chown=node:node . .
 ENV DISABLE_AUTOUPDATER=1 \
     LOGOS_DISABLE_HMR=1 \
     LOGOS_HOST=0.0.0.0 \
-    LOGOS_PROJECT=/app/logos-ts/demos/hn-jobs \
+    LOGOS_PROJECT=/app/investment-portfolio \
     LOGOS_PUBLIC_PORT=443 \
     LOGOS_PUBLIC_PROTOCOL=wss \
     LOGOS_REQUIRE_AUTH=1 \
