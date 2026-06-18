@@ -11,14 +11,12 @@ function makeSourceProject() {
   tempDirs.push(root)
   const sourceRoot = join(root, "source")
   mkdirSync(sourceRoot, { recursive: true })
-  writeFileSync(join(sourceRoot, "package.json"), "{}\n")
+  writeFileSync(join(sourceRoot, "package.json"), JSON.stringify({ name: "test-session", version: "1.0.0" }))
   writeFileSync(join(sourceRoot, "app.ts"), "export const value = 'source'\n")
   mkdirSync(join(sourceRoot, ".git"), { recursive: true })
   writeFileSync(join(sourceRoot, ".git", "HEAD"), "ref: refs/heads/main\n")
   mkdirSync(join(sourceRoot, ".logos"), { recursive: true })
   writeFileSync(join(sourceRoot, ".logos", "runtime.db"), "runtime\n")
-  mkdirSync(join(sourceRoot, "node_modules", "dep"), { recursive: true })
-  writeFileSync(join(sourceRoot, "node_modules", "dep", "index.js"), "module.exports = {}\n")
   return { root, sourceRoot }
 }
 

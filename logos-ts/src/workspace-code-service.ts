@@ -1,6 +1,7 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { execFile, execFileSync } from "node:child_process"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
+import { NodeModulesCache, findPackageDirs } from "./node-modules-cache.js"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
@@ -148,36 +149,15 @@ export class WorkspaceCodeService {
           ].includes(name)
         },
       })
-      for (const nmDir of this.opts.nodeModulesDirs) {
-        this.symlinkDependencyDir(dir, this.opts.projectRoot, nmDir)
-      }
-      for (const dependencyDir of this.dependencyDirs(sourceRoot)) {
-        this.symlinkDependencyDir(dir, sourceRoot, dependencyDir)
+      const nmCache = new NodeModulesCache()
+      for (const pkgDir of findPackageDirs(sourceRoot)) {
+        const result = nmCache.ensureFor(pkgDir)
+        const rel = relative(sourceRoot, pkgDir)
+        const target = join(dir, rel, "node_modules")
+        nmCache.linkTo(result.nodeModulesPath, target)
       }
     }
     return dir
-  }
-
-  private dependencyDirs(sourceRoot: string): string[] {
-    const dirs: string[] = []
-    const rootNodeModules = join(sourceRoot, "node_modules")
-    if (existsSync(rootNodeModules)) dirs.push(rootNodeModules)
-
-    for (const entry of readdirSync(sourceRoot)) {
-      if (entry === "node_modules" || entry.startsWith(".")) continue
-      const nestedNodeModules = join(sourceRoot, entry, "node_modules")
-      if (existsSync(nestedNodeModules)) dirs.push(nestedNodeModules)
-    }
-
-    return dirs
-  }
-
-  private symlinkDependencyDir(dir: string, baseRoot: string, dependencyDir: string): void {
-    const rel = relative(baseRoot, dependencyDir)
-    if (!rel || rel.startsWith(`..${sep}`) || rel === "..") return
-    const target = join(dir, rel)
-    try { mkdirSync(dirname(target), { recursive: true }) } catch { /* exists */ }
-    try { symlinkSync(dependencyDir, target) } catch { /* exists */ }
   }
 
   private ensureRepo(root: string): void {

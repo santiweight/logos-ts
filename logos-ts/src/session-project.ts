@@ -1,6 +1,7 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync } from "node:fs"
-import { basename, dirname, join, relative, resolve } from "node:path"
+import { cpSync, existsSync, mkdirSync, mkdtempSync } from "node:fs"
+import { basename, join, relative, resolve } from "node:path"
 import { gcDevSessions, writeDevSessionPid } from "./dev-session-gc.js"
+import { NodeModulesCache, findPackageDirs } from "./node-modules-cache.js"
 
 export interface SessionProject {
   root: string
@@ -14,20 +15,6 @@ function isSubpath(parent: string, child: string): boolean {
 
 export function devSessionsDirFor(sourceRoot: string, preferredDir: string): string {
   return isSubpath(sourceRoot, preferredDir) ? resolve(preferredDir, "..", "..", ".dev-sessions") : preferredDir
-}
-
-function dependencyDirs(sourceRoot: string): string[] {
-  const dirs: string[] = []
-  const rootNodeModules = join(sourceRoot, "node_modules")
-  if (existsSync(rootNodeModules)) dirs.push(rootNodeModules)
-
-  for (const entry of readdirSync(sourceRoot)) {
-    if (entry === "node_modules" || entry.startsWith(".")) continue
-    const nestedNodeModules = join(sourceRoot, entry, "node_modules")
-    if (existsSync(nestedNodeModules)) dirs.push(nestedNodeModules)
-  }
-
-  return dirs
 }
 
 export function createSessionProject(sourceRoot: string, preferredSessionsDir: string): SessionProject {
@@ -68,10 +55,12 @@ export function createSessionProject(sourceRoot: string, preferredSessionsDir: s
 
   writeDevSessionPid(root)
 
-  for (const depDir of dependencyDirs(sourceRoot)) {
-    const target = join(root, relative(sourceRoot, depDir))
-    mkdirSync(dirname(target), { recursive: true })
-    try { symlinkSync(depDir, target) } catch { /* dependency link already exists */ }
+  const nmCache = new NodeModulesCache()
+  for (const pkgDir of findPackageDirs(sourceRoot)) {
+    const result = nmCache.ensureFor(pkgDir)
+    const rel = relative(sourceRoot, pkgDir)
+    const target = join(root, rel, "node_modules")
+    nmCache.linkTo(result.nodeModulesPath, target)
   }
 
   console.log(`[logos] session: ${id}`)

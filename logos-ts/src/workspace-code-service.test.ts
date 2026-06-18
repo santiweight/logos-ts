@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execFileSync } from "node:child_process"
@@ -97,17 +97,15 @@ describe("WorkspaceCodeService", () => {
     expect(git(agent.materializedRoot, ["diff", "--cached", "--name-only"])).toBe("")
   })
 
-  it("creates a baseline repo when ignored node_modules is symlinked into the instance", () => {
+  it("provides node_modules via cache and excludes them from git", () => {
     const { projectRoot, runsDir } = createService()
-    const nodeModules = join(projectRoot, "node_modules")
-    mkdirSync(nodeModules, { recursive: true })
-    writeFileSync(join(nodeModules, "dep.txt"), "dep\n")
     writeFileSync(join(projectRoot, ".gitignore"), "node_modules\n")
-    const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [nodeModules] })
+    const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [] })
 
     const instance = service.createInstance("ws", projectRoot, {})
 
-    expect(readFileSync(join(instance.materializedRoot, "node_modules", "dep.txt"), "utf8")).toBe("dep\n")
+    expect(existsSync(join(instance.materializedRoot, "node_modules"))).toBe(true)
+    expect(lstatSync(join(instance.materializedRoot, "node_modules")).isSymbolicLink()).toBe(true)
     expect(git(instance.materializedRoot, ["status", "--porcelain"])).toBe("")
     expect(git(instance.materializedRoot, ["ls-files"])).not.toContain("node_modules")
   })
