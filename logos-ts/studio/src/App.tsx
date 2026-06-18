@@ -124,6 +124,24 @@ function readStoredSelection(): Selection {
   }
 }
 
+export function buildStorybookRenderKey(
+  activeWs: Pick<WorkspaceMeta, "activeInstanceId" | "goals"> | undefined,
+  activeStorybookState: Pick<SbState, "startedAt"> | null,
+): string {
+  let terminalCount = 0
+  let terminalHash = 0
+  for (const goal of activeWs?.goals ?? []) {
+    if (goal.status !== "done" && goal.status !== "error") continue
+    terminalCount += 1
+    const lastReply = goal.replies?.[goal.replies.length - 1]
+    const signature = `${goal.id}:${goal.status}:${goal.replies?.length ?? 0}:${lastReply?.createdAt ?? 0}`
+    for (let i = 0; i < signature.length; i++) {
+      terminalHash = ((terminalHash * 31) + signature.charCodeAt(i)) >>> 0
+    }
+  }
+  return `${activeWs?.activeInstanceId ?? ""}:${activeStorybookState?.startedAt ?? 0}:${terminalCount}:${terminalHash.toString(36)}`
+}
+
 export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
@@ -267,7 +285,7 @@ export function App() {
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
   const activeGoals = activeWs?.goals ?? []
-  const activeStorybookRenderKey = `${activeWs?.activeInstanceId ?? ""}:${activeStorybookState?.startedAt ?? 0}`
+  const activeStorybookRenderKey = buildStorybookRenderKey(activeWs, activeStorybookState)
 
   const goalsByTarget = useMemo(() => {
     const m: Record<string, Goal[]> = {}
@@ -796,6 +814,18 @@ export function App() {
       }
       if (e.data?.type !== "logos:story-comment") return
       const { storyId, component, selector, label, text, mode, fork } = e.data
+      if (typeof storyId === "string" && storyId) {
+        setStoryCommentDrafts((current) => {
+          const next = { ...current }
+          delete next[storyId]
+          return next
+        })
+        setStoryCommentEditing((current) => {
+          const next = { ...current }
+          delete next[storyId]
+          return next
+        })
+      }
       const target = component ? `component:${component}` : `story:${storyId}`
       addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component })
     }
