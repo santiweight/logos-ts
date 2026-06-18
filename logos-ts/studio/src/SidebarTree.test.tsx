@@ -107,6 +107,32 @@ describe("SidebarTree", () => {
     expect(onComment).toHaveBeenCalledWith("component:AdminTaxonomyPage", "AdminTaxonomyPage", 10, 20)
   })
 
+  it("offers story generation from the component context menu", () => {
+    const onSelect = vi.fn()
+    const onWriteStories = vi.fn()
+    render(
+      <SidebarTree
+        files={files}
+        selection={{ file: "src/components/JobCard.tsx", view: "code" }}
+        onSelect={onSelect}
+        comments={{}}
+        onComment={() => {}}
+        onWriteStories={onWriteStories}
+        diff={{}}
+        testState={null}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText("JobCard"))
+
+    expect(onSelect).toHaveBeenCalledWith({ file: "src/components/JobCard.tsx", component: "JobCard", view: "code" })
+    expect(onWriteStories).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate stories" }))
+
+    expect(onWriteStories).toHaveBeenCalledWith("component:JobCard", "JobCard")
+  })
+
   it("can hide function-only rows while keeping component rows visible", () => {
     render(
       <SidebarTree

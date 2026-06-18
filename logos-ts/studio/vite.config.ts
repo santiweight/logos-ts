@@ -12,7 +12,11 @@ import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
 const DEMO_STATE_FILE = resolve(LOGOS_TS, ".logos", "active-demo.json")
+const REAL_HN_JOBS = process.env.LOGOS_HN_JOBS_PROJECT
+  ? resolve(process.env.LOGOS_HN_JOBS_PROJECT)
+  : resolve(LOGOS_TS, "demos/hn-jobs")
 const DEMOS = [
+  { id: "hn-jobs-real", name: "HN Jobs", root: REAL_HN_JOBS },
   { id: "hn-jobs", name: "HN Jobs (Mini)", root: resolve(STUDIO, "../../hn-jobs") },
   { id: "vinyl-collection", name: "Vinyl Collection", root: resolve(STUDIO, "../../vinyl-collection") },
   { id: "investment-portfolio", name: "Investment Portfolio", root: resolve(STUDIO, "../../investment-portfolio") },
@@ -224,15 +228,6 @@ function studioApi(runtime: StudioRuntime): Plugin {
         }
         res.statusCode = 405
         res.end(JSON.stringify({ error: "method not allowed" }))
-      })
-
-      server.middlewares.use("/api/capabilities", (_req, res) => {
-        res.setHeader("content-type", "application/json")
-        res.end(JSON.stringify({
-          root: caps.root,
-          hasStorybook: !!caps.storybook,
-          hasTests: !!caps.tests,
-        }))
       })
 
       // Persistent test runner

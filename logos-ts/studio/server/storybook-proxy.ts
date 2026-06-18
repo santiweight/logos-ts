@@ -14,7 +14,7 @@ interface ProxyTarget {
 function proxyTarget(req: IncomingMessage, manager: StorybookManager): ProxyTarget | null {
   const url = new URL(req.url || "/", "http://logos.local")
   const match = url.pathname.match(/^\/storybooks\/([^/]+)(\/.*)?$/)
-  if (!match?.[1]) return null
+  if (!match?.[1]) return refererProxyTarget(req, url, manager)
 
   let id: string
   try {
@@ -27,6 +27,29 @@ function proxyTarget(req: IncomingMessage, manager: StorybookManager): ProxyTarg
   return {
     id,
     path: `${match[2] || "/"}${url.search}`,
+    url: new URL(target),
+  }
+}
+
+function refererProxyTarget(req: IncomingMessage, url: URL, manager: StorybookManager): ProxyTarget | null {
+  if (url.pathname.startsWith("/storybooks/") || url.pathname.startsWith("/runs/")) return null
+  const rawReferer = req.headers.referer
+  if (typeof rawReferer !== "string") return null
+  const referer = new URL(rawReferer, "http://logos.local")
+  const match = referer.pathname.match(/^\/storybooks\/([^/]+)(\/.*)?$/)
+  if (!match?.[1]) return null
+
+  let id: string
+  try {
+    id = decodeURIComponent(match[1])
+  } catch {
+    return null
+  }
+  const target = manager.get(id)
+  if (!target) return null
+  return {
+    id,
+    path: `${url.pathname}${url.search}`,
     url: new URL(target),
   }
 }
