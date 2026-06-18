@@ -31,7 +31,7 @@ function tokenClass(token: string, prev: string | null): string {
 }
 
 export type SymbolMap = Record<string, SymbolLocation>
-type GotoFn = (sym: SymbolLocation) => void
+type GotoFn = (sym: SymbolLocation, name: string) => void
 
 export const GotoCtx = createContext<{ symbols: SymbolMap; onGoto: GotoFn }>({
   symbols: {},
@@ -54,7 +54,7 @@ export function highlightTs(text: string, symbols?: SymbolMap, onGoto?: GotoFn):
           key={`${idx}-${token}`}
           className={`${cls} tok-link`}
           title={`${sym.file}:${sym.line}`}
-          onClick={(e) => { e.stopPropagation(); onGoto(sym) }}
+          onClick={(e) => { e.stopPropagation(); onGoto(sym, token) }}
         >
           {token}
         </span>

@@ -132,12 +132,13 @@ export function App() {
   const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
 
   const [navHistory, setNavHistory] = useState<Selection[]>([])
-  const onGoto = useCallback((sym: { file: string; line: number }) => {
-    const indexed = view.files.some((f) => f.file === sym.file)
-    if (indexed) {
+  const onGoto = useCallback((sym: { file: string; line: number }, name: string) => {
+    const file = view.files.find((f) => f.file === sym.file)
+    if (file) {
+      const isType = file.items.some((it) => it.kind === "type" && it.name === name)
       setSelection((prev) => {
         setNavHistory((h) => [...h, prev])
-        return { file: sym.file, view: "code" }
+        return { file: sym.file, view: "code", ...(isType ? { symbol: name } : {}) }
       })
     } else {
       fetch("/api/open", {

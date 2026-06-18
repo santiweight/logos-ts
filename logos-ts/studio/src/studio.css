@@ -828,6 +828,10 @@ body.resizing-rail * {
 .row-body { padding: 0 10px 6px; }
 .row.indent .row-body { padding-left: 24px; }
 .row-desc { color: var(--muted); padding: 4px 0; line-height: 1.5; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 11px; }
+.row-desc .tok-symbol { color: #ffcb6b; }
+.row-desc .tok-keyword { color: #c792ea; }
+.row-desc .tok-type { color: #82aaff; }
+.row-desc .tok-link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
 .row-body .code { padding: 6px 8px; background: #18181c; border-radius: 3px; white-space: pre; margin: 0; }
 
 /* tags — TEST is loud and green so tests read unmistakably as tests */

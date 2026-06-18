@@ -182,6 +182,7 @@ function SymbolView({ item }: { item: FileItem }) {
             title={item.signature}
             code={item.code}
             target={`type:${item.name}`}
+            initialOpen
             label={`T ${item.name}`}
           />
         </div>

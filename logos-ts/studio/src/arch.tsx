@@ -17,6 +17,7 @@ export function Row({
   indent,
   target,
   label,
+  initialOpen = false,
 }: {
   tag: string
   tagClass: string
@@ -26,11 +27,12 @@ export function Row({
   indent?: boolean
   target: string
   label: string
+  initialOpen?: boolean
 }) {
   const { comments, onComment } = useContext(CommentCtx)
   const { symbols, onGoto } = useContext(GotoCtx)
   const status = useContext(DiffCtx)[target]
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initialOpen)
   const count = comments[target]?.length ?? 0
   return (
     <div className={`row ${indent ? "indent" : ""} ${status ? `diff-${status}` : ""}`}>
@@ -51,7 +53,7 @@ export function Row({
       </div>
       {open && (
         <div className="row-body">
-          {desc && <div className="row-desc">{desc}</div>}
+          {desc && <div className="row-desc">{highlightTs(desc, symbols, onGoto)}</div>}
           {code && <CodeBlock code={code} />}
         </div>
       )}
