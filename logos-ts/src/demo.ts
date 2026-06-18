@@ -15,10 +15,10 @@ console.log(`# logos-ts demo — analyzing ${root}`)
 console.log(`# ${sourceFiles.length} source files\n`)
 
 // ---- #1 Architecture: show one representative component ----
-const jobRow = sourceFiles.find((sf) => sf.getFilePath().endsWith("JobRow.tsx"))
-if (jobRow) {
-  console.log("## #1 Architecture — JobRow.tsx")
-  const arch = extractArchitecture(jobRow)
+const adminPageStory = sourceFiles.find((sf) => sf.getFilePath().endsWith("app/admin/page.stories.tsx"))
+if (adminPageStory) {
+  console.log("## #1 Architecture — app/admin/page.stories.tsx")
+  const arch = extractArchitecture(adminPageStory)
   for (const item of arch.items) {
     if (item.kind === "function") {
       const sig = item.args.map((a) => `${a.name}: ${a.type}`).join(", ")
@@ -50,7 +50,7 @@ if (store) {
 console.log("## #2 Dependency tree (qualified name -> referenced names)")
 const tree = buildDependencyTree(sourceFiles, root)
 const json = dependencyTreeToJSON(tree)
-for (const name of ["JobRow", "JobRowProps", "DirectoryView", "JobTable"]) {
+for (const name of ["AdminDashboard", "DirectoryPage", "FiltersSidebar", "SearchableFilter"]) {
   const entry = Object.entries(json).find(([k]) => k.endsWith(`#${name}`))
   if (entry) console.log(`  ${entry[0]} -> [${entry[1].join(", ")}]`)
 }

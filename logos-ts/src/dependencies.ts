@@ -4,7 +4,7 @@ import { relative, resolve } from "node:path"
 import type { DependencyTree } from "./model.js"
 
 // A tracked, top-level named declaration. `qname` is fully qualified by the
-// file's path relative to the project root, e.g. "frontend/components/JobRow.tsx#JobRow".
+// file's path relative to the project root, e.g. "components/HeaderNav.tsx#HeaderNav".
 interface Tracked {
   qname: string
   node: Node
