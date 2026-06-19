@@ -109,7 +109,13 @@ describe("buildStudioIndex component detection", () => {
 
     expect(file?.components?.map((component) => component.name)).toEqual(["JobPageView", "JobPage"])
     expect(file?.components?.find((component) => component.name === "JobPageView")?.stories).toEqual([
-      { id: "pages-jobpage--default", exportName: "Default", snapshot: null },
+      expect.objectContaining({
+        id: "pages-jobpage--default",
+        exportName: "Default",
+        storyFile: "app/job/[slug]/page.stories.tsx",
+        storyCode: expect.stringContaining("export const Default"),
+        snapshot: null,
+      }),
     ])
     expect(file?.components?.find((component) => component.name === "JobPage")?.stories).toEqual([])
   })

@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it } from "vitest"
 import { ReviewPanel } from "./ReviewPanel"
 import type { FileEntry, StudioIndex } from "./types"
 
@@ -22,6 +22,27 @@ function capturedFile(component: string, before: string, exportName = "Default")
 
 function index(files: FileEntry[]): StudioIndex {
   return { root: "/test", files }
+}
+
+function storyFile(storyCode: string): FileEntry {
+  return {
+    file: "components/JobRow.tsx",
+    code: "",
+    items: [],
+    component: {
+      name: "JobRow",
+      signature: "JobRow()",
+      componentCode: "export function JobRow() { return null }",
+      propsFields: [],
+      stories: [{
+        id: "jobrow--default",
+        exportName: "Default",
+        storyFile: "components/JobRow.stories.tsx",
+        storyCode,
+        snapshot: null,
+      }],
+    },
+  }
 }
 
 describe("ReviewPanel", () => {
@@ -126,39 +147,84 @@ describe("ReviewPanel", () => {
     expect(screen.getByText("<div>Platform Engineer</div>")).toBeInTheDocument()
   })
 
-  it("starts Storybook from review when captured visual comparison needs it", async () => {
-    const base = index([capturedFile("JobRow", "<div>Engineer</div>")])
-    const workspace = index([capturedFile("JobRow", "<div>Platform Engineer</div>")])
-    const onRetryStorybook = vi.fn()
+  it("renders snapshot diffs for added indexed Vitest captures", () => {
+    const base = index([])
+    const workspace = index([
+      capturedFile("JobRow", '"<div class=\\"row\\">Platform Engineer</div>"'),
+    ])
 
     render(
       <ReviewPanel
         base={base}
         workspace={workspace}
         storybookUrl=""
-        storybookState={null}
-        onRetryStorybook={onRetryStorybook}
+        storybookState={{ status: "failed", startedAt: Date.now(), logs: [] }}
+        onRetryStorybook={() => {}}
       />
     )
 
-    await waitFor(() => expect(onRetryStorybook).toHaveBeenCalledTimes(1))
+    expect(screen.getByText("added")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Snapshot diff" }))
+
+    expect(screen.getByText('<div class="row">Platform Engineer</div>')).toBeInTheDocument()
   })
 
-  it("re-requests Storybook from review when startup state has no URL yet", async () => {
+  it("renders before and after visual snapshots from persisted HTML", () => {
     const base = index([capturedFile("JobRow", "<div>Engineer</div>")])
     const workspace = index([capturedFile("JobRow", "<div>Platform Engineer</div>")])
-    const onRetryStorybook = vi.fn()
+    const { container } = render(
+      <ReviewPanel
+        base={base}
+        workspace={workspace}
+        storybookUrl="http://127.0.0.1:6006"
+        storybookState={{ status: "ready", startedAt: Date.now(), logs: [] }}
+        onRetryStorybook={() => {}}
+      />
+    )
 
-    render(
+    const frames = [...container.querySelectorAll("iframe.capture-preview-frame")]
+    expect(frames).toHaveLength(2)
+    expect(frames[0]?.getAttribute("srcdoc")).toContain("<div>Engineer</div>")
+    expect(frames[0]?.getAttribute("srcdoc")).not.toContain("Platform Engineer")
+    expect(frames[1]?.getAttribute("srcdoc")).toContain("<div>Platform Engineer</div>")
+  })
+
+  it("renders story-only changes as reviewable architecture diffs without snapshots", () => {
+    const base = index([
+      storyFile([
+        "function StoryRender() {",
+        "  return <td>{jobCount1247}</td>",
+        "}",
+        "export const Default = {};",
+      ].join("\n")),
+    ])
+    const workspace = index([
+      storyFile([
+        "function StoryRender() {",
+        "  return <td><strong>{jobCount1248}</strong></td>",
+        "}",
+        "export const Default = {};",
+      ].join("\n")),
+    ])
+
+    const { container } = render(
       <ReviewPanel
         base={base}
         workspace={workspace}
         storybookUrl=""
-        storybookState={{ status: "starting", startedAt: Date.now(), logs: [] }}
-        onRetryStorybook={onRetryStorybook}
+        storybookState={{ status: "failed", startedAt: Date.now(), logs: [] }}
+        onRetryStorybook={() => {}}
       />
     )
 
-    await waitFor(() => expect(onRetryStorybook).toHaveBeenCalledTimes(1))
+    expect(screen.getByText("components/JobRow.stories.tsx")).toBeInTheDocument()
+    const header = screen.getByRole("button", { name: /components\/JobRow\.stories\.tsx/ })
+    fireEvent.click(header)
+
+    const diffText = container.querySelector(".inline-diff")?.textContent
+    expect(diffText).toContain("jobCount1247")
+    expect(diffText).toContain("jobCount1248")
   })
+
 })

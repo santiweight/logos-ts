@@ -1,15 +1,18 @@
 /* eslint-disable no-restricted-syntax, @typescript-eslint/no-unused-vars */
-import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync } from "node:fs"
+import { writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs"
 import { join, dirname, relative, resolve } from "node:path"
 import { Node, SyntaxKind, type SourceFile, type TypeNode } from "ts-morph"
 import { loadProject } from "./project.js"
 import { indexStories, type StoryEntry } from "./stories.js"
 import { buildDependencyTree } from "./dependencies.js"
 import { computeTestAttachments, extractBackend } from "./backend.js"
+import { loadStorySnapshotStore } from "./story-snapshots.js"
 
 export interface StoryNode {
   id: string
   exportName: string
+  storyFile?: string
+  storyCode?: string
   snapshot: string | null
 }
 export interface FileEntry {
@@ -183,38 +186,6 @@ function detectComponents(sfs: SourceFile[], absRoot: string): DetectedComponent
   return components
 }
 
-function parseSnapshotKeys(snapContent: string): Map<string, string> {
-  const entries = new Map<string, string>()
-  const re = /^exports\[`(.+?)`\]\s*=\s*`([\s\S]*?)`;$/gm
-  let m
-  while ((m = re.exec(snapContent))) {
-    const key = m[1]
-    const value = m[2]
-    if (key != null && value != null) entries.set(key, value)
-  }
-  return entries
-}
-
-let _snapCache: { path: string; entries: Map<string, string> } | null = null
-
-function loadStorySnapshots(absRoot: string): Map<string, string> {
-  const snapPath = join(absRoot, "frontend", "__snapshots__", "stories.test.tsx.snap")
-  if (_snapCache?.path === snapPath) return _snapCache.entries
-  if (!existsSync(snapPath)) {
-    _snapCache = { path: snapPath, entries: new Map() }
-    return _snapCache.entries
-  }
-  const entries = parseSnapshotKeys(readFileSync(snapPath, "utf8"))
-  _snapCache = { path: snapPath, entries }
-  return entries
-}
-
-function getSnapshotForStory(storyEntry: StoryEntry, absRoot: string, allSnaps: Map<string, string>): string | null {
-  const storyRelPath = "./" + relative(absRoot, storyEntry.filePath).replace(/^frontend\//, "")
-  const snapKey = `captured: ${storyRelPath} / ${storyEntry.exportName} 1`
-  return allSnaps.get(snapKey) ?? null
-}
-
 function extractSymbols(sfs: SourceFile[], absRoot: string): Record<string, SymbolLocation> {
   const out: Record<string, SymbolLocation> = {}
   for (const sf of sfs) {
@@ -239,7 +210,7 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
   const tree = buildDependencyTree(sfs, root)
   const attachments = computeTestAttachments(sfs, absRoot)
   const backendFiles = extractBackend(sfs, tree, attachments, absRoot)
-  const allSnaps = loadStorySnapshots(absRoot)
+  const snapshotStore = loadStorySnapshotStore(absRoot)
 
   // Group story entries by component name
   const storiesByComponent = new Map<string, StoryEntry[]>()
@@ -265,7 +236,9 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
       stories: entries.map((e) => ({
         id: e.id,
         exportName: e.exportName,
-        snapshot: getSnapshotForStory(e, absRoot, allSnaps),
+        storyFile: relative(absRoot, e.filePath),
+        storyCode: e.code,
+        snapshot: snapshotStore.get(e),
       })),
     }
     ;(componentsByFile.get(file) ?? componentsByFile.set(file, []).get(file)!).push(next)

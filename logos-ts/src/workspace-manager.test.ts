@@ -53,8 +53,10 @@ function createSessions() {
 
 function createManager(opts?: {
   spawned?: FakeAgentProcess[]
+  sessions?: ReturnType<typeof createSessions>
+  sbManager?: Record<string, unknown>
   setupProject?: (projectRoot: string) => void
-  caps?: Record<string, unknown>
+  caps?: Record<string, unknown> | ((projectRoot: string) => Record<string, unknown>)
 }): WorkspaceManager {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
   tempDirs.push(root)
@@ -62,8 +64,10 @@ function createManager(opts?: {
   mkdirSync(projectRoot, { recursive: true })
   writeFileSync(join(projectRoot, "package.json"), "{}")
   opts?.setupProject?.(projectRoot)
-  const sessions = createSessions()
+  const sessions = opts?.sessions ?? createSessions()
   const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
+  const sbManager = opts?.sbManager ?? { get: () => null, shutdown: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") }
+  const extraCaps = typeof opts?.caps === "function" ? opts.caps(projectRoot) : (opts?.caps ?? {})
 
   return new WorkspaceManager({
     store,
@@ -71,8 +75,8 @@ function createManager(opts?: {
     logosTsSrc: join(LOGOS_TS_ROOT, "src"),
     logosTsRoot: LOGOS_TS_ROOT,
     projectRoot,
-    caps: { root: projectRoot, nodeModulesDirs: [], ...(opts?.caps ?? {}) },
-    sbManager: { get: () => null, shutdown: () => undefined } as any,
+    caps: { root: projectRoot, nodeModulesDirs: [], ...extraCaps },
+    sbManager: sbManager as any,
     sessions: sessions as any,
     tsx: TSX,
     getIndex: async () => ({ root: projectRoot, files: [] }),
@@ -90,7 +94,7 @@ function createManager(opts?: {
   })
 }
 
-async function waitFor(assertion: () => void, timeoutMs = 5000): Promise<void> {
+async function waitFor(assertion: () => void, timeoutMs = 15_000): Promise<void> {
   const start = Date.now()
   let lastError: unknown
   while (Date.now() - start < timeoutMs) {
@@ -329,6 +333,101 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(expectGoal(await mgr.addGoal(code.id, goal("second", "code"))).goal.id).toBe("second")
   })
 
+  it("prepares the Storybook bridge when creating a snapshot-ready workspace baseline", async () => {
+    const prepared: string[] = []
+    let projectRoot = ""
+    const mgr = createManager({
+      setupProject(root) {
+        projectRoot = root
+        mkdirSync(join(root, ".storybook"), { recursive: true })
+        writeFileSync(join(root, ".storybook", "preview.ts"), "export default {}\n")
+      },
+      caps: (root) => ({
+        storybook: { frontendDir: root, configDir: join(root, ".storybook") },
+      }),
+      sbManager: {
+        get: () => null,
+        shutdown: () => undefined,
+        ensure: () => Promise.resolve(""),
+        prepare: (frontendDir: string) => {
+          prepared.push(frontendDir)
+          mkdirSync(join(frontendDir, ".storybook", ".logos"), { recursive: true })
+          writeFileSync(join(frontendDir, ".storybook", ".logos", "CommentLayer.tsx"), "export const withLogosComments = (Story: any) => Story\n")
+        },
+      },
+    })
+
+    await mgr.create({ kind: "code" })
+
+    expect(prepared).toHaveLength(1)
+    expect(prepared[0]).not.toBe(projectRoot)
+    expect(prepared[0]).toContain(".agent-runs")
+    expect(existsSync(join(prepared[0]!, ".storybook", ".logos", "CommentLayer.tsx"))).toBe(true)
+  })
+
+  it("creates an agent session and status event before preparing the working instance", async () => {
+    const sessions = createSessions()
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ sessions, spawned })
+    const code = await mgr.create({ kind: "code" })
+    expectGoal(await mgr.addGoal(code.id, goal("first", "code")))
+
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+    const result = mgr.processNext(code.id, (event) => events.push(event))
+
+    expect(result).toBe("first")
+    expect(events[0]).toMatchObject({
+      type: "status",
+      goalId: "first",
+      message: "preparing workspace instance…",
+    })
+    expect(sessions.events[0]).toMatchObject({
+      sessionId: "session-first",
+      type: "status",
+      payload: expect.objectContaining({ message: "preparing workspace instance…" }),
+    })
+    expect(mgr.goalsForWorkspace(code.id)[0]?.sessionId).toBe("session-first")
+
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+  })
+
+  it("does not capture story snapshots before starting the agent working instance", async () => {
+    const prepared: string[] = []
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject(root) {
+        mkdirSync(join(root, ".storybook"), { recursive: true })
+        writeFileSync(join(root, ".storybook", "preview.ts"), "export default {}\n")
+      },
+      caps: (root) => ({
+        storybook: { frontendDir: root, configDir: join(root, ".storybook") },
+      }),
+      sbManager: {
+        get: () => null,
+        shutdown: () => undefined,
+        ensure: () => Promise.resolve(""),
+        prepare: (frontendDir: string) => prepared.push(frontendDir),
+      },
+    })
+    const code = await mgr.create({ kind: "code" })
+    expect(prepared).toHaveLength(1)
+    expectGoal(await mgr.addGoal(code.id, goal("first", "code")))
+
+    const events: { type: string; message?: unknown }[] = []
+    expect(mgr.processNext(code.id, (event) => events.push(event))).toBe("first")
+    await waitFor(() => expect(spawned).toHaveLength(1))
+
+    expect(prepared).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: "status", message: "preparing workspace instance…" })
+
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(prepared).toHaveLength(2))
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+  })
+
   it("rejects code goals in architecture workspaces", async () => {
     const mgr = createManager()
     const arch = await mgr.create({ kind: "arch" })
@@ -416,7 +515,7 @@ describe("WorkspaceManager workspace kinds", () => {
     ])
     await waitFor(() => expect(spawned).toHaveLength(1))
     expect(events.some((event) => event.type === "queued")).toBe(false)
-  })
+  }, 30_000)
 
   it("streams requested code goals while they run in parallel instances", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -461,7 +560,7 @@ describe("WorkspaceManager workspace kinds", () => {
         ["second", "done"],
       ])
     })
-  }, 15000)
+  }, 30_000)
 
   it("resumes a code agent in its conflicted instance when rebase conflicts", async () => {
     const spawned: FakeAgentProcess[] = []

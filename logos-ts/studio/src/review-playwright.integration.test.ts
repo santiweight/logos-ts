@@ -169,6 +169,9 @@ describe("review UI", () => {
       if (path === "/api/index") return json(projectIndex)
       if (path === "/api/test-results") return json(idleTests())
       if (path === "/api/storybooks") return json({ urls: {}, states: {} })
+      if (path === "/api/run-targets") return json({ targets: [] })
+      if (path === "/api/runs") return json({ urls: {}, states: {} })
+      if (path === "/api/demos") return json({ active: "", demos: [] })
       if (path === "/api/workspaces") return json([workspaceMeta(workspace)])
       if (path === "/api/workspaces/ws-review") return json(workspace)
 
@@ -179,11 +182,11 @@ describe("review UI", () => {
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.waitForFunction(() => document.body.innerText.includes("Review 1"))
       await page.getByRole("button", { name: "Review 1" }).click()
-      await page.waitForFunction(() => document.body.innerText.includes("Captured tests 1"))
+      await page.waitForFunction(() => document.body.innerText.includes("JobRow / Default"))
 
       let bodyText = await page.locator("body").innerText()
       expect(bodyText).toContain("JobRow / Default")
-      expect(bodyText).not.toContain("No captured tests changed in this workspace.")
+      expect(bodyText).not.toContain("No snapshots changed in this workspace.")
 
       await page.getByRole("button", { name: "Snapshot diff" }).click()
       await page.waitForFunction(() => document.body.innerText.includes("<strong>Senior Engineer</strong>"))
@@ -197,7 +200,7 @@ describe("review UI", () => {
     }
   }, 60_000)
 
-  it("requests Storybook startup when review opens with a starting state but no URL", async () => {
+  it("renders before and after snapshot visuals from stored HTML without starting Storybook", async () => {
     const projectIndex = indexWithCapture(vitestSnapshot('<article class="job-row">Original index</article>'))
     const baseIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><span>Senior Engineer</span></article>'))
     const activeIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><strong>Senior Engineer</strong></article>'))
@@ -216,6 +219,9 @@ describe("review UI", () => {
 
       if (path === "/api/index") return json(projectIndex)
       if (path === "/api/test-results") return json(idleTests())
+      if (path === "/api/run-targets") return json({ targets: [] })
+      if (path === "/api/runs") return json({ urls: {}, states: {} })
+      if (path === "/api/demos") return json({ active: "", demos: [] })
       if (path === "/api/storybooks") {
         return json({
           urls: {},
@@ -238,10 +244,16 @@ describe("review UI", () => {
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.waitForFunction(() => document.body.innerText.includes("Review 1"))
       await page.getByRole("button", { name: "Review 1" }).click()
-      await page.waitForFunction(() => document.body.innerText.includes("Starting Storybook"))
+      await page.waitForSelector("iframe.capture-preview-frame")
 
-      await waitFor(() => storybookStarts > 0)
-      expect(storybookStarts).toBe(1)
+      const frames = await page.locator("iframe.capture-preview-frame").evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute("srcdoc") ?? "")
+      )
+      expect(frames).toHaveLength(2)
+      expect(frames[0]).toContain("<span>Senior Engineer</span>")
+      expect(frames[0]).not.toContain("<strong>Senior Engineer</strong>")
+      expect(frames[1]).toContain("<strong>Senior Engineer</strong>")
+      expect(storybookStarts).toBe(0)
     } finally {
       await page.close()
     }

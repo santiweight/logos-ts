@@ -11,6 +11,11 @@ function collectNodes(index: StudioIndex): Map<string, string> {
     for (const component of componentsOf(f)) {
       m.set(`component:${component.name}`, component.signature + SEP + component.componentCode)
       if (component.propsName) m.set(`props:${component.propsName}`, component.propsCode ?? "")
+      for (const story of component.stories) {
+        if (story.storyCode == null) continue
+        const id = `story-file:${story.storyFile ?? component.name}`
+        if (!m.has(id)) m.set(id, story.storyCode)
+      }
     }
     for (const it of f.items) {
       if (it.kind === "function") {

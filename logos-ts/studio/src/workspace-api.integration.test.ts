@@ -147,6 +147,28 @@ async function readPolicyEvents(workspaceId?: string): Promise<WorkspacePolicyEv
   return body.events
 }
 
+async function readSseEvent(res: Response): Promise<Record<string, unknown>> {
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error("response has no body")
+  const decoder = new TextDecoder()
+  let buffer = ""
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) throw new Error(`SSE stream ended before an event arrived: ${buffer}`)
+    buffer += decoder.decode(value, { stream: true })
+    const boundary = buffer.indexOf("\n\n")
+    if (boundary === -1) continue
+    const frame = buffer.slice(0, boundary)
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trimStart())
+      .join("\n")
+    reader.releaseLock()
+    return JSON.parse(data) as Record<string, unknown>
+  }
+}
+
 describe("workspace API mode isolation", () => {
   beforeAll(async () => {
     projectRoot = createProject()
@@ -311,5 +333,41 @@ describe("workspace API mode isolation", () => {
     expect(fakeClaudeSignals()).toBe("")
     const updated = await readWorkspace(arch.id)
     expect(updated.goals.find((g) => g.id === first.body.id)?.status).toBe("running")
+  }, TEST_TIMEOUT)
+
+  it("creates a queryable session as soon as the agent SSE stream starts", async () => {
+    const code = await createWorkspace("code")
+    const { res: goalRes, body: goal } = await addGoal(code.id, "code")
+    expect(goalRes.ok).toBe(true)
+
+    const controller = new AbortController()
+    const runRes = await fetch(`${baseUrl}/api/agent/run?workspace=${code.id}&goal=${goal.id}`, {
+      signal: controller.signal,
+    })
+    expect(runRes.ok).toBe(true)
+
+    const firstEvent = await readSseEvent(runRes)
+    expect(firstEvent).toMatchObject({
+      type: "status",
+      goalId: goal.id,
+      message: "preparing workspace instance…",
+    })
+
+    const sessionRes = await api(`/api/sessions?goal=${encodeURIComponent(goal.id)}`)
+    expect(sessionRes.ok).toBe(true)
+    const sessionBody = await sessionRes.json() as {
+      session: { goalId: string; workspaceId: string }
+      events: { type: string; payload: string }[]
+    }
+    expect(sessionBody.session).toMatchObject({ goalId: goal.id, workspaceId: code.id })
+    expect(sessionBody.events[0]).toMatchObject({ type: "status" })
+    expect(JSON.parse(sessionBody.events[0]!.payload)).toMatchObject({
+      type: "status",
+      goalId: goal.id,
+      message: "preparing workspace instance…",
+    })
+
+    await runRes.body?.cancel()
+    controller.abort()
   }, TEST_TIMEOUT)
 })

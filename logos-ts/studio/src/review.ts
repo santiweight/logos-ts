@@ -85,17 +85,19 @@ export function extractSnapshotHtml(snapshot: string | null): string | null {
   if (trimmed.startsWith("<")) return trimmed
 
   const match = trimmed.match(/=\s*`([\s\S]*)`;\s*$/)
-  if (!match) return null
-  const payload = match[1] ?? ""
+  const payload = match?.[1] ?? trimmed
+  let html: string | null
   if (payload.startsWith('"') && payload.endsWith('"')) {
     try {
       const parsed: unknown = JSON.parse(payload)
-      return typeof parsed === "string" ? parsed : null
+      html = typeof parsed === "string" ? parsed : null
     } catch {
-      return payload.slice(1, -1)
+      html = payload.slice(1, -1)
     }
+  } else {
+    html = match ? payload : null
   }
-  return payload
+  return html?.trim().startsWith("<") ? html : null
 }
 
 function escapeAttribute(value: string): string {

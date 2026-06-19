@@ -10,7 +10,7 @@ import { CommentSidebar } from "./CommentSidebar"
 import { ReviewPanel } from "./ReviewPanel"
 import { GotoCtx } from "./highlight"
 import { diffIndex } from "./diff"
-import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex } from "./review"
+import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, snapshotChanges } from "./review"
 import { indexToArchText } from "./arch-text"
 import { buildStoryWritingPrompt } from "./story-goals"
 import type {
@@ -33,6 +33,11 @@ import seedData from "./studio-index.json"
 
 const seed = seedData as unknown as StudioIndex
 const SELECTION_STORAGE_KEY = "logos:selection:v1"
+
+export function reviewChangeCount(base: StudioIndex, workspace: StudioIndex): number {
+  const architectureChanged = indexToArchText(base) !== indexToArchText(workspace)
+  return (architectureChanged ? 1 : 0) + snapshotChanges(base, workspace).length
+}
 
 interface DemoOption {
   id: string
@@ -869,7 +874,7 @@ export function App() {
 
   const nComps = view.files.reduce((n, f) => n + componentsOf(f).length, 0)
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
-  const reviewCount = workspaceIndex && indexToArchText(reviewBaseIndex) !== indexToArchText(workspaceIndex) ? 1 : 0
+  const reviewCount = workspaceIndex ? reviewChangeCount(reviewBaseIndex, workspaceIndex) : 0
   const activeDemo = demos.find((d) => d.id === activeDemoId)
   const demoLabel = demoSwitching
     ? `Opening ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`

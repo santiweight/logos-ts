@@ -13,7 +13,7 @@
 // to an arch workspace join its queue unless the caller explicitly asks to fork.
 // Each architecture workspace runs at most one architecture agent at a time.
 
-import { mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync } from "node:fs"
 import { resolve, relative, join, basename, sep } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
 import { promisify } from "node:util"
@@ -29,6 +29,7 @@ import type {
   StoredWorkspacePublication,
   WorkspaceKind,
 } from "./runtime-store.js"
+import { ensureStorySnapshotTestForRoot } from "./story-snapshots.js"
 
 export interface GoalReply {
   author: "agent" | "user"
@@ -132,6 +133,7 @@ type AgentEventCallback = (event: AgentEvent) => void
 type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
 type RunManagerLike = Pick<RunManager, "ensure" | "restart" | "shutdownWorkspace" | "shutdownAll">
 const MAX_ACCEPTANCE_REPAIR_ATTEMPTS = 1
+const INDEX_MAX_BUFFER = 128 * 1024 * 1024
 
 const noopRunManager: RunManagerLike = {
   ensure: () => Promise.resolve(""),
@@ -249,7 +251,7 @@ export class WorkspaceManager {
     if (root === this.projectRoot && this.getIndex) return this.getIndex()
     const args = [resolve(this.logosTsRoot, "src/build-index.ts"), root, "-"]
     return JSON.parse(
-      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 })
+      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
     )
   }
 
@@ -299,8 +301,17 @@ export class WorkspaceManager {
   }
 
   private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
-    const nextIndex = index ?? await this.snapshotIndex(sourceRoot)
-    return this.codeService.createInstance(workspaceId, sourceRoot, nextIndex)
+    const inst = this.codeService.createInstance(workspaceId, sourceRoot, index ?? {})
+    inst.index = await this.snapshotIndex(inst.materializedRoot)
+    return inst
+  }
+
+  private async prepareStorySnapshotsForInstance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
+    const snapshots = await this.runStorySnapshotAcceptance(inst)
+    if (!snapshots.ok) return snapshots
+    await this.codeService.commitWorkspaceChanges(inst, "Logos story snapshots")
+    inst.index = await this.snapshotIndex(inst.materializedRoot)
+    return snapshots
   }
 
   // --- public API ---
@@ -330,7 +341,7 @@ export class WorkspaceManager {
     const wsSbUrl = this.sbManager.get(ws.id)
     if (wsSbUrl) args.push(wsSbUrl)
     inst.index = JSON.parse(
-      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8" })
+      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
     )
     this.save(ws)
     return this.toState(ws)
@@ -601,6 +612,10 @@ export class WorkspaceManager {
     const parentInst = parentWs ? this.activeInstance(parentWs) : null
     const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
     const instance = await this.createInstance(id, sourceRoot, parentInst?.index)
+    const snapshots = await this.prepareStorySnapshotsForInstance(instance)
+    if (!snapshots.ok) {
+      console.warn(`[logos] story snapshot capture failed for ${instance.id}: ${snapshots.output}`)
+    }
 
     const ws: WorkspaceRecord = {
       id,
@@ -875,7 +890,14 @@ export class WorkspaceManager {
     goal.status = "running"
     this.save(ws)
 
-    this.runGoalAgent(ws, goal, onEvent)
+    this.runGoalAgent(ws, goal, onEvent).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      goal.status = "error"
+      this.save(ws)
+      onEvent({ type: "error", goalId: goal.id, message: `failed to start agent: ${message}` })
+      this.publishGoalEvent(goal.id, { type: "error", goalId: goal.id, message: `failed to start agent: ${message}` }, onEvent)
+      this.maybeStartNextQueued(ws.id)
+    })
     return goal.id
   }
 
@@ -895,66 +917,6 @@ export class WorkspaceManager {
   }
 
   private async runGoalAgent(ws: WorkspaceRecord, goal: Goal, onEvent: AgentEventCallback): Promise<void> {
-    const baseInst = this.activeInstance(ws)
-    const workingInst = await this.createInstance(ws.id, baseInst.materializedRoot, baseInst.index)
-    ws.instances[workingInst.id] = workingInst
-    this.goalWorkingInstances.set(goal.id, workingInst.id)
-    this.save(ws)
-    const dir = workingInst.materializedRoot
-
-    // Architecture mode: strip bodies for this single architecture agent.
-    const mode = goal.mode
-    const bodiesFile = resolve(this.runsDir, `${goal.id}.bodies.json`)
-    if (mode === "arch") {
-      onEvent({ type: "status", message: "stripping to architecture view…" })
-      try {
-        await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "strip", dir, bodiesFile], {
-          cwd: this.logosTsRoot, encoding: "utf8",
-        })
-      } catch (e) {
-        onEvent({ type: "stderr", message: "strip failed: " + String(e) })
-      }
-    }
-
-    // Build context
-    onEvent({ type: "status", message: "building architecture context…" })
-    const targets = [goal.component ? `component:${goal.component}` : goal.target]
-    let context = ""
-    try {
-      const { stdout } = await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/context.ts"), dir, "40000", ...targets], {
-        cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
-      })
-      context = stdout
-    } catch (e) {
-      onEvent({ type: "stderr", message: "context build failed: " + String(e) })
-    }
-
-    const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
-    const goalLine = buildGoalLine(goal)
-    const prompt =
-      mode === "arch"
-        ? buildArchPrompt(context, sandbox, goalLine)
-        : buildImplPrompt(context, sandbox, goalLine, buildVerifyNote(!!this.caps.tests))
-
-    // MCP config
-    const mcpConfig: { mcpServers: Record<string, unknown> } = { mcpServers: {} }
-    if (this.caps.tests) {
-      const testRunnerConfig = JSON.stringify({
-        cwd: dir,
-        command: this.caps.tests.command,
-        watch: this.caps.tests.watchDirs,
-        filePattern: "\\.(tsx?|jsx?)$",
-      })
-      mcpConfig.mcpServers["test-runner"] = {
-        command: this.tsx,
-        args: [resolve(this.logosTsRoot, "src/test-runner-mcp.ts"), testRunnerConfig],
-      }
-    }
-    const mcpConfigPath = resolve(this.runsDir, `${goal.id}.mcp.json`)
-    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
-
-    onEvent({ type: "status", message: "starting agent…" })
-
     const collectedEvents: AgentEvent[] = []
     const session = this.sessions.create(goal.id, ws.id)
     let sessionId = session.id
@@ -984,6 +946,79 @@ export class WorkspaceManager {
       onEvent(evt)
       this.publishGoalEvent(goal.id, evt, onEvent)
     }
+
+    recordAndEmit({ type: "status", goalId: goal.id, message: "preparing workspace instance…" })
+
+    let workingInst: WorkspaceInstance
+    try {
+      const baseInst = this.activeInstance(ws)
+      workingInst = await this.createInstance(ws.id, baseInst.materializedRoot, baseInst.index)
+      ws.instances[workingInst.id] = workingInst
+      this.goalWorkingInstances.set(goal.id, workingInst.id)
+      this.save(ws)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      goal.status = "error"
+      this.save(ws)
+      recordAndEmit({ type: "error", goalId: goal.id, message: `failed to prepare workspace instance: ${message}` })
+      this.maybeStartNextQueued(ws.id)
+      return
+    }
+
+    const dir = workingInst.materializedRoot
+
+    // Architecture mode: strip bodies for this single architecture agent.
+    const mode = goal.mode
+    const bodiesFile = resolve(this.runsDir, `${goal.id}.bodies.json`)
+    if (mode === "arch") {
+      recordAndEmit({ type: "status", goalId: goal.id, message: "stripping to architecture view…" })
+      try {
+        await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "strip", dir, bodiesFile], {
+          cwd: this.logosTsRoot, encoding: "utf8",
+        })
+      } catch (e) {
+        recordAndEmit({ type: "stderr", goalId: goal.id, message: "strip failed: " + String(e) })
+      }
+    }
+
+    // Build context
+    recordAndEmit({ type: "status", goalId: goal.id, message: "building architecture context…" })
+    const targets = [goal.component ? `component:${goal.component}` : goal.target]
+    let context = ""
+    try {
+      const { stdout } = await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/context.ts"), dir, "40000", ...targets], {
+        cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+      })
+      context = stdout
+    } catch (e) {
+      recordAndEmit({ type: "stderr", goalId: goal.id, message: "context build failed: " + String(e) })
+    }
+
+    const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
+    const goalLine = buildGoalLine(goal)
+    const prompt =
+      mode === "arch"
+        ? buildArchPrompt(context, sandbox, goalLine)
+        : buildImplPrompt(context, sandbox, goalLine, buildVerifyNote(!!this.caps.tests))
+
+    // MCP config
+    const mcpConfig: { mcpServers: Record<string, unknown> } = { mcpServers: {} }
+    if (this.caps.tests) {
+      const testRunnerConfig = JSON.stringify({
+        cwd: dir,
+        command: this.caps.tests.command,
+        watch: this.caps.tests.watchDirs,
+        filePattern: "\\.(tsx?|jsx?)$",
+      })
+      mcpConfig.mcpServers["test-runner"] = {
+        command: this.tsx,
+        args: [resolve(this.logosTsRoot, "src/test-runner-mcp.ts"), testRunnerConfig],
+      }
+    }
+    const mcpConfigPath = resolve(this.runsDir, `${goal.id}.mcp.json`)
+    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
+
+    recordAndEmit({ type: "status", goalId: goal.id, message: "starting agent…" })
 
     const child = this.spawnAgent(
       "claude",
@@ -1071,10 +1106,65 @@ export class WorkspaceManager {
       const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
       const wsSbUrl = this.sbManager.get(ws.id)
       if (wsSbUrl) reindexArgs.push(wsSbUrl)
-      const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8" })
+      const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
       inst.index = JSON.parse(stdout)
     } catch (e) {
       console.error(`[logos] re-index failed for ${ws.id}:`, e)
+    }
+  }
+
+  private storybookDirsForInstance(inst: WorkspaceInstance): { frontendDir: string; configDir?: string } | null {
+    if (!this.caps.storybook) return null
+    const frontendRel = relative(this.projectRoot, this.caps.storybook.frontendDir)
+    const configRel = relative(this.projectRoot, this.caps.storybook.configDir)
+    return {
+      frontendDir: frontendRel ? resolve(inst.materializedRoot, frontendRel) : inst.materializedRoot,
+      ...(configRel ? { configDir: resolve(inst.materializedRoot, configRel) } : { configDir: inst.materializedRoot }),
+    }
+  }
+
+  private resolveVitestCommand(cwd: string): { command: string; args: string[] } {
+    for (const candidate of [
+      resolve(cwd, "node_modules/.bin/vitest"),
+      resolve(this.logosTsRoot, "node_modules/.bin/vitest"),
+      resolve(this.logosTsRoot, "studio/node_modules/.bin/vitest"),
+    ]) {
+      if (existsSync(candidate)) return { command: candidate, args: [] }
+    }
+    return { command: "npx", args: ["--yes", "vitest"] }
+  }
+
+  private async runStorySnapshotAcceptance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
+    const dirs = this.storybookDirsForInstance(inst)
+    if (!dirs) return { ok: true, output: "no Storybook configured" }
+    this.sbManager.prepare(dirs.frontendDir)
+    const generated = ensureStorySnapshotTestForRoot(inst.materializedRoot, dirs)
+    if (generated.storyCount === 0) return { ok: true, output: "no stories to snapshot" }
+    const vitest = this.resolveVitestCommand(generated.frontendDir)
+    const generatedTestFile = relative(generated.frontendDir, generated.testFile)
+    try {
+      const { stdout, stderr } = await execFileAsync(vitest.command, [
+        ...vitest.args,
+        "run",
+        "--update",
+        "--config",
+        generated.configFile,
+        generatedTestFile,
+      ], {
+        cwd: generated.frontendDir,
+        encoding: "utf8",
+        timeout: 120_000,
+        maxBuffer: 16 * 1024 * 1024,
+        env: {
+          ...process.env,
+          LOGOS_VITEST_CACHE_DIR: resolve(inst.materializedRoot, ".logos_cache", "story-snapshots"),
+          NODE_ENV: "test",
+        },
+      })
+      return { ok: true, output: `${stdout}${stderr}`.trim() }
+    } catch (error) {
+      const e = error as { stdout?: string; stderr?: string; message?: string }
+      return { ok: false, output: `${e.stdout ?? ""}${e.stderr ?? ""}${e.message ?? ""}`.trim() }
     }
   }
 
@@ -1184,6 +1274,31 @@ export class WorkspaceManager {
           message: "auto-resolved generated snapshot conflicts; acceptance tests will regenerate artifacts",
         })
       }
+      onEvent({ type: "status", goalId: goal.id, message: "capturing story snapshots…" })
+      const storySnapshots = await this.runStorySnapshotAcceptance(workingInst)
+      if (!storySnapshots.ok) {
+        const attempts = this.acceptanceRepairAttempts.get(goal.id) ?? 0
+        if (attempts >= MAX_ACCEPTANCE_REPAIR_ATTEMPTS) {
+          goal.status = "error"
+          this.save(ws)
+          onEvent({
+            type: "error",
+            goalId: goal.id,
+            message: `story snapshot acceptance failed after ${attempts} repair attempt${attempts === 1 ? "" : "s"}; stopping automatic retries\n\n${storySnapshots.output}`,
+          })
+          return true
+        }
+        this.acceptanceRepairAttempts.set(goal.id, attempts + 1)
+        onEvent({ type: "status", goalId: goal.id, message: "story snapshot acceptance failed; asking agent to fix…" })
+        if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(storySnapshots.output), workingInst, onEvent)) {
+          goal.status = "error"
+          this.save(ws)
+          onEvent({ type: "error", message: "failed to resume agent after story snapshot failure" })
+          return true
+        }
+        return false
+      }
+
       await this.reindexInstance(ws, workingInst)
       onEvent({ type: "status", goalId: goal.id, message: "running acceptance tests…" })
       const tests = await this.runAcceptanceTests(workingInst)

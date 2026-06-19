@@ -6,6 +6,7 @@ const componentsOf = (file: StudioIndex["files"][number]) =>
 
 export function indexToArchText(index: StudioIndex): string {
   const lines: string[] = []
+  const storySections = new Map<string, string[]>()
 
   for (const f of index.files) {
     const components = componentsOf(f)
@@ -34,8 +35,23 @@ export function indexToArchText(index: StudioIndex): string {
         for (const p of component.propsFields) lines.push(`  ${p.name}: ${p.type}`)
         lines.push(`}`)
       }
+      for (const story of component.stories) {
+        if (story.storyCode == null) continue
+        const file = story.storyFile ?? `${component.name}.stories`
+        if (storySections.has(file)) continue
+        storySections.set(file, [
+          `stories ${file}`,
+          ...story.storyCode.split("\n"),
+        ])
+      }
     }
 
+    lines.push("")
+  }
+
+  for (const [file, section] of [...storySections].sort(([a], [b]) => a.localeCompare(b))) {
+    lines.push(`// ${file}`)
+    lines.push(...section)
     lines.push("")
   }
 

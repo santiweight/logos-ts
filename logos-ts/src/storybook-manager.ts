@@ -178,6 +178,10 @@ export class StorybookManager {
     writeFileSync(previewFile, previewWrapper(`./${basename(userPreview, ext)}`))
   }
 
+  prepare(frontendDir: string): void {
+    this.prepareCommentBridge(frontendDir)
+  }
+
   /**
    * Ensure a Storybook is running for the given workspace.
    * Returns a promise that resolves with the URL once the port is detected.

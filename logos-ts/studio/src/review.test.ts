@@ -166,6 +166,20 @@ describe("snapshot rendering", () => {
     expect(extractSnapshotHtml(snapshot)).toBe('<a href="https://example.com" target="_blank">apply</a>')
   })
 
+  it("extracts HTML from indexed Vitest snapshot payloads", () => {
+    expect(extractSnapshotHtml('"<div class=\\"row\\">Hello</div>"')).toBe('<div class="row">Hello</div>')
+  })
+
+  it("extracts HTML from indexed template payloads with unescaped attribute quotes", () => {
+    expect(extractSnapshotHtml('"<a href="https://example.com" target="_blank">apply</a>"')).toBe(
+      '<a href="https://example.com" target="_blank">apply</a>'
+    )
+  })
+
+  it("does not treat arbitrary indexed snapshot payloads as renderable HTML", () => {
+    expect(extractSnapshotHtml('"plain text"')).toBeNull()
+  })
+
   it("formats snapshot HTML into structural lines", () => {
     expect(formatSnapshot("<div><strong>Before</strong><span>After</span></div>")).toBe([
       "<div>",

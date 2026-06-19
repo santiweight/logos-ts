@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { indexToArchText, lineDiff, type DiffLine } from "./arch-text"
 import { highlightTs } from "./highlight"
 import {
@@ -31,9 +31,6 @@ interface ReviewFileDiff {
 export function ReviewPanel({
   base,
   workspace,
-  storybookUrl,
-  storybookState,
-  onRetryStorybook,
 }: Props) {
   const architectureLines = useMemo(
     () => lineDiff(indexToArchText(base), indexToArchText(workspace)),
@@ -68,12 +65,7 @@ export function ReviewPanel({
         {tab === "architecture" ? (
           <ArchitectureReview lines={architectureLines} stats={architectureStats} />
         ) : (
-          <SnapshotReview
-            changes={snapshotChangesList}
-            storybookUrl={storybookUrl}
-            storybookState={storybookState}
-            onRetryStorybook={onRetryStorybook}
-          />
+          <SnapshotReview changes={snapshotChangesList} />
         )}
       </div>
     </section>
@@ -219,14 +211,8 @@ function DiffRow({ line }: { line: DiffLine }) {
 
 function SnapshotReview({
   changes,
-  storybookUrl,
-  storybookState,
-  onRetryStorybook,
 }: {
   changes: SnapshotChange[]
-  storybookUrl: string
-  storybookState: SbState | null
-  onRetryStorybook: () => void
 }) {
   const [selectedId, setSelectedId] = useState(changes[0]?.id ?? null)
   const selected = changes.find((change) => change.id === selectedId) ?? changes[0] ?? null
@@ -261,9 +247,6 @@ function SnapshotReview({
       </aside>
       <SnapshotDetail
         change={selected}
-        storybookUrl={storybookUrl}
-        storybookState={storybookState}
-        onRetryStorybook={onRetryStorybook}
       />
     </div>
   )
@@ -271,14 +254,8 @@ function SnapshotReview({
 
 function SnapshotDetail({
   change,
-  storybookUrl,
-  storybookState,
-  onRetryStorybook,
 }: {
   change: SnapshotChange
-  storybookUrl: string
-  storybookState: SbState | null
-  onRetryStorybook: () => void
 }) {
   const [view, setView] = useState<CaptureView>("visual")
   const beforeHtml = extractSnapshotHtml(change.beforeSnapshot)
@@ -320,9 +297,6 @@ function SnapshotDetail({
           change={change}
           beforeHtml={beforeHtml}
           afterHtml={afterHtml}
-          storybookUrl={storybookUrl}
-          storybookState={storybookState}
-          onRetryStorybook={onRetryStorybook}
         />
       ) : (
         <pre className="capture-source-diff">
@@ -337,45 +311,11 @@ function VisualComparison({
   change,
   beforeHtml,
   afterHtml,
-  storybookUrl,
-  storybookState,
-  onRetryStorybook,
 }: {
   change: SnapshotChange
   beforeHtml: string | null
   afterHtml: string | null
-  storybookUrl: string
-  storybookState: SbState | null
-  onRetryStorybook: () => void
 }) {
-  const autoStartRequestedRef = useRef(false)
-  const shouldAutoStart = !storybookUrl && storybookState?.status !== "failed"
-  useEffect(() => {
-    if (!shouldAutoStart) {
-      autoStartRequestedRef.current = false
-      return
-    }
-    if (autoStartRequestedRef.current) return
-    autoStartRequestedRef.current = true
-    onRetryStorybook()
-  }, [shouldAutoStart, onRetryStorybook])
-
-  if (!storybookUrl) {
-    return (
-      <div className="capture-preview-unavailable">
-        <strong>
-          {storybookState?.status === "failed" ? "Storybook failed to start." : "Starting Storybook..."}
-        </strong>
-        {storybookState?.error != null && storybookState.error !== "" && (
-          <span>{storybookState.error}</span>
-        )}
-        {storybookState?.status === "failed" && (
-          <button className="sb-retry-btn" onClick={onRetryStorybook}>Retry</button>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className={`capture-visuals ${beforeHtml != null && afterHtml != null ? "split" : "single"}`}>
       {beforeHtml != null && (
@@ -383,7 +323,6 @@ function VisualComparison({
           label="Before"
           html={beforeHtml}
           storyId={change.storyId}
-          storybookUrl={storybookUrl}
         />
       )}
       {afterHtml != null && (
@@ -391,7 +330,6 @@ function VisualComparison({
           label="After"
           html={afterHtml}
           storyId={change.storyId}
-          storybookUrl={storybookUrl}
         />
       )}
       {beforeHtml == null && afterHtml == null && (
@@ -405,46 +343,43 @@ function SnapshotPreview({
   label,
   html,
   storyId,
-  storybookUrl,
 }: {
   label: string
   html: string
   storyId: string | null
-  storybookUrl: string
 }) {
-  const frameRef = useRef<HTMLIFrameElement>(null)
-  const revealTimerRef = useRef<number | null>(null)
-  const [snapshotReady, setSnapshotReady] = useState(false)
-  const src = `${storybookUrl}/iframe.html?id=${encodeURIComponent(storyId ?? "")}&viewMode=story`
-  const sendSnapshot = (reveal = false) => {
-    frameRef.current?.contentWindow?.postMessage({ type: "logos:render-snapshot", html }, "*")
-    if (!reveal) return
-    if (revealTimerRef.current != null) window.clearTimeout(revealTimerRef.current)
-    revealTimerRef.current = window.setTimeout(() => setSnapshotReady(true), 80)
-  }
-
-  useEffect(() => {
-    setSnapshotReady(false)
-    const first = window.setTimeout(() => sendSnapshot(), 400)
-    const second = window.setTimeout(() => sendSnapshot(), 1200)
-    return () => {
-      window.clearTimeout(first)
-      window.clearTimeout(second)
-      if (revealTimerRef.current != null) window.clearTimeout(revealTimerRef.current)
-    }
-  }, [html, src])
+  const srcDoc = useMemo(() => snapshotSrcDoc(html), [html])
 
   return (
     <div className="capture-preview">
       <div className="capture-preview-label">{label}</div>
-      {!snapshotReady && <div className="capture-preview-loading">Loading snapshot...</div>}
       <iframe
-        ref={frameRef}
-        className={`capture-preview-frame ${snapshotReady ? "ready" : "loading"}`}
-        src={src}
+        className="capture-preview-frame"
+        sandbox=""
+        srcDoc={srcDoc}
         title={`${label} ${storyId ?? "captured story"}`}
-        onLoad={() => sendSnapshot(true)}
       />
     </div>
   )
+}
+
+function snapshotSrcDoc(html: string): string {
+  if (/^\s*(?:<!doctype\s+html>|<html[\s>])/i.test(html)) return html
+  return [
+    "<!doctype html>",
+    "<html>",
+    "<head>",
+    "<meta charset=\"utf-8\" />",
+    "<base target=\"_blank\" />",
+    "<style>",
+    "html, body { margin: 0; min-height: 100%; background: #fff; color: #111; font-family: system-ui, sans-serif; }",
+    "body { padding: 16px; box-sizing: border-box; }",
+    "*, *::before, *::after { box-sizing: border-box; }",
+    "</style>",
+    "</head>",
+    "<body>",
+    html,
+    "</body>",
+    "</html>",
+  ].join("")
 }

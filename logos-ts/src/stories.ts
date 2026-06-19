@@ -8,6 +8,7 @@ export interface StoryEntry {
   filePath: string // absolute path to the .stories file
   storiesModule: string // basename without extension, e.g. "JobRow.stories"
   exportName: string // the named export, e.g. "Default"
+  code: string // full source for the story file; helper/meta changes affect rendered stories
   component: string // component name from meta.component
 }
 
@@ -60,23 +61,25 @@ function kebabExport(name: string): string {
   return sanitize(spaced)
 }
 
-function namedExports(sf: SourceFile): string[] {
-  const names: string[] = []
+function namedExports(sf: SourceFile): { name: string; code: string }[] {
+  const exports: { name: string; code: string }[] = []
   for (const stmt of sf.getStatements()) {
     const flags = ts.getCombinedModifierFlags(stmt.compilerNode as unknown as ts.Declaration)
     if (!(flags & ts.ModifierFlags.Export)) continue
     if (Node.isExportAssignment(stmt)) continue
     if (Node.isVariableStatement(stmt)) {
-      for (const decl of stmt.getDeclarationList().getDeclarations()) names.push(decl.getName())
+      for (const decl of stmt.getDeclarationList().getDeclarations()) {
+        exports.push({ name: decl.getName(), code: stmt.getText() })
+      }
     } else if (Node.isFunctionDeclaration(stmt)) {
       const n = stmt.getName()
-      if (n) names.push(n)
+      if (n) exports.push({ name: n, code: stmt.getText() })
     } else if (Node.isClassDeclaration(stmt)) {
       const n = stmt.getName()
-      if (n) names.push(n)
+      if (n) exports.push({ name: n, code: stmt.getText() })
     }
   }
-  return names
+  return exports
 }
 
 // Full index of every story across the project.
@@ -90,12 +93,14 @@ export function indexStories(sourceFiles: SourceFile[]): StoryEntry[] {
     const base = title ?? component
     const storiesModule = basename(sf.getFilePath()).replace(/\.(t|j)sx?$/, "")
 
-    for (const name of namedExports(sf)) {
+    const storyFileCode = sf.getFullText()
+    for (const story of namedExports(sf)) {
       entries.push({
-        id: `${sanitize(base)}--${kebabExport(name)}`,
+        id: `${sanitize(base)}--${kebabExport(story.name)}`,
         filePath: sf.getFilePath(),
         storiesModule,
-        exportName: name,
+        exportName: story.name,
+        code: storyFileCode,
         component,
       })
     }

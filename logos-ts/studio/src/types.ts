@@ -7,6 +7,8 @@ export interface TestRef {
 export interface StoryNode {
   id: string
   exportName: string
+  storyFile?: string
+  storyCode?: string
   snapshot: string | null
 }
 export interface ComponentEntry {
