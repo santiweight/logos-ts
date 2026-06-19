@@ -51,6 +51,10 @@ describe("StorybookCommentLayer", () => {
     await waitFor(() => {
       expect(messages.filter((message) => message["type"] === "logos:story-comment")).toHaveLength(1)
     })
+    expect(messages.find((message) => message["type"] === "logos:story-comment")).toMatchObject({
+      label: "button \"Apply\"",
+      htmlContext: expect.stringContaining("selected: <button"),
+    })
   })
 
   it("restores an in-progress draft sent back from Studio after an iframe reload", async () => {

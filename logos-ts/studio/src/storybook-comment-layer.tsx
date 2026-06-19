@@ -22,6 +22,7 @@ export interface StoryComment {
   author: string
   createdAt: number
   component?: string
+  htmlContext?: string
   mode?: string
   fork?: boolean
   status?: string
@@ -39,6 +40,7 @@ interface Draft {
   text?: string
   mode?: "code" | "arch"
   fork?: boolean
+  htmlContext?: string
   kind?: "new" | "reply"
 }
 
@@ -147,6 +149,26 @@ function describeElement(el: Element): string {
   const tag = el.tagName.toLowerCase()
   const text = el.textContent.trim().replace(/\s+/g, " ").slice(0, 32)
   return text.length > 0 ? `${tag} "${text}"` : `<${tag}>`
+}
+
+function describeHtmlContext(el: Element, root: Element): string {
+  const parts = [`selected: ${elementContextLine(el)}`]
+  const parent = el.parentElement
+  if (parent != null && parent !== root) parts.push(`parent: ${elementContextLine(parent)}`)
+  return parts.join("\n")
+}
+
+function elementContextLine(el: Element): string {
+  const tag = el.tagName.toLowerCase()
+  const attrs = ["role", "aria-label", "title", "class"]
+    .map((name) => {
+      const value = el.getAttribute(name)
+      return value ? `${name}="${value.trim().slice(0, 64)}"` : null
+    })
+    .filter(Boolean)
+    .join(" ")
+  const text = (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 140)
+  return `<${tag}${attrs ? ` ${attrs}` : ""}>${text}</${tag}>`
 }
 
 export function StorybookCommentLayer({
@@ -258,6 +280,7 @@ export function StorybookCommentLayer({
       setDraft({
         selector: cssPath(target, rootEl),
         label: describeElement(target),
+        htmlContext: describeHtmlContext(target, rootEl),
         kind: "new",
       })
       setOpenSelector(null)
@@ -292,12 +315,13 @@ export function StorybookCommentLayer({
 
   const root = rootRef.current
 
-  const sendComment = (selector: string, label: string, p: SubmitPayload) => {
+  const sendComment = (selector: string, label: string, htmlContext: string | undefined, p: SubmitPayload) => {
     postStoryComment({
       storyId: effectiveStoryId,
       ...(effectiveComponent != null ? { component: effectiveComponent } : {}),
       selector,
       label,
+      ...(htmlContext != null ? { htmlContext } : {}),
       text: p.text,
       author: "you",
       mode: p.mode,
@@ -325,6 +349,7 @@ export function StorybookCommentLayer({
       ...(effectiveComponent != null ? { component: effectiveComponent } : {}),
       selector: draftUpdate.selector,
       label: draftUpdate.label,
+      ...(draftUpdate.htmlContext != null ? { htmlContext: draftUpdate.htmlContext } : {}),
       text: p.text,
       mode: p.mode,
       fork: p.fork,
@@ -343,7 +368,8 @@ export function StorybookCommentLayer({
     if (rootEl == null) throw new Error("Cannot attach comment because the story root disappeared.")
     const { selector } = resolveNearestSelector(rootEl, draft.selector)
     const label = selector === draft.selector ? draft.label : rootLabel
-    sendComment(selector, label, p)
+    const htmlContext = selector === draft.selector ? draft.htmlContext : describeHtmlContext(rootEl, rootEl)
+    sendComment(selector, label, htmlContext, p)
     clearCommentDraft()
     setDraft(null)
     setOpenSelector(selector)
@@ -399,7 +425,7 @@ export function StorybookCommentLayer({
                 label={label}
                 comments={list}
                 onAdd={(p) => {
-                  sendComment(selector, label, p)
+                  sendComment(selector, label, describeHtmlContext(nearest.element, root), p)
                   clearCommentDraft()
                   setDraft(null)
                 }}

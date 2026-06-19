@@ -8,6 +8,7 @@ import type { StudioIndex } from "../src/build-index"
 import { authPlugin } from "./server/auth"
 import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
 import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
+import { buildGoalNamePrompt, cleanGoalName, fallbackGoalName, type GoalNameInput } from "../src/goal-naming"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -163,6 +164,37 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
     req.on("data", (c) => (b += c))
     req.on("end", () => res(b))
   })
+}
+
+function goalNamingEnabled(): boolean {
+  return process.env.LOGOS_GOAL_NAMING !== "0"
+    && process.env.NODE_ENV !== "test"
+    && process.env.VITEST !== "true"
+}
+
+async function generateGoalName(input: GoalNameInput, cwd: string): Promise<string> {
+  if (!goalNamingEnabled()) return fallbackGoalName(input)
+
+  const prompt = buildGoalNamePrompt(input)
+  try {
+    const raw = await new Promise<string>((resolveOutput, rejectOutput) => {
+      execFile("claude", ["-p", prompt, "--model", "haiku", "--output-format", "text"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 4_000,
+        maxBuffer: 8 * 1024,
+      }, (err, stdout) => {
+        if (err) {
+          rejectOutput(err)
+          return
+        }
+        resolveOutput(stdout)
+      })
+    })
+    return cleanGoalName(raw) ?? fallbackGoalName(input)
+  } catch {
+    return fallbackGoalName(input)
+  }
 }
 
 function studioApi(runtime: StudioRuntime): Plugin {
@@ -373,10 +405,21 @@ function studioApi(runtime: StudioRuntime): Plugin {
         if (req.method === "POST" && sub.endsWith("/goals")) {
           const wsId = sub.replace(/\/goals$/, "")
           const body = JSON.parse((await readBody(req)) || "{}")
+          const namingInput: GoalNameInput = {
+            text: String(body.text ?? ""),
+            label: String(body.label ?? ""),
+            target: String(body.target ?? ""),
+            mode: body.mode === "arch" ? "arch" : "code",
+            component: typeof body.component === "string" ? body.component : null,
+            storyId: typeof body.storyId === "string" ? body.storyId : null,
+            selector: typeof body.selector === "string" ? body.selector : null,
+            htmlContext: typeof body.htmlContext === "string" ? body.htmlContext : null,
+          }
+          const goalName = await generateGoalName(namingInput, PROJECT_ROOT)
           const result = await wsMgr.addGoal(wsId, {
             id: `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
             text: String(body.text ?? ""),
-            label: String(body.label ?? ""),
+            label: goalName,
             target: String(body.target ?? ""),
             mode: body.mode === "arch" ? "arch" : "code",
             createdAt: Date.now(),

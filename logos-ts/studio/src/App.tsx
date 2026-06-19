@@ -657,7 +657,7 @@ export function App() {
   const addGoal = useCallback(
     async (
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
-      extra?: { storyId?: string; selector?: string; component?: string },
+      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string },
     ) => {
       // 1. Code forks are created client-side. Arch isolation is owned by the backend.
       let wsId = fork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
@@ -819,7 +819,7 @@ export function App() {
         return
       }
       if (e.data?.type !== "logos:story-comment") return
-      const { storyId, component, selector, label, text, mode, fork } = e.data
+      const { storyId, component, selector, label, text, mode, fork, htmlContext } = e.data
       if (typeof storyId === "string" && storyId) {
         setStoryCommentDrafts((current) => {
           const next = { ...current }
@@ -833,7 +833,7 @@ export function App() {
         })
       }
       const target = component ? `component:${component}` : `story:${storyId}`
-      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component })
+      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component, htmlContext })
     }
     window.addEventListener("message", onMsg)
     return () => window.removeEventListener("message", onMsg)

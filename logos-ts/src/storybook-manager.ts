@@ -361,6 +361,7 @@ export interface StoryComment {
   author?: string
   createdAt: number
   component?: string
+  htmlContext?: string
   mode?: string
   status?: string
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
@@ -444,6 +445,26 @@ export function describe(el: Element): string {
   const text = (el.textContent ?? "").trim().replace(/\\s+/g, " ").slice(0, 32)
   return text ? \`\${tag} "\${text}"\` : \`<\${tag}>\`
 }
+
+export function describeHtmlContext(el: Element, root: Element): string {
+  const parts = ["selected: " + elementContextLine(el)]
+  const parent = el.parentElement
+  if (parent && parent !== root) parts.push("parent: " + elementContextLine(parent))
+  return parts.join("\\n")
+}
+
+function elementContextLine(el: Element): string {
+  const tag = el.tagName.toLowerCase()
+  const attrs = ["role", "aria-label", "title", "class"]
+    .map((name) => {
+      const value = el.getAttribute(name)
+      return value ? name + "=\\"" + value.trim().slice(0, 64) + "\\"" : null
+    })
+    .filter(Boolean)
+    .join(" ")
+  const text = (el.textContent ?? "").trim().replace(/\\s+/g, " ").slice(0, 140)
+  return "<" + tag + (attrs ? " " + attrs : "") + ">" + text + "</" + tag + ">"
+}
 `
 
 const STORYBOOK_COMMENT_LAYER = `import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -456,6 +477,7 @@ import {
   onGoalsFromStudio,
   cssPath,
   describe,
+  describeHtmlContext,
   resolve,
   resolveNearest,
   type StoryComment,
@@ -483,6 +505,7 @@ interface Draft {
   text?: string
   mode?: "code" | "arch"
   fork?: boolean
+  htmlContext?: string
   kind?: "new" | "reply"
 }
 
@@ -595,6 +618,7 @@ export function CommentLayer({
       setDraft({
         selector: cssPath(target, rootRef.current),
         label: describe(target),
+        htmlContext: describeHtmlContext(target, rootRef.current),
         kind: "new",
       })
       setOpenSelector(null)
@@ -629,12 +653,13 @@ export function CommentLayer({
 
   const root = rootRef.current
 
-  const sendComment = (selector: string, label: string, payload: SubmitPayload) => {
+  const sendComment = (selector: string, label: string, htmlContext: string | undefined, payload: SubmitPayload) => {
     postComment({
       storyId,
       component,
       selector,
       label,
+      ...(htmlContext ? { htmlContext } : {}),
       text: payload.text,
       author: "you",
       mode: payload.mode,
@@ -662,6 +687,7 @@ export function CommentLayer({
       component,
       selector: draftUpdate.selector,
       label: draftUpdate.label,
+      ...(draftUpdate.htmlContext ? { htmlContext: draftUpdate.htmlContext } : {}),
       text: payload.text,
       mode: payload.mode,
       fork: payload.fork,
@@ -680,7 +706,8 @@ export function CommentLayer({
     if (!rootEl) throw new Error("Cannot attach comment because the story root disappeared.")
     const { selector } = resolveNearest(rootEl, draft.selector)
     const label = selector === draft.selector ? draft.label : rootLabel
-    sendComment(selector, label, payload)
+    const htmlContext = selector === draft.selector ? draft.htmlContext : describeHtmlContext(rootEl, rootEl)
+    sendComment(selector, label, htmlContext, payload)
     clearCommentDraft()
     setDraft(null)
     setOpenSelector(selector)
@@ -734,7 +761,7 @@ export function CommentLayer({
                   comments={list}
                   workspaceKind={workspaceKind}
                   onAdd={(payload) => {
-                    sendComment(selector, label, payload)
+                    sendComment(selector, label, describeHtmlContext(nearest.element, root), payload)
                     clearCommentDraft()
                     setDraft(null)
                   }}

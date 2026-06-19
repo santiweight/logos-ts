@@ -147,6 +147,37 @@ describe("ChangesRail", () => {
     expect(spinners).toHaveLength(1)
   })
 
+  it("shows only the generated summary for goal rows", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "feature",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [
+          {
+            id: "g-1",
+            text: "make this bold",
+            label: "Make Bold",
+            target: "component:X",
+            mode: "code" as const,
+            createdAt: 1000,
+            status: "pending" as const,
+          },
+        ],
+      },
+    ]
+
+    render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
+
+    expect(screen.getByText("Make Bold")).toBeInTheDocument()
+    expect(screen.queryByText("make this bold")).not.toBeInTheDocument()
+    expect(screen.queryByText("pending")).not.toBeInTheDocument()
+  })
+
   it("does not open a merge request context menu from workspace rows", () => {
     const onCreatePullRequest = vi.fn()
     const workspaces = [

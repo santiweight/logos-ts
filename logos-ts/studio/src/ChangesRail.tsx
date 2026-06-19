@@ -194,17 +194,14 @@ export function ChangesRail({
                       <div
                         key={g.id}
                         className={`rail-row comment ${gSelected ? "active" : ""}`}
+                        title={`${g.label} (${g.status})`}
                         onClick={(e) => {
                           e.stopPropagation()
                           onSelectGoal(g.id)
                         }}
                       >
                         <div className="rail-main">
-                          <div className="rail-target">
-                            {g.label}
-                            <span className={`goal-status ${g.status}`}>{g.status}</span>
-                          </div>
-                          <div className="rail-comment">{g.text}</div>
+                          <div className="rail-target">{g.label}</div>
                         </div>
                       </div>
                     )
