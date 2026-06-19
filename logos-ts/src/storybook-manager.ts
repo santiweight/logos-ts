@@ -169,7 +169,14 @@ export class StorybookManager {
 
     if (existsSync(previewFile)) {
       const previewText = readFileSync(previewFile, "utf8")
-      if (previewText.includes("withLogosComments")) return
+      if (existsSync(userPreview) && previewText.includes("withLogosComments")) {
+        const userPreviewText = readFileSync(userPreview, "utf8")
+        if (hasDirectLogosCommentLayer(userPreviewText)) {
+          writeFileSync(previewFile, userPreviewText)
+          return
+        }
+      }
+      if (previewText.includes("withLogosComments") || hasDirectLogosCommentLayer(previewText)) return
       if (!existsSync(userPreview)) renameSync(previewFile, userPreview)
     } else {
       writeFileSync(userPreview, "const preview = {}\nexport default preview\n")
@@ -334,6 +341,10 @@ export class StorybookManager {
   }
 }
 
+function hasDirectLogosCommentLayer(previewText: string): boolean {
+  return previewText.includes("StorybookCommentLayer") || previewText.includes("storybook-comment-layer")
+}
+
 function previewWrapper(userPreviewImport: string): string {
   return `import * as userPreviewModule from "${userPreviewImport}"
 import { withLogosComments } from "./.logos/CommentLayer"
@@ -371,9 +382,16 @@ export interface StoryComment {
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
 }
 
+function clientEventId(): string {
+  const randomUUID = globalThis.crypto?.randomUUID
+  return typeof randomUUID === "function"
+    ? randomUUID.call(globalThis.crypto)
+    : "logos-story-comment-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)
+}
+
 export function postComment(comment: Omit<StoryComment, "id" | "createdAt"> & { fork?: boolean }): void {
   try {
-    window.parent?.postMessage({ type: "logos:story-comment", ...comment }, "*")
+    window.parent?.postMessage({ type: "logos:story-comment", clientEventId: clientEventId(), ...comment }, "*")
   } catch {}
 }
 
@@ -513,6 +531,26 @@ interface Draft {
   kind?: "new" | "reply"
 }
 
+interface LogosCommentLayerWindow extends Window {
+  __LOGOS_STORY_COMMENT_LAYER_ACTIVE__?: string
+}
+
+const LOGOS_STORY_COMMENT_LAYER_ID = "logos-comment-layer-" + Math.random().toString(36).slice(2)
+
+function claimStoryCommentLayer(): boolean {
+  const owner = window as LogosCommentLayerWindow
+  if (owner.__LOGOS_STORY_COMMENT_LAYER_ACTIVE__ != null) return false
+  owner.__LOGOS_STORY_COMMENT_LAYER_ACTIVE__ = LOGOS_STORY_COMMENT_LAYER_ID
+  return true
+}
+
+function releaseStoryCommentLayer(): void {
+  const owner = window as LogosCommentLayerWindow
+  if (owner.__LOGOS_STORY_COMMENT_LAYER_ACTIVE__ === LOGOS_STORY_COMMENT_LAYER_ID) {
+    delete owner.__LOGOS_STORY_COMMENT_LAYER_ACTIVE__
+  }
+}
+
 function componentNameFromContext(context: any): string | undefined {
   const component = context.component
   return component?.displayName ?? component?.name ?? context.title?.split("/").at(-1)
@@ -533,6 +571,7 @@ export function CommentLayer({
   component?: string
   children: React.ReactNode
 }) {
+  const [layerActive] = useState(claimStoryCommentLayer)
   const rootRef = useRef<HTMLDivElement>(null)
   const [enabled, setEnabled] = useState(true)
   const [workspaceKind, setWorkspaceKind] = useState<"code" | "arch">("code")
@@ -545,6 +584,12 @@ export function CommentLayer({
   const bump = useCallback(() => setTick((t) => t + 1), [])
 
   useEffect(() => {
+    if (!layerActive) return undefined
+    return releaseStoryCommentLayer
+  }, [layerActive])
+
+  useEffect(() => {
+    if (!layerActive) return undefined
     postReady(storyId)
     return onGoalsFromStudio((goals, kind, drafts) => {
       setComments(goals.filter((goal) => goal.storyId === storyId))
@@ -560,20 +605,21 @@ export function CommentLayer({
         }
       }
     })
-  }, [storyId])
+  }, [layerActive, storyId])
 
   useEffect(() => {
+    if (!layerActive) return
     setDraft(null)
     setOpenSelector(null)
     setHover(null)
-  }, [storyId])
+  }, [layerActive, storyId])
 
   const inStory = useCallback((el: Element | null): el is Element => {
     return !!(el && rootRef.current?.contains(el) && !el.closest("[data-comment-ui]"))
   }, [])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!layerActive || !enabled) return
     const onDown = (event: KeyboardEvent) => {
       if (event.key === "Alt" || event.ctrlKey || event.metaKey) setAltDown(true)
     }
@@ -595,10 +641,10 @@ export function CommentLayer({
       window.removeEventListener("keyup", onUp)
       window.removeEventListener("blur", onBlur)
     }
-  }, [enabled])
+  }, [enabled, layerActive])
 
   useEffect(() => {
-    if (!enabled || !altDown) return
+    if (!layerActive || !enabled || !altDown) return
     const onMove = (event: MouseEvent) => {
       const target = event.target as Element
       if (!inStory(target)) {
@@ -609,10 +655,10 @@ export function CommentLayer({
     }
     document.addEventListener("mousemove", onMove)
     return () => document.removeEventListener("mousemove", onMove)
-  }, [enabled, altDown, inStory])
+  }, [enabled, altDown, inStory, layerActive])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!layerActive || !enabled) return
     const onClick = (event: MouseEvent) => {
       if (!event.altKey && !event.ctrlKey && !event.metaKey) return
       const target = event.target as Element
@@ -629,9 +675,10 @@ export function CommentLayer({
     }
     document.addEventListener("click", onClick, true)
     return () => document.removeEventListener("click", onClick, true)
-  }, [enabled, inStory])
+  }, [enabled, inStory, layerActive])
 
   useEffect(() => {
+    if (!layerActive) return
     window.addEventListener("scroll", bump, true)
     window.addEventListener("resize", bump)
     const ro = new ResizeObserver(bump)
@@ -641,7 +688,7 @@ export function CommentLayer({
       window.removeEventListener("resize", bump)
       ro.disconnect()
     }
-  }, [bump])
+  }, [bump, layerActive])
 
   const groups = useMemo(() => {
     const map = new Map<string, StoryComment[]>()
@@ -716,6 +763,8 @@ export function CommentLayer({
     setDraft(null)
     setOpenSelector(selector)
   }
+
+  if (!layerActive) return <>{children}</>
 
   return (
     <>

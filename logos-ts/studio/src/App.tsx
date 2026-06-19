@@ -121,6 +121,31 @@ export function resolveAgentPanelGoalId(
   return selected?.type === "goal" ? selected.id : latestAgentGoalId
 }
 
+function storyCommentClientEventId(data: unknown): string | null {
+  if (typeof data !== "object" || data == null) return null
+  const record = data as Record<string, unknown>
+  if (record["type"] !== "logos:story-comment") return null
+  const clientEventId = record["clientEventId"]
+  return typeof clientEventId === "string" && clientEventId.length > 0 ? clientEventId : null
+}
+
+export function createStoryCommentEventDedupe(limit = 200): (data: unknown) => boolean {
+  const seen = new Set<string>()
+  const order: string[] = []
+  return (data: unknown): boolean => {
+    const clientEventId = storyCommentClientEventId(data)
+    if (clientEventId == null) return true
+    if (seen.has(clientEventId)) return false
+    seen.add(clientEventId)
+    order.push(clientEventId)
+    while (order.length > limit) {
+      const oldest = order.shift()
+      if (oldest != null) seen.delete(oldest)
+    }
+    return true
+  }
+}
+
 export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
@@ -185,6 +210,7 @@ export function App() {
   const [storybookStates, setStorybookStates] = useState<Record<string, SbState>>({})
   const [storyCommentEditing, setStoryCommentEditing] = useState<Record<string, boolean>>({})
   const [storyCommentDrafts, setStoryCommentDrafts] = useState<Record<string, unknown>>({})
+  const acceptStoryCommentEvent = useRef(createStoryCommentEventDedupe()).current
   const [runTargets, setRunTargets] = useState<RunTarget[]>([])
   const [runUrls, setRunUrls] = useState<Record<string, string>>({})
   const [runStates, setRunStates] = useState<Record<string, RunState>>({})
@@ -785,6 +811,7 @@ export function App() {
         return
       }
       if (e.data?.type !== "logos:story-comment") return
+      if (!acceptStoryCommentEvent(e.data)) return
       const { storyId, component, selector, label, text, mode, fork, htmlContext } = e.data
       if (typeof storyId === "string" && storyId) {
         setStoryCommentDrafts((current) => {
@@ -803,7 +830,7 @@ export function App() {
     }
     window.addEventListener("message", onMsg)
     return () => window.removeEventListener("message", onMsg)
-  }, [addGoal, postStoryGoals])
+  }, [acceptStoryCommentEvent, addGoal, postStoryGoals])
 
   // Push goals to Storybook iframes so they can render pins
   useEffect(() => {

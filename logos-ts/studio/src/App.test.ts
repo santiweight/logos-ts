@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, resolveAgentPanelGoalId, reviewChangeCount } from "./App"
+import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, reviewChangeCount } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -112,5 +112,35 @@ describe("resolveAgentPanelGoalId", () => {
 
   it("returns no goal when there is neither a selected goal nor an agent-run goal", () => {
     expect(resolveAgentPanelGoalId(null, null)).toBeNull()
+  })
+})
+
+describe("createStoryCommentEventDedupe", () => {
+  it("accepts one story comment per client event id", () => {
+    const accept = createStoryCommentEventDedupe()
+    const event = {
+      type: "logos:story-comment",
+      clientEventId: "event-1",
+      storyId: "jobcard--default",
+      selector: ":scope",
+      text: "Make this clearer",
+    }
+
+    expect(accept(event)).toBe(true)
+    expect(accept({ ...event })).toBe(false)
+    expect(accept({ ...event, clientEventId: "event-2" })).toBe(true)
+  })
+
+  it("does not reject legacy story comment messages without an event id", () => {
+    const accept = createStoryCommentEventDedupe()
+    const event = {
+      type: "logos:story-comment",
+      storyId: "jobcard--default",
+      selector: ":scope",
+      text: "Make this clearer",
+    }
+
+    expect(accept(event)).toBe(true)
+    expect(accept(event)).toBe(true)
   })
 })

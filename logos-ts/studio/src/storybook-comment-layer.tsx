@@ -53,6 +53,26 @@ interface StoryDraft extends Draft {
   kind: "new" | "reply"
 }
 
+interface LogosCommentLayerWindow extends Window {
+  __LOGOS_STORY_COMMENT_LAYER_ACTIVE__?: string
+}
+
+const LOGOS_STORY_COMMENT_LAYER_ID = `logos-comment-layer-${Math.random().toString(36).slice(2)}`
+
+function claimStoryCommentLayer(): boolean {
+  const owner = window as LogosCommentLayerWindow
+  if (owner.__LOGOS_STORY_COMMENT_LAYER_ACTIVE__ != null) return false
+  owner.__LOGOS_STORY_COMMENT_LAYER_ACTIVE__ = LOGOS_STORY_COMMENT_LAYER_ID
+  return true
+}
+
+function releaseStoryCommentLayer(): void {
+  const owner = window as LogosCommentLayerWindow
+  if (owner.__LOGOS_STORY_COMMENT_LAYER_ACTIVE__ === LOGOS_STORY_COMMENT_LAYER_ID) {
+    delete owner.__LOGOS_STORY_COMMENT_LAYER_ACTIVE__
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
@@ -69,9 +89,16 @@ function portableStoryIdentity(): { storyId: string; component?: string } | null
   }
 }
 
+function clientEventId(): string {
+  const randomUUID = globalThis.crypto?.randomUUID
+  return typeof randomUUID === "function"
+    ? randomUUID.call(globalThis.crypto)
+    : `logos-story-comment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
 function postStoryComment(comment: Omit<StoryComment, "id" | "createdAt">): void {
   try {
-    const message = { type: "logos:story-comment", ...comment }
+    const message = { type: "logos:story-comment", clientEventId: clientEventId(), ...comment }
     window.parent.postMessage(message, "*")
   } catch {}
 }
@@ -180,6 +207,7 @@ export function StorybookCommentLayer({
   component?: string
   children: React.ReactNode
 }) {
+  const [layerActive] = useState(claimStoryCommentLayer)
   const rootRef = useRef<HTMLDivElement>(null)
   const [enabled, setEnabled] = useState(true)
   const [comments, setComments] = useState<StoryComment[]>([])
@@ -196,6 +224,12 @@ export function StorybookCommentLayer({
   const effectiveComponent = identity?.component ?? component
 
   useEffect(() => {
+    if (!layerActive) return undefined
+    return releaseStoryCommentLayer
+  }, [layerActive])
+
+  useEffect(() => {
+    if (!layerActive) return undefined
     return onGoalsFromStudio((goals, kind, drafts) => {
       setWorkspaceKind(kind)
       setComments(goals.filter((g) => g.storyId === effectiveStoryId))
@@ -210,18 +244,20 @@ export function StorybookCommentLayer({
         }
       }
     })
-  }, [effectiveStoryId])
+  }, [effectiveStoryId, layerActive])
 
   useEffect(() => {
+    if (!layerActive) return
     setDraft(null)
     setOpenSelector(null)
     setHover(null)
     resetPopoverOffset()
-  }, [effectiveStoryId, resetPopoverOffset])
+  }, [effectiveStoryId, layerActive, resetPopoverOffset])
 
   useEffect(() => {
+    if (!layerActive) return
     resetPopoverOffset()
-  }, [draft?.selector, draft?.kind, openSelector, resetPopoverOffset])
+  }, [draft?.selector, draft?.kind, layerActive, openSelector, resetPopoverOffset])
 
   const inStory = useCallback((el: Element | null): el is Element => {
     if (el == null) return false
@@ -230,7 +266,7 @@ export function StorybookCommentLayer({
   }, [])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!layerActive || !enabled) return
     const onDown = (e: KeyboardEvent) => {
       if (e.key === "Alt") setAltDown(true)
     }
@@ -252,10 +288,10 @@ export function StorybookCommentLayer({
       window.removeEventListener("keyup", onUp)
       window.removeEventListener("blur", onBlur)
     }
-  }, [enabled])
+  }, [enabled, layerActive])
 
   useEffect(() => {
-    if (!enabled || !altDown) return
+    if (!layerActive || !enabled || !altDown) return
     const onMove = (e: MouseEvent) => {
       const target = e.target as Element
       if (!inStory(target)) {
@@ -266,10 +302,10 @@ export function StorybookCommentLayer({
     }
     document.addEventListener("mousemove", onMove)
     return () => document.removeEventListener("mousemove", onMove)
-  }, [enabled, altDown, inStory])
+  }, [enabled, altDown, inStory, layerActive])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!layerActive || !enabled) return
     const onClick = (e: MouseEvent) => {
       if (!e.altKey) return
       const target = e.target as Element
@@ -287,9 +323,10 @@ export function StorybookCommentLayer({
     }
     document.addEventListener("click", onClick, true)
     return () => document.removeEventListener("click", onClick, true)
-  }, [enabled, inStory])
+  }, [enabled, inStory, layerActive])
 
   useEffect(() => {
+    if (!layerActive) return
     window.addEventListener("scroll", bump, true)
     window.addEventListener("resize", bump)
     const ro = new ResizeObserver(bump)
@@ -299,7 +336,7 @@ export function StorybookCommentLayer({
       window.removeEventListener("resize", bump)
       ro.disconnect()
     }
-  }, [bump])
+  }, [bump, layerActive])
 
   const groups = useMemo(() => {
     const map = new Map<string, StoryComment[]>()
@@ -374,6 +411,8 @@ export function StorybookCommentLayer({
     setDraft(null)
     setOpenSelector(selector)
   }
+
+  if (!layerActive) return <>{children}</>
 
   return (
     <>

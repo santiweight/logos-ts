@@ -7,6 +7,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   Object.defineProperty(window, "parent", { value: window, configurable: true })
+  delete (window as typeof window & { __LOGOS_STORY_COMMENT_LAYER_ACTIVE__?: string }).__LOGOS_STORY_COMMENT_LAYER_ACTIVE__
 })
 
 beforeEach(() => {
@@ -24,6 +25,38 @@ function lastPosted(type: string): Record<string, unknown> | undefined {
 }
 
 describe("StorybookCommentLayer", () => {
+  it("keeps only one active overlay when comment layers are nested", async () => {
+    const messages: Record<string, unknown>[] = []
+    Object.defineProperty(window, "parent", {
+      value: {
+        postMessage: vi.fn((message: unknown) => {
+          messages.push(message as Record<string, unknown>)
+        }),
+      },
+      configurable: true,
+    })
+
+    render(
+      <StorybookCommentLayer storyId="jobcard--default" component="JobCard">
+        <StorybookCommentLayer storyId="jobcard--default" component="JobCard">
+          <section>
+            <button type="button">Apply</button>
+          </section>
+        </StorybookCommentLayer>
+      </StorybookCommentLayer>
+    )
+
+    expect(screen.getAllByRole("button", { name: "Comments" })).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }), { altKey: true })
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Make this clearer" } })
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+
+    await waitFor(() => {
+      expect(messages.filter((message) => message["type"] === "logos:story-comment")).toHaveLength(1)
+    })
+  })
+
   it("emits one story comment for one submit when nested in a frame", async () => {
     const messages: Record<string, unknown>[] = []
     const parent = {
