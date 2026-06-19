@@ -161,10 +161,10 @@ export function App() {
   const [railOpen, setRailOpen] = useState(true)
   const [railWidth, setRailWidth] = useState(280)
   const [sidebarFilters, setSidebarFilters] = useState({
-    functions: true,
+    functions: false,
     classes: true,
     components: true,
-    types: true,
+    types: false,
   })
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
