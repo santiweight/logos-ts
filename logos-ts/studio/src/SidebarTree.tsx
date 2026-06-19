@@ -15,7 +15,7 @@ import type {
   View,
 } from "./types"
 
-type Kind = "dir" | "file" | "fn" | "cls" | "type" | "comp" | "story" | "section" | "run"
+type Kind = "dir" | "file" | "fn" | "cls" | "type" | "comp" | "story" | "code" | "section" | "run"
 
 interface SNode {
   id: string
@@ -204,6 +204,12 @@ export function buildData(
       const componentNode = (comp: ComponentEntry): SNode => {
       const compTarget = `component:${comp.name}`
       const componentStatus = diff[compTarget] ?? (comp.propsName ? diff[`props:${comp.propsName}`] : undefined)
+      const codeNode: SNode = {
+        id: `code:${f.file}:${comp.name}`,
+        name: "code",
+        kind: "code" as Kind,
+        sel: { file: f.file, component: comp.name, view: "code" },
+      }
       const storyNodes: SNode[] = comp.stories.map((s) => {
         const sc = storyCount(s.id)
         return {
@@ -214,7 +220,11 @@ export function buildData(
           sel: { file: f.file, component: comp.name, view: "story" as View, storyId: s.id },
         }
       })
+      const children = [codeNode, ...storyNodes]
       const totalComments = rollUpComments(storyNodes)
+      const defaultSel = comp.stories.length > 0
+        ? { file: f.file, component: comp.name, view: "story" as View, storyId: comp.stories[0]!.id }
+        : { file: f.file, component: comp.name, view: "code" as View }
       return {
         id: `comp:${f.file}:${comp.name}`,
         name: comp.name,
@@ -224,8 +234,8 @@ export function buildData(
         ...(componentStatus ? { status: componentStatus } : {}),
         stories: comp.stories.length,
         comments: totalComments,
-        sel: { file: f.file, component: comp.name, view: "code" },
-        ...(storyNodes.length ? { children: storyNodes } : {}),
+        sel: defaultSel,
+        children,
       }
       }
 
@@ -377,6 +387,7 @@ const GLYPH: Record<Kind, ReactNode> = {
   type: "T",
   comp: ICONS.comp,
   story: ICONS.story,
+  code: ICONS.fn,
   section: "§",
   run: "▶",
 }
@@ -463,7 +474,7 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
 const rowHeight = (node: NodeApi<SNode>) => {
   const k = node.data.kind
   if (k === "section") return 22
-  if (k === "fn" || k === "cls" || k === "story") return 20
+  if (k === "fn" || k === "cls" || k === "story" || k === "code") return 20
   return 22
 }
 
@@ -522,11 +533,15 @@ export function SidebarTree({
       ? `story:${selection.storyId}`
       : (() => {
           const fe = files.find((f) => f.file === selection.file)
+          if (fe && selection.component && selection.view === "code") return `code:${fe.file}:${selection.component}`
           if (fe && selection.component) return `comp:${fe.file}:${selection.component}`
           if (fe && componentsOf(fe).length === 1) {
             const component = componentsOf(fe)[0]!
             const others = fe.items.filter((it) => it.name !== component.name)
-            if (others.length === 0) return `comp:${component.name}`
+            if (others.length === 0) {
+              if (selection.view === "code") return `code:${fe.file}:${component.name}`
+              return `comp:${component.name}`
+            }
           }
           if (fe && componentsOf(fe).length === 0 && fe.items.length === 1) {
             const baseName = (fe.file.split("/").pop() ?? "").replace(/\.(tsx?|jsx?)$/, "")
