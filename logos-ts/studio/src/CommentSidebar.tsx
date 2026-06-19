@@ -1,7 +1,5 @@
-/* eslint-disable no-restricted-syntax */
-import type { Goal, GoalReply, Selection } from "./types"
-
-const statusOrder: Record<string, number> = { running: 0, pending: 1, done: 2, error: 3 }
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react"
+import type { Goal, GoalReply } from "./types"
 
 function statusIcon(status: string): string {
   switch (status) {
@@ -38,91 +36,93 @@ function Reply({ r }: { r: GoalReply }) {
   )
 }
 
-function ThreadCard({
+export function CommentSidebar({
   goal,
   running,
-  onClick,
-}: {
-  goal: Goal
-  running: boolean
-  onClick: () => void
-}) {
-  const status = running ? "running" : goal.status
-  return (
-    <div className={`cs-card ${statusClass(status)}`} onClick={onClick}>
-      <div className="cs-card-header">
-        <span className={`cs-status-icon ${statusClass(status)}`}>
-          {status === "running" ? <span className="ag-spin">{statusIcon(status)}</span> : statusIcon(status)}
-        </span>
-        <span className="cs-target">{goal.label}</span>
-        <span className={`cs-badge ${statusClass(status)}`}>{status}</span>
-      </div>
-      <div className="cs-card-body">
-        <div className="cs-comment-text">{goal.text}</div>
-        {goal.replies?.map((r, i) => <Reply key={i} r={r} />)}
-      </div>
-    </div>
-  )
-}
-
-function symbolTargets(symbol: string): string[] {
-  return [`fn:${symbol}`, `type:${symbol}`, `cls:${symbol}`]
-}
-
-function goalMatchesSelection(g: Goal, sel: Selection, fileTargets: ReadonlySet<string>): boolean {
-  if (sel.storyId != null && sel.storyId.length > 0 && g.storyId === sel.storyId) return true
-  if (sel.component != null && sel.component.length > 0 && g.target === `component:${sel.component}`) return true
-  if (sel.symbol != null && sel.symbol.length > 0 && symbolTargets(sel.symbol).includes(g.target)) return true
-  if (g.target === `file:${sel.file}`) return true
-  if (sel.storyId == null && sel.component == null && sel.symbol == null && fileTargets.has(g.target)) return true
-  return false
-}
-
-export function CommentSidebar({
-  goals,
-  selection,
-  fileTargets,
-  runningGoals,
   onNavigate,
-  onClose,
+  onReply,
+  onResizeStart,
 }: {
-  goals: Goal[]
-  selection: Selection
-  fileTargets: ReadonlySet<string>
-  runningGoals: ReadonlySet<string>
+  goal: Goal | null
+  running: boolean
   onNavigate: (goal: Goal) => void
-  onClose: () => void
+  onReply: (goalId: string, text: string) => void
+  onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
 }) {
-  const filtered = goals.filter((g) => goalMatchesSelection(g, selection, fileTargets))
+  const [reply, setReply] = useState("")
+  const status = running ? "running" : goal?.status ?? "idle"
+  const canReply = goal != null
+    && !running
+    && goal.sessionId != null
+    && goal.sessionId.length > 0
+    && (goal.status === "done" || goal.status === "error")
 
-  const sorted = [...filtered].sort((a, b) => {
-    const sa = runningGoals.has(a.id) ? 0 : (statusOrder[a.status] ?? 4)
-    const sb = runningGoals.has(b.id) ? 0 : (statusOrder[b.status] ?? 4)
-    if (sa !== sb) return sa - sb
-    return b.createdAt - a.createdAt
-  })
+  useEffect(() => {
+    setReply("")
+  }, [goal?.id])
 
-  const heading = selection.component ?? selection.file.split("/").pop() ?? "Comments"
+  const submitReply = () => {
+    if (!goal || !canReply) return
+    const text = reply.trim()
+    if (!text) return
+    onReply(goal.id, text)
+    setReply("")
+  }
 
   return (
     <aside className="comment-sidebar">
+      <div className="comment-resize" title="Resize thread panel" onPointerDown={onResizeStart} />
       <div className="cs-header">
-        <span className="cs-title">{heading} ({filtered.length})</span>
-        <button className="cs-close" onClick={onClose} title="Close">✕</button>
+        <span className="cs-title">Thread</span>
       </div>
-      <div className="cs-list">
-        {sorted.length === 0 && (
-          <div className="cs-empty">No comments on this file.</div>
-        )}
-        {sorted.map((g) => (
-          <ThreadCard
-            key={g.id}
-            goal={g}
-            running={runningGoals.has(g.id)}
-            onClick={() => onNavigate(g)}
-          />
-        ))}
-      </div>
+
+      {goal == null ? (
+        <div className="cs-empty">
+          Select a goal from a workspace.
+        </div>
+      ) : (
+        <>
+          <div className="cs-thread-head">
+            <div className="cs-card-header">
+              <span className={`cs-status-icon ${statusClass(status)}`}>
+                {status === "running" ? <span className="ag-spin">{statusIcon(status)}</span> : statusIcon(status)}
+              </span>
+              <span className="cs-target">{goal.label}</span>
+              <span className={`cs-badge ${statusClass(status)}`}>{status}</span>
+            </div>
+            <button className="cs-target-link" onClick={() => onNavigate(goal)}>
+              Show target
+            </button>
+          </div>
+
+          <div className="cs-list">
+            <div className="cs-message cs-message-user">
+              <div className="cs-message-meta">
+                <span>you</span>
+                <span>{formatTime(goal.createdAt)}</span>
+              </div>
+              <div className="cs-comment-text">{goal.text}</div>
+            </div>
+
+            {goal.replies?.map((r, i) => <Reply key={i} r={r} />)}
+          </div>
+
+          <div className="cs-composer">
+            <textarea
+              value={reply}
+              disabled={!canReply}
+              onChange={(e) => setReply(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitReply()
+              }}
+              placeholder={canReply ? "Continue the thread..." : "Thread can continue after an agent session finishes."}
+            />
+            <button type="button" disabled={!canReply || reply.trim().length === 0} onClick={submitReply}>
+              Send
+            </button>
+          </div>
+        </>
+      )}
     </aside>
   )
 }

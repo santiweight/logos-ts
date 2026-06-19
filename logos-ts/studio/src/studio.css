@@ -21,20 +21,19 @@ body {
 
 .studio {
   --rail-width: 280px;
+  --comment-width: 320px;
   display: grid;
   grid-template-rows: 24px 1fr 22px;
   grid-template-areas:
     "topbar topbar topbar topbar"
-    "rail sidebar main comments"
+    "rail comments sidebar main"
     "status status status status";
   height: 100vh;
   min-height: 0;
   overflow: hidden;
 }
-.studio.rail-open { grid-template-columns: var(--rail-width) 260px 1fr 0px; }
-.studio.rail-closed { grid-template-columns: 44px 260px 1fr 0px; }
-.studio.rail-open.comments-open { grid-template-columns: var(--rail-width) 260px 1fr 300px; }
-.studio.rail-closed.comments-open { grid-template-columns: 44px 260px 1fr 300px; }
+.studio.rail-open { grid-template-columns: var(--rail-width) var(--comment-width) 260px 1fr; }
+.studio.rail-closed { grid-template-columns: 44px var(--comment-width) 260px 1fr; }
 
 .topbar {
   grid-area: topbar;
@@ -1420,16 +1419,45 @@ body.resizing-rail * {
   font-size: 11px;
 }
 
-/* ── Comment Sidebar ─────────────────────────────────── */
+/* ---- Thread panel ---- */
 
 .comment-sidebar {
   grid-area: comments;
+  position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--sidebar);
+  background: #18181c;
   border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   overflow: hidden;
   min-height: 0;
+}
+.comment-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 12;
+  width: 6px;
+  cursor: col-resize;
+}
+.comment-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: transparent;
+}
+.comment-resize:hover::after,
+body.resizing-comments .comment-resize::after {
+  background: rgba(74,158,255,0.55);
+}
+body.resizing-comments,
+body.resizing-comments * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .cs-header {
@@ -1462,7 +1490,7 @@ body.resizing-rail * {
 .cs-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 8px 10px;
 }
 
 .cs-empty {
@@ -1475,12 +1503,16 @@ body.resizing-rail * {
 .cs-card {
   border-bottom: 1px solid var(--border);
 }
+.cs-thread-head {
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: #1d1d22;
+}
 .cs-card-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px 4px;
-  cursor: pointer;
+  padding: 8px 10px 6px;
   user-select: none;
 }
 .cs-card-header:hover { background: rgba(255,255,255,0.03); }
@@ -1518,6 +1550,36 @@ body.resizing-rail * {
 .cs-badge.cs-running { color: var(--accent); border: 1px solid var(--accent); }
 .cs-badge.cs-pending { color: var(--muted); border: 1px solid var(--border); }
 
+.cs-target-link {
+  margin: 0 10px 8px 30px;
+  padding: 2px 0;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.cs-target-link:hover { color: #cbe4ff; text-decoration: underline; }
+
+.cs-message {
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.cs-message-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.cs-message-meta span:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .cs-card-body {
   padding: 2px 10px 8px 30px;
   cursor: pointer;
@@ -1533,9 +1595,10 @@ body.resizing-rail * {
 }
 
 .cs-reply {
-  margin-top: 6px;
-  padding-left: 8px;
+  margin-top: 8px;
+  padding: 0 0 10px 8px;
   border-left: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 .cs-reply.cs-reply-agent {
   border-left-color: var(--accent);
@@ -1558,4 +1621,44 @@ body.resizing-rail * {
   margin-top: 2px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.cs-composer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  background: #151518;
+}
+.cs-composer textarea {
+  min-height: 76px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 7px 8px;
+  color: var(--text);
+  background: #101013;
+  font: inherit;
+  line-height: 1.4;
+}
+.cs-composer textarea:disabled {
+  color: var(--muted);
+  background: #141417;
+}
+.cs-composer button {
+  align-self: flex-end;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  background: rgba(255,255,255,0.06);
+  font: inherit;
+  cursor: pointer;
+}
+.cs-composer button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.55;
 }

@@ -1,86 +1,89 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CommentSidebar } from "./CommentSidebar"
-import type { Goal, Selection } from "./types"
+import type { Goal } from "./types"
 
 afterEach(cleanup)
 
-function goal(overrides: Partial<Goal> & { target: string; text: string }): Goal {
+function goal(overrides: Partial<Goal> = {}): Goal {
   return {
-    id: overrides.target,
-    label: overrides.target,
+    id: "goal-1",
+    label: "Make Postings Bold",
+    text: "make this bold",
+    target: "component:JobList",
     mode: "code",
     createdAt: 1000,
-    status: "pending",
+    status: "done",
+    sessionId: "session-1",
+    replies: [{ author: "agent", text: "Updated postings typography.", createdAt: 2000 }],
     ...overrides,
   }
 }
 
-function renderSidebar({
-  goals,
-  selection = { file: "src/math.ts", view: "code" },
-  fileTargets = new Set(["file:src/math.ts"]),
+function renderPanel({
+  selectedGoal = goal(),
+  running = false,
   onNavigate = vi.fn(),
+  onReply = vi.fn(),
+  onResizeStart = vi.fn(),
 }: {
-  goals: Goal[]
-  selection?: Selection
-  fileTargets?: ReadonlySet<string>
+  selectedGoal?: Goal | null
+  running?: boolean
   onNavigate?: (goal: Goal) => void
-}) {
+  onReply?: (goalId: string, text: string) => void
+  onResizeStart?: () => void
+} = {}) {
   render(
     <CommentSidebar
-      goals={goals}
-      selection={selection}
-      fileTargets={fileTargets}
-      runningGoals={new Set()}
+      goal={selectedGoal}
+      running={running}
       onNavigate={onNavigate}
-      onClose={() => {}}
+      onReply={onReply}
+      onResizeStart={onResizeStart}
     />
   )
-  return { onNavigate }
+  return { onNavigate, onReply }
 }
 
 describe("CommentSidebar", () => {
-  it("includes function comments in the file-level comments list", () => {
-    renderSidebar({
-      goals: [
-        goal({ target: "fn:add", text: "Check this function" }),
-        goal({ target: "fn:otherFileFn", text: "Do not show this" }),
-      ],
-      fileTargets: new Set(["file:src/math.ts", "fn:add"]),
-    })
+  it("shows an empty state when no goal is selected", () => {
+    renderPanel({ selectedGoal: null })
 
-    expect(screen.getByText("Check this function")).toBeTruthy()
-    expect(screen.queryByText("Do not show this")).toBeNull()
-    expect(screen.getByText("math.ts (1)")).toBeTruthy()
+    expect(screen.getByText("Select a goal from a workspace.")).toBeInTheDocument()
   })
 
-  it("keeps component selection scoped to the selected component", () => {
-    renderSidebar({
-      goals: [
-        goal({ target: "component:FactTable", text: "Component comment" }),
-        goal({ target: "fn:add", text: "Function comment" }),
-      ],
-      selection: { file: "src/math.ts", component: "FactTable", view: "code" },
-      fileTargets: new Set(["file:src/math.ts", "component:FactTable", "fn:add"]),
-    })
+  it("renders exactly the selected goal thread", () => {
+    renderPanel()
 
-    expect(screen.getByText("Component comment")).toBeTruthy()
-    expect(screen.queryByText("Function comment")).toBeNull()
-    expect(screen.getByText("FactTable (1)")).toBeTruthy()
+    expect(screen.getByText("Make Postings Bold")).toBeInTheDocument()
+    expect(screen.getByText("make this bold")).toBeInTheDocument()
+    expect(screen.getByText("Updated postings typography.")).toBeInTheDocument()
   })
 
-  it("navigates when a function comment card is clicked", () => {
+  it("navigates to the selected goal target", () => {
     const onNavigate = vi.fn()
-    const functionGoal = goal({ target: "fn:add", text: "Open add" })
-    renderSidebar({
-      goals: [functionGoal],
-      fileTargets: new Set(["file:src/math.ts", "fn:add"]),
-      onNavigate,
-    })
+    const selectedGoal = goal()
+    renderPanel({ selectedGoal, onNavigate })
 
-    fireEvent.click(screen.getByText("Open add"))
+    fireEvent.click(screen.getByText("Show target"))
 
-    expect(onNavigate).toHaveBeenCalledWith(functionGoal)
+    expect(onNavigate).toHaveBeenCalledWith(selectedGoal)
+  })
+
+  it("continues a completed goal thread", () => {
+    const onReply = vi.fn()
+    renderPanel({ onReply })
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Make the count bold too" } })
+    fireEvent.click(screen.getByText("Send"))
+
+    expect(onReply).toHaveBeenCalledWith("goal-1", "Make the count bold too")
+  })
+
+  it("does not allow replies before an agent session exists", () => {
+    renderPanel({ selectedGoal: goal({ status: "pending", sessionId: null }) })
+
+    expect(screen.getByRole("textbox")).toBeDisabled()
+    expect(screen.getByText("Send")).toBeDisabled()
   })
 })

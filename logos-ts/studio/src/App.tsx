@@ -63,32 +63,6 @@ function componentsOf(file: FileEntry | undefined): ComponentEntry[] {
   return file.components?.length ? file.components : file.component ? [file.component] : []
 }
 
-function commentTargetsOf(file: FileEntry | undefined): ReadonlySet<string> {
-  const targets = new Set<string>()
-  if (file == null) return targets
-  targets.add(`file:${file.file}`)
-  for (const component of componentsOf(file)) {
-    targets.add(`component:${component.name}`)
-    if (component.propsName != null && component.propsName.length > 0) targets.add(`props:${component.propsName}`)
-  }
-  for (const item of file.items) {
-    if (item.kind === "function") {
-      targets.add(`fn:${item.name}`)
-      for (const test of item.tests) targets.add(`test:${test.file}::${test.name}`)
-    } else if (item.kind === "type") {
-      targets.add(`type:${item.name}`)
-    } else {
-      targets.add(`cls:${item.name}`)
-      for (const test of item.tests) targets.add(`test:${test.file}::${test.name}`)
-      for (const method of item.methods) {
-        targets.add(`method:${item.name}.${method.name}`)
-        for (const test of method.tests) targets.add(`test:${test.file}::${test.name}`)
-      }
-    }
-  }
-  return targets
-}
-
 function defaultSelection(): Selection {
   return {
     file: "",
@@ -151,7 +125,6 @@ export function App() {
   const [popup, setPopup] = useState<{ target: string; label: string; x: number; y: number } | null>(
     null
   )
-  const [commentSidebarOpen, setCommentSidebarOpen] = useState(false)
   const [demoMenuOpen, setDemoMenuOpen] = useState(false)
   const [demos, setDemos] = useState<DemoOption[]>([])
   const [activeDemoId, setActiveDemoId] = useState<string>("")
@@ -160,6 +133,7 @@ export function App() {
   // ---- workspaces (forks) ----
   const [railOpen, setRailOpen] = useState(true)
   const [railWidth, setRailWidth] = useState(280)
+  const [commentWidth, setCommentWidth] = useState(320)
   const [sidebarFilters, setSidebarFilters] = useState({
     functions: false,
     classes: true,
@@ -525,26 +499,6 @@ export function App() {
   const agentEvents = agentGoalId ? goalEvents[agentGoalId] ?? [] : []
   const agentRunning = agentGoalId ? effectiveRunningGoals.has(agentGoalId) : false
 
-  const loadSessionForGoal = useCallback(async (goalId: string) => {
-    if (goalEvents[goalId]?.length) {
-      setAgentGoalId(goalId)
-      setAgentOpen(true)
-      return
-    }
-    try {
-      const res = await fetch(`/api/sessions?goal=${goalId}`)
-      if (!res.ok) { setAgentGoalId(goalId); setAgentOpen(true); return }
-      const data = await res.json() as { events: { type: string; payload: string }[] }
-      const msgs: AgentMsg[] = data.events.map((e) => JSON.parse(e.payload) as AgentMsg)
-      setGoalEvents((prev) => ({ ...prev, [goalId]: msgs }))
-      setAgentGoalId(goalId)
-      setAgentOpen(true)
-    } catch {
-      setAgentGoalId(goalId)
-      setAgentOpen(true)
-    }
-  }, [goalEvents])
-
   const runAgent = useCallback(
     (wsId: string, goalId?: string) => {
       if (!goalId) return
@@ -679,11 +633,13 @@ export function App() {
       const goal = result as Goal & { workspaceId?: string }
       const goalWsId = goal.workspaceId ?? wsId
       await refreshWorkspaces()
+      setSelected({ type: "goal", id: goal.id })
+      if (goalWsId !== activeWorkspaceId) await openWorkspace(goalWsId)
 
       // 3. Trigger agent to process the queue
       runAgent(goalWsId, goal.id)
     },
-    [activeWorkspaceId, createWorkspace, refreshWorkspaces, runAgent]
+    [activeWorkspaceId, createWorkspace, refreshWorkspaces, openWorkspace, runAgent]
   )
 
   const continueGoal = useCallback(
@@ -855,7 +811,6 @@ export function App() {
   }, [postStoryGoals])
 
   const currentFile = view.files.find((f) => f.file === selection.file) ?? view.files[0]
-  const currentFileCommentTargets = useMemo(() => commentTargetsOf(currentFile), [currentFile])
 
   function setView(viewName: View) {
     if (!currentFile) return
@@ -873,6 +828,44 @@ export function App() {
     }
   }
 
+  const navigateToGoal = useCallback((goal: Goal) => {
+    const target = goal.target
+    const comp = target.startsWith("component:") ? target.slice("component:".length) : null
+    const file = target.startsWith("file:") ? target.slice("file:".length) : null
+    const symbolPrefix = target.startsWith("fn:")
+      ? "fn:"
+      : target.startsWith("type:")
+        ? "type:"
+        : target.startsWith("cls:")
+          ? "cls:"
+          : null
+    const symbol = symbolPrefix != null ? target.slice(symbolPrefix.length) : null
+    if (comp != null && comp.length > 0) {
+      const f = view.files.find((f) => f.component?.name === comp || f.components?.some((c) => c.name === comp))
+      if (f) {
+        if (goal.storyId) {
+          setSelection({ file: f.file, component: comp, view: "story", storyId: goal.storyId })
+        } else {
+          setSelection({ file: f.file, component: comp, view: "code" })
+        }
+      }
+    } else if (symbol != null && symbol.length > 0) {
+      const f = view.files.find((f) => f.items.some((item) => item.name === symbol))
+      if (f) setSelection({ file: f.file, symbol, view: "code" })
+    } else if (file != null && file.length > 0) {
+      setSelection({ file, view: "code" })
+    }
+  }, [view.files])
+
+  const selectedGoalId = selected?.type === "goal" ? selected.id : null
+  const selectedGoal = selectedGoalId != null
+    ? activeGoals.find((goal) => goal.id === selectedGoalId) ?? null
+    : null
+  const selectGoal = useCallback((id: string) => {
+    setSelected({ type: "goal", id })
+    const goal = activeGoals.find((candidate) => candidate.id === id)
+    if (goal) navigateToGoal(goal)
+  }, [activeGoals, navigateToGoal])
 
   const nComps = view.files.reduce((n, f) => n + componentsOf(f).length, 0)
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
@@ -881,7 +874,7 @@ export function App() {
   const demoLabel = demoSwitching
     ? `Opening ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
     : activeDemo?.name ?? "Custom"
-  const studioStyle = { "--rail-width": `${railWidth}px` } as CSSProperties
+  const studioStyle = { "--rail-width": `${railWidth}px`, "--comment-width": `${commentWidth}px` } as CSSProperties
   const startRailResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     const startX = e.clientX
@@ -899,6 +892,23 @@ export function App() {
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", onUp)
   }, [railWidth])
+  const startCommentResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = commentWidth
+    document.body.classList.add("resizing-comments")
+    const onMove = (move: PointerEvent) => {
+      const next = startWidth + move.clientX - startX
+      setCommentWidth(Math.min(520, Math.max(240, next)))
+    }
+    const onUp = () => {
+      document.body.classList.remove("resizing-comments")
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }, [commentWidth])
 
   if (!activeWorkspaceId || !workspaceIndex) {
     return (
@@ -917,7 +927,7 @@ export function App() {
   }
 
   return (
-    <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}${commentSidebarOpen ? " comments-open" : ""}`} style={studioStyle}>
+    <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`} style={studioStyle}>
       <header className="topbar">
         <div className="topbar-menu">
           <button
@@ -960,11 +970,19 @@ export function App() {
         }}
         onFork={onFork}
         onCreatePullRequest={createWorkspacePullRequest}
-        onSelectGoal={(id) => { setSelected({ type: "goal", id }); loadSessionForGoal(id) }}
+        onSelectGoal={selectGoal}
         onDeleteWorkspace={deleteWorkspace}
         onDeleteGoal={deleteGoal}
         runningGoals={effectiveRunningGoals}
         onResizeStart={startRailResize}
+      />
+
+      <CommentSidebar
+        goal={selectedGoal}
+        running={selectedGoal != null && effectiveRunningGoals.has(selectedGoal.id)}
+        onNavigate={navigateToGoal}
+        onReply={continueGoal}
+        onResizeStart={startCommentResize}
       />
 
       <aside className="sidebar">
@@ -1080,44 +1098,6 @@ export function App() {
       </main>
       </GotoCtx.Provider>
 
-      {commentSidebarOpen && (
-        <CommentSidebar
-          goals={activeGoals}
-          selection={selection}
-          fileTargets={currentFileCommentTargets}
-          runningGoals={effectiveRunningGoals}
-          onNavigate={(goal) => {
-            const target = goal.target
-            const comp = target.startsWith("component:") ? target.slice("component:".length) : null
-            const file = target.startsWith("file:") ? target.slice("file:".length) : null
-            const symbolPrefix = target.startsWith("fn:")
-              ? "fn:"
-              : target.startsWith("type:")
-                ? "type:"
-                : target.startsWith("cls:")
-                  ? "cls:"
-                  : null
-            const symbol = symbolPrefix != null ? target.slice(symbolPrefix.length) : null
-            if (comp != null && comp.length > 0) {
-              const f = view.files.find((f) => f.component?.name === comp || f.components?.some((c) => c.name === comp))
-              if (f) {
-                if (goal.storyId) {
-                  setSelection({ file: f.file, component: comp, view: "story", storyId: goal.storyId })
-                } else {
-                  setSelection({ file: f.file, component: comp, view: "code" })
-                }
-              }
-            } else if (symbol != null && symbol.length > 0) {
-              const f = view.files.find((f) => f.items.some((item) => item.name === symbol))
-              if (f) setSelection({ file: f.file, symbol, view: "code" })
-            } else if (file != null && file.length > 0) {
-              setSelection({ file, view: "code" })
-            }
-          }}
-          onClose={() => setCommentSidebarOpen(false)}
-        />
-      )}
-
       <footer className="statusbar">
         <span>
           {svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 11)}{" "}
@@ -1125,10 +1105,6 @@ export function App() {
           <a className="refresh-btn" onClick={() => reindexWorkspace()} title="Re-index workspace from disk">↻</a>
         </span>
         <span>
-          <span className="agent-toggle" onClick={() => setCommentSidebarOpen((o) => !o)}>
-            {`💬 comments${totalGoals ? ` (${totalGoals})` : ""}`}
-          </span>
-          {"   "}
           <span className="agent-toggle" onClick={() => setAgentOpen((o) => !o)}>
             {agentRunning ? (
               <>
