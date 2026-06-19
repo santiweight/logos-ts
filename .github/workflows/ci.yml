@@ -34,6 +34,9 @@ jobs:
       - name: Typecheck Logos core
         run: npm run typecheck --prefix logos-ts
 
+      - name: Install Playwright browsers
+        run: npm exec --prefix logos-ts -- playwright install --with-deps chromium
+
       - name: Test Logos core
         run: npm test --prefix logos-ts -- --run
 
