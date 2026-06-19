@@ -8,6 +8,7 @@ import {
 } from "ts-morph"
 import { relative } from "node:path"
 import type { DependencyTree } from "./model.js"
+import { normalizeTypeImportPaths } from "./type-text.js"
 
 export interface TestRef {
   name: string
@@ -47,10 +48,15 @@ export interface BackendFile {
 const isTestFile = (p: string) => /\.test\.(t|j)sx?$/.test(p)
 const inProject = (p: string) => !p.includes("/node_modules/")
 
-function signatureOf(fn: FunctionDeclaration | MethodDeclaration, name: string): string {
+function cleanTypeText(text: string, absRoot: string, contextFile: string): string {
+  return normalizeTypeImportPaths(text, absRoot, contextFile)
+}
+
+function signatureOf(fn: FunctionDeclaration | MethodDeclaration, name: string, absRoot: string): string {
+  const contextFile = fn.getSourceFile().getFilePath()
   const ps = fn
     .getParameters()
-    .map((p) => `${p.getNameNode().getText()}: ${p.getTypeNode()?.getText() ?? "any"}`)
+    .map((p) => `${p.getNameNode().getText()}: ${cleanTypeText(p.getTypeNode()?.getText() ?? "any", absRoot, contextFile)}`)
     .join(", ")
   let ret = fn.getReturnTypeNode()?.getText()
   if (!ret) {
@@ -60,6 +66,7 @@ function signatureOf(fn: FunctionDeclaration | MethodDeclaration, name: string):
       ret = ""
     }
   }
+  ret = cleanTypeText(ret, absRoot, contextFile)
   return `${name}(${ps})${ret ? `: ${ret}` : ""}`
 }
 
@@ -170,6 +177,7 @@ export function extractBackend(
   const files: BackendFile[] = []
   for (const sf of sfs) {
     const file = relative(absRoot, sf.getFilePath())
+    const cleanText = (text: string) => normalizeTypeImportPaths(text, absRoot, sf.getFilePath())
     if (isTestFile(sf.getFilePath()) || /\.stories\.(t|j)sx?$/.test(file)) continue
 
     const items: (BackendFn | BackendClass)[] = []
@@ -180,8 +188,8 @@ export function extractBackend(
       items.push({
         kind: "function",
         name,
-        signature: signatureOf(fd, name),
-        code: fd.getText(),
+        signature: signatureOf(fd, name, absRoot),
+        code: cleanText(fd.getText()),
         deps: shortDeps(tree, q),
         tests: attachments.get(q) ?? [],
       })
@@ -194,22 +202,22 @@ export function extractBackend(
         const mq = `${file}#${cname}.${m.getName()}`
         return {
           name: m.getName(),
-          signature: signatureOf(m, m.getName()),
-          code: m.getText(),
+          signature: signatureOf(m, m.getName(), absRoot),
+          code: cleanText(m.getText()),
           tests: attachments.get(mq) ?? [],
         }
       })
       items.push({
         kind: "class",
         name: cname,
-        fields: cd.getProperties().map((p) => ({ name: p.getName(), type: p.getTypeNode()?.getText() ?? "any" })),
+        fields: cd.getProperties().map((p) => ({ name: p.getName(), type: cleanText(p.getTypeNode()?.getText() ?? "any") })),
         methods,
         deps: shortDeps(tree, cq).filter((d) => !methods.some((m) => d === `${cname}.${m.name}` || d === m.name)),
         tests: attachments.get(cq) ?? [],
-        code: cd.getText(),
+        code: cleanText(cd.getText()),
       })
     }
-    if (items.length) files.push({ file, code: sf.getFullText(), items })
+    if (items.length) files.push({ file, code: cleanText(sf.getFullText()), items })
   }
   files.sort((a, b) => a.file.localeCompare(b.file))
   return files

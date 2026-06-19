@@ -1,9 +1,20 @@
 /* eslint-disable no-restricted-syntax, @typescript-eslint/no-unnecessary-type-assertion */
-import { Node, SyntaxKind, type SourceFile, type Statement } from "ts-morph"
+import {
+  Node,
+  SyntaxKind,
+  type FunctionDeclaration,
+  type MethodDeclaration,
+  type ParameterDeclaration,
+  type SourceFile,
+  type Statement,
+  type Type,
+  type VariableDeclaration,
+} from "ts-morph"
 import { writeFileSync, readFileSync, unlinkSync } from "node:fs"
 import { relative, resolve } from "node:path"
 import { loadProject } from "./project.js"
 import { computeTestAttachments, type TestRef } from "./backend.js"
+import { normalizeTypeImportPaths } from "./type-text.js"
 
 interface Rec {
   name: string
@@ -45,6 +56,54 @@ const allSources = (project: ReturnType<typeof loadProject>) =>
 
 const nonTests = (sfs: SourceFile[]) => sfs.filter(s => !isTest(s.getFilePath()))
 const onlyTests = (sfs: SourceFile[]) => sfs.filter(s => isTest(s.getFilePath()))
+
+function cleanTypeText(text: string, dir: string, node: Node): string {
+  return normalizeTypeImportPaths(text, dir, node.getSourceFile().getFilePath())
+}
+
+function inferredTypeText(node: Node & { getType(): Type }, dir: string): string {
+  try {
+    return cleanTypeText(node.getType().getText(node), dir, node)
+  } catch {
+    return "any"
+  }
+}
+
+function ensureParameterType(param: ParameterDeclaration, dir: string) {
+  const typeNode = param.getTypeNode()
+  if (typeNode) {
+    const text = typeNode.getText()
+    const normalized = cleanTypeText(text, dir, param)
+    if (normalized !== text) param.setType(normalized)
+  } else {
+    param.setType(inferredTypeText(param, dir))
+  }
+}
+
+function ensureCallableTypes(fn: FunctionDeclaration | MethodDeclaration, dir: string) {
+  for (const param of fn.getParameters()) {
+    ensureParameterType(param, dir)
+  }
+  const returnType = fn.getReturnTypeNode()
+  if (returnType) {
+    const text = returnType.getText()
+    const normalized = cleanTypeText(text, dir, fn)
+    if (normalized !== text) fn.setReturnType(normalized)
+  } else {
+    fn.setReturnType(cleanTypeText(fn.getReturnType().getText(fn), dir, fn))
+  }
+}
+
+function ensureVariableType(decl: VariableDeclaration, dir: string) {
+  const typeNode = decl.getTypeNode()
+  if (typeNode) {
+    const text = typeNode.getText()
+    const normalized = cleanTypeText(text, dir, decl)
+    if (normalized !== text) decl.setType(normalized)
+  } else {
+    decl.setType(inferredTypeText(decl, dir))
+  }
+}
 
 function declQName(stmt: Statement, file: string): string | null {
   if (Node.isFunctionDeclaration(stmt)) {
@@ -217,6 +276,7 @@ function strip(dir: string, recFile: string) {
   for (const sf of srcFiles) {
     for (const fd of sf.getFunctions()) {
       if (!uniq(fd.getName()) || !fd.hasBody() || rendersJsx(fd)) continue
+      ensureCallableTypes(fd, dir)
       recs.push({ name: fd.getName()!, text: fd.getText() })
       fd.removeBody()
       fd.setHasDeclareKeyword(true)
@@ -226,12 +286,15 @@ function strip(dir: string, recFile: string) {
       const name = decls[0]?.getName()
       if (decls.length !== 1 || !decls[0] || !Node.isIdentifier(decls[0].getNameNode())) continue
       if (!uniq(name) || !decls[0].getInitializer() || rendersJsx(vs)) continue
+      const init = decls[0].getInitializer()
+      if (init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init))) ensureVariableType(decls[0], dir)
       recs.push({ name: name!, text: vs.getText() })
       for (const d of decls) if (d.getInitializer()) d.removeInitializer()
       vs.setHasDeclareKeyword(true)
     }
     for (const cd of sf.getClasses()) {
       if (!uniq(cd.getName()) || rendersJsx(cd)) continue
+      for (const m of cd.getMethods()) ensureCallableTypes(m, dir)
       recs.push({ name: cd.getName()!, text: cd.getText() })
       for (const m of cd.getMethods()) if (m.hasBody()) m.removeBody()
       for (const c of cd.getConstructors()) if (c.hasBody()) c.removeBody()
@@ -251,6 +314,10 @@ function strip(dir: string, recFile: string) {
       if (!qname || !injections[qname]?.length) continue
       sf.insertStatements(i, injections[qname]!.map(t => t.line))
     }
+  }
+
+  for (const sf of srcFiles) {
+    sf.replaceWithText(normalizeTypeImportPaths(sf.getFullText(), dir, sf.getFilePath()))
   }
 
   project.saveSync()

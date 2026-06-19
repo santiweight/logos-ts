@@ -203,6 +203,39 @@ export function move(p: Point, d: Direction): Point {
 // Multi-file cases
 // ---------------------------------------------------------------------------
 describe("multi-file roundtrip", () => {
+  it("normalizes absolute import types in stripped declarations", () => {
+    const taxonomy = `export interface JobTaxonomy {
+  needsReview: boolean
+}
+
+export function classifyJobTaxonomy(): JobTaxonomy {
+  return { needsReview: false }
+}
+`
+    const { dir, recFile } = tracked(setupFixture({
+      "taxonomy.ts": taxonomy,
+    }))
+    writeFileSync(join(dir, "classify.ts"), `import { classifyJobTaxonomy } from "./taxonomy"
+
+export function classifyJobRow(): import("${dir}/taxonomy").JobTaxonomy {
+  return classifyJobTaxonomy()
+}
+`)
+
+    run("strip", dir, recFile)
+
+    const stripped = readFile(dir, "classify.ts")
+    expect(stripped).toContain('import("./taxonomy").JobTaxonomy')
+    expect(stripped).not.toContain(dir)
+
+    run("splice", dir, recFile)
+
+    const restored = readFile(dir, "classify.ts")
+    expect(restored).toContain('classifyJobRow(): import("./taxonomy").JobTaxonomy')
+    expect(restored).toContain("return classifyJobTaxonomy()")
+    expect(restored).not.toContain(dir)
+  })
+
   it("cross-file imports preserved", () => {
     const types = `export interface User {
   id: string

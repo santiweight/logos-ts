@@ -7,6 +7,7 @@ import { indexStories, type StoryEntry } from "./stories.js"
 import { buildDependencyTree } from "./dependencies.js"
 import { computeTestAttachments, extractBackend } from "./backend.js"
 import { loadStorySnapshotStore } from "./story-snapshots.js"
+import { normalizeTypeImportPaths } from "./type-text.js"
 
 export interface StoryNode {
   id: string
@@ -69,13 +70,14 @@ function directPropsName(typeText: string): string | undefined {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(typeText) ? typeText : undefined
 }
 
-function propsFieldsFromTypeLiteral(node: TypeNode | undefined): { name: string; type: string }[] {
+function propsFieldsFromTypeLiteral(node: TypeNode | undefined, absRoot: string): { name: string; type: string }[] {
   if (!node || !Node.isTypeLiteral(node)) return []
+  const contextFile = node.getSourceFile().getFilePath()
   return node.getMembers().flatMap((member) => {
     if (!Node.isPropertySignature(member)) return []
     return [{
       name: `${member.getName()}${member.hasQuestionToken() ? "?" : ""}`,
-      type: member.getTypeNode()?.getText() ?? "any",
+      type: normalizeTypeImportPaths(member.getTypeNode()?.getText() ?? "any", absRoot, contextFile),
     }]
   })
 }
@@ -83,15 +85,17 @@ function propsFieldsFromTypeLiteral(node: TypeNode | undefined): { name: string;
 function propsFromNamedType(
   sf: SourceFile,
   propsName: string | undefined,
+  absRoot: string,
 ): { propsCode?: string; propsFields: { name: string; type: string }[] } {
   if (!propsName) return { propsFields: [] }
+  const clean = (text: string) => normalizeTypeImportPaths(text, absRoot, sf.getFilePath())
   const iface = sf.getInterface(propsName)
   if (iface) {
     return {
-      propsCode: iface.getText(),
+      propsCode: clean(iface.getText()),
       propsFields: iface.getProperties().map((p) => ({
         name: `${p.getName()}${p.hasQuestionToken() ? "?" : ""}`,
-        type: p.getTypeNode()?.getText() ?? "any",
+        type: clean(p.getTypeNode()?.getText() ?? "any"),
       })),
     }
   }
@@ -99,8 +103,8 @@ function propsFromNamedType(
   const typeNode = alias?.getTypeNode()
   if (alias) {
     return {
-      propsCode: alias.getText(),
-      propsFields: propsFieldsFromTypeLiteral(typeNode),
+      propsCode: clean(alias.getText()),
+      propsFields: propsFieldsFromTypeLiteral(typeNode, absRoot),
     }
   }
   return { propsFields: [] }
@@ -121,18 +125,19 @@ function componentFromFunction(sf: SourceFile, absRoot: string, fn: ReturnType<S
   if (!name || !isComponentName(name) || !hasJsx(fn)) return null
   const firstParam = fn.getParameters()[0]
   const typeNode = firstParam?.getTypeNode()
-  const typeText = typeNode?.getText()
+  const clean = (text: string) => normalizeTypeImportPaths(text, absRoot, sf.getFilePath())
+  const typeText = typeNode ? clean(typeNode.getText()) : undefined
   const propsName = typeText ? directPropsName(typeText) : undefined
-  const namedProps = propsFromNamedType(sf, propsName)
-  const inlineFields = propsFieldsFromTypeLiteral(typeNode)
+  const namedProps = propsFromNamedType(sf, propsName, absRoot)
+  const inlineFields = propsFieldsFromTypeLiteral(typeNode, absRoot)
   const propsFields = namedProps.propsFields.length ? namedProps.propsFields : inlineFields
-  const propsCode = namedProps.propsCode ?? (inlineFields.length && typeNode ? typeNode.getText() : undefined)
+  const propsCode = namedProps.propsCode ?? (inlineFields.length && typeNode ? clean(typeNode.getText()) : undefined)
   const signature = typeText ? `${name}(props: ${typeText})` : `${name}()`
   return {
     name,
     file: relative(absRoot, sf.getFilePath()),
     signature,
-    componentCode: fn.getText(),
+    componentCode: clean(fn.getText()),
     ...(propsName != null ? { propsName } : {}),
     ...(propsCode != null ? { propsCode } : {}),
     propsFields,
@@ -143,20 +148,21 @@ function componentFromVariable(sf: SourceFile, absRoot: string, vd: ReturnType<S
   const name = vd.getName()
   if (!isComponentName(name)) return null
   const init = vd.getInitializer()
-  const typeText = vd.getTypeNode()?.getText()
+  const clean = (text: string) => normalizeTypeImportPaths(text, absRoot, sf.getFilePath())
+  const typeText = vd.getTypeNode() ? clean(vd.getTypeNode()!.getText()) : undefined
   const typedPropsName = typeText ? reactComponentPropsName(typeText) : undefined
   if (!typedPropsName && (!init || !hasJsx(init))) return null
 
   const fn = init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) ? init : null
   const firstParam = fn?.getParameters()[0]
   const paramTypeNode = firstParam?.getTypeNode()
-  const paramTypeText = paramTypeNode?.getText()
+  const paramTypeText = paramTypeNode ? clean(paramTypeNode.getText()) : undefined
   const propsName = typedPropsName ?? (paramTypeText ? directPropsName(paramTypeText) : undefined)
-  const namedProps = propsFromNamedType(sf, propsName)
-  const inlineFields = propsFieldsFromTypeLiteral(paramTypeNode)
+  const namedProps = propsFromNamedType(sf, propsName, absRoot)
+  const inlineFields = propsFieldsFromTypeLiteral(paramTypeNode, absRoot)
   const propsFields = namedProps.propsFields.length ? namedProps.propsFields : inlineFields
-  const propsCode = namedProps.propsCode ?? (inlineFields.length && paramTypeNode ? paramTypeNode.getText() : undefined)
-  const componentCode = vd.getVariableStatement()?.getText() ?? vd.getText()
+  const propsCode = namedProps.propsCode ?? (inlineFields.length && paramTypeNode ? clean(paramTypeNode.getText()) : undefined)
+  const componentCode = clean(vd.getVariableStatement()?.getText() ?? vd.getText())
   const signatureType = propsName ?? paramTypeText
   return {
     name,
@@ -282,9 +288,10 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
   for (const [file, components] of componentsByFile) {
     if (!files.some((f) => f.file === file)) {
       const sf = sfs.find((s) => relative(absRoot, s.getFilePath()) === file)
+      const clean = (text: string) => sf ? normalizeTypeImportPaths(text, absRoot, sf.getFilePath()) : text
       files.push({
         file,
-        code: sf?.getFullText() ?? "",
+        code: sf ? clean(sf.getFullText()) : "",
         items: [],
         ...(components.length ? { components, component: components[0] } : {})
       })
@@ -298,21 +305,22 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
     if (/\.stories\.|\.test\.|\.spec\./.test(p) || p.includes("/node_modules/")) continue
     const file = relative(absRoot, p)
     if (indexed.has(file)) continue
+    const clean = (text: string) => normalizeTypeImportPaths(text, absRoot, sf.getFilePath())
     const typeItems: FileItem[] = []
     for (const decl of sf.getTypeAliases()) {
       const name = decl.getName()
-      typeItems.push({ kind: "type", name, signature: `type ${name}`, code: decl.getText(), deps: [], tests: [] })
+      typeItems.push({ kind: "type", name, signature: `type ${name}`, code: clean(decl.getText()), deps: [], tests: [] })
     }
     for (const decl of sf.getInterfaces()) {
       const name = decl.getName()
-      typeItems.push({ kind: "type", name, signature: `interface ${name}`, code: decl.getText(), deps: [], tests: [] })
+      typeItems.push({ kind: "type", name, signature: `interface ${name}`, code: clean(decl.getText()), deps: [], tests: [] })
     }
     for (const decl of sf.getEnums()) {
       const name = decl.getName()
-      typeItems.push({ kind: "type", name, signature: `enum ${name}`, code: decl.getText(), deps: [], tests: [] })
+      typeItems.push({ kind: "type", name, signature: `enum ${name}`, code: clean(decl.getText()), deps: [], tests: [] })
     }
     if (typeItems.length) {
-      files.push({ file, code: sf.getFullText(), items: typeItems })
+      files.push({ file, code: clean(sf.getFullText()), items: typeItems })
     }
   }
 

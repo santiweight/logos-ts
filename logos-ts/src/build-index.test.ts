@@ -19,6 +19,35 @@ function createProject(): string {
 }
 
 describe("buildStudioIndex component detection", () => {
+  it("normalizes absolute inferred import types in function signatures", () => {
+    const root = createProject()
+    mkdirSync(join(root, "lib", "hn"), { recursive: true })
+    writeFileSync(join(root, "lib", "hn", "taxonomy.ts"), `
+      export interface JobTaxonomy {
+        needsReview: boolean
+      }
+
+      export function classifyJobTaxonomy(): JobTaxonomy {
+        return { needsReview: false }
+      }
+    `)
+    writeFileSync(join(root, "lib", "hn", "classify.ts"), `
+      import { classifyJobTaxonomy } from "./taxonomy"
+
+      export function classifyJobRow() {
+        return classifyJobTaxonomy()
+      }
+    `)
+
+    const index = buildStudioIndex(root)
+    const item = index.files
+      .find((entry) => entry.file === "lib/hn/classify.ts")
+      ?.items.find((entry) => entry.kind === "function" && entry.name === "classifyJobRow")
+
+    expect(item?.signature).toContain('import("./taxonomy").JobTaxonomy')
+    expect(item?.signature).not.toContain(root)
+  })
+
   it("enriches PascalCase JSX functions without Storybook stories", () => {
     const root = createProject()
     writeFileSync(join(root, "components", "FiltersSidebar.tsx"), `
