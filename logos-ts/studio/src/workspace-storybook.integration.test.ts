@@ -23,16 +23,20 @@ const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 function createProject(): string {
   const root = mkdtempSync(join(tmpdir(), "logos-storybook-project-"))
   const frontend = join(root, "frontend")
-  const storybookBin = join(frontend, "node_modules", ".bin")
 
   mkdirSync(join(frontend, ".storybook"), { recursive: true })
-  mkdirSync(storybookBin, { recursive: true })
   writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }))
-  writeFileSync(join(frontend, "package.json"), JSON.stringify({ type: "module" }))
   writeFileSync(join(frontend, ".storybook", "main.ts"), "export default {}\n")
   writeFileSync(join(frontend, "index.ts"), "export const storybookFixture = true\n")
 
-  const script = join(storybookBin, "storybook")
+  const fakeSb = join(frontend, "fake-sb")
+  mkdirSync(fakeSb, { recursive: true })
+  writeFileSync(join(fakeSb, "package.json"), JSON.stringify({
+    name: "storybook",
+    version: "0.0.0",
+    bin: { storybook: "storybook.js" },
+  }))
+  const script = join(fakeSb, "storybook.js")
   writeFileSync(script, [
     "#!/usr/bin/env node",
     "const http = require('node:http')",
@@ -47,6 +51,12 @@ function createProject(): string {
     "",
   ].join("\n"))
   chmodSync(script, 0o755)
+
+  writeFileSync(join(frontend, "package.json"), JSON.stringify({
+    name: "fake-frontend",
+    type: "module",
+    dependencies: { storybook: "file:./fake-sb" },
+  }))
 
   return root
 }

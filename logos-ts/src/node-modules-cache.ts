@@ -56,7 +56,9 @@ export class NodeModulesCache {
 
     const sourceNm = join(packageDir, "node_modules")
     if (!existsSync(sourceNm)) mkdirSync(sourceNm, { recursive: true })
-    execFileSync("mv", [sourceNm, cachedNm])
+    // -RL dereferences symlinks so file: dependencies survive the move
+    execFileSync("cp", ["-RL", sourceNm, cachedNm])
+    rmSync(sourceNm, { recursive: true, force: true })
 
     const lockSrc = existsSync(lockfile) ? lockfile : join(packageDir, "package.json")
     writeFileSync(join(entryDir, "source-lock.json"), readFileSync(lockSrc))
