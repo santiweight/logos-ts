@@ -97,9 +97,6 @@ describe("ReviewPanel", () => {
       <ReviewPanel
         base={base}
         workspace={workspace}
-        storybookUrl=""
-        storybookState={null}
-        onRetryStorybook={() => {}}
       />
     )
 
@@ -133,9 +130,6 @@ describe("ReviewPanel", () => {
       <ReviewPanel
         base={base}
         workspace={workspace}
-        storybookUrl=""
-        storybookState={null}
-        onRetryStorybook={() => {}}
       />
     )
 
@@ -157,9 +151,6 @@ describe("ReviewPanel", () => {
       <ReviewPanel
         base={base}
         workspace={workspace}
-        storybookUrl=""
-        storybookState={{ status: "failed", startedAt: Date.now(), logs: [] }}
-        onRetryStorybook={() => {}}
       />
     )
 
@@ -177,9 +168,6 @@ describe("ReviewPanel", () => {
       <ReviewPanel
         base={base}
         workspace={workspace}
-        storybookUrl="http://127.0.0.1:6006"
-        storybookState={{ status: "ready", startedAt: Date.now(), logs: [] }}
-        onRetryStorybook={() => {}}
       />
     )
 
@@ -212,9 +200,6 @@ describe("ReviewPanel", () => {
       <ReviewPanel
         base={base}
         workspace={workspace}
-        storybookUrl=""
-        storybookState={{ status: "failed", startedAt: Date.now(), logs: [] }}
-        onRetryStorybook={() => {}}
       />
     )
 

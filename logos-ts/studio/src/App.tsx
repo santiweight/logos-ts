@@ -8,6 +8,7 @@ import { ICONS, svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { CommentSidebar } from "./CommentSidebar"
 import { ReviewPanel } from "./ReviewPanel"
+import { mainChromeState } from "./main-chrome"
 import { GotoCtx } from "./highlight"
 import { diffIndex } from "./diff"
 import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, snapshotChanges } from "./review"
@@ -15,16 +16,13 @@ import { indexToArchText } from "./arch-text"
 import { buildStoryWritingPrompt } from "./story-goals"
 import type {
   Goal,
-  ComponentEntry,
   DiffStatus,
-  FileEntry,
   RunState,
   RunTarget,
   SbState,
   Selection,
   StudioIndex,
   TestState,
-  View,
   Workspace,
   WorkspaceKind,
   WorkspaceMeta,
@@ -61,11 +59,6 @@ function branchNameFromWorkspace(name: string): string {
     .replace(/[^a-z0-9._/-]+/g, "-")
     .replace(/^-+|-+$/g, "")
   return slug ? `logos/${slug}` : "logos/workspace"
-}
-
-function componentsOf(file: FileEntry | undefined): ComponentEntry[] {
-  if (!file) return []
-  return file.components?.length ? file.components : file.component ? [file.component] : []
 }
 
 function defaultSelection(): Selection {
@@ -817,22 +810,6 @@ export function App() {
 
   const currentFile = view.files.find((f) => f.file === selection.file) ?? view.files[0]
 
-  function setView(viewName: View) {
-    if (!currentFile) return
-    const components = componentsOf(currentFile)
-    const comp = selection.component
-      ? components.find((candidate) => candidate.name === selection.component) ?? components[0]
-      : selection.storyId
-        ? components.find((candidate) => candidate.stories.some((story) => story.id === selection.storyId)) ?? components[0]
-        : components[0]
-    if (viewName === "story" && comp) {
-      const storyId = selection.storyId ?? comp.stories[0]?.id
-      setSelection({ file: currentFile.file, component: comp.name, view: viewName, ...(storyId != null ? { storyId } : {}) })
-    } else {
-      setSelection({ file: currentFile.file, ...(comp ? { component: comp.name } : {}), view: viewName })
-    }
-  }
-
   const navigateToGoal = useCallback((goal: Goal) => {
     const target = goal.target
     const comp = target.startsWith("component:") ? target.slice("component:".length) : null
@@ -872,9 +849,10 @@ export function App() {
     if (goal) navigateToGoal(goal)
   }, [activeGoals, navigateToGoal])
 
-  const nComps = view.files.reduce((n, f) => n + componentsOf(f).length, 0)
+  const nComps = view.files.reduce((n, f) => n + (f.components?.length ?? (f.component ? 1 : 0)), 0)
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
   const reviewCount = workspaceIndex ? reviewChangeCount(reviewBaseIndex, workspaceIndex) : 0
+  const mainChrome = mainChromeState({ selection, currentFile, runTarget, reviewOpen, reviewCount })
   const activeDemo = demos.find((d) => d.id === activeDemoId)
   const demoLabel = demoSwitching
     ? `Opening ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
@@ -1050,25 +1028,30 @@ export function App() {
 
       <GotoCtx.Provider value={gotoCtx}>
       <main className="main">
-        <nav className="main-nav">
-          {navHistory.length > 0 && (
-            <button className="nav-back" onClick={goBack} title="Go back">←</button>
+        <nav className={`main-nav ${mainChrome.showModeTabs ? "" : "single"}`}>
+          <div className="main-title-row">
+            {navHistory.length > 0 && (
+              <button className="nav-back" onClick={goBack} title="Go back">←</button>
+            )}
+            <span className="main-title">{mainChrome.title}</span>
+          </div>
+          {mainChrome.showModeTabs && (
+            <div className="main-tabs">
+              <button className={!mainChrome.changesOpen ? "active" : ""} onClick={() => setReviewOpen(false)}>
+                Live
+              </button>
+              <button className={mainChrome.changesOpen ? "active" : ""} onClick={() => setReviewOpen(true)}>
+                {mainChrome.changesLabel}
+              </button>
+            </div>
           )}
-          <button className={!reviewOpen ? "active" : ""} onClick={() => setReviewOpen(false)}>
-            Workspace
-          </button>
-          <button className={reviewOpen ? "active" : ""} onClick={() => setReviewOpen(true)}>
-            Review{reviewCount > 0 ? ` ${reviewCount}` : ""}
-          </button>
         </nav>
         <div className="main-view">
-          {reviewOpen ? (
+          {mainChrome.changesOpen ? (
             <ReviewPanel
               base={reviewBaseIndex}
               workspace={workspaceIndex}
-              storybookUrl={activeStorybookUrl}
-              storybookState={activeStorybookState}
-              onRetryStorybook={retryStorybook}
+              showHeaderTitle={false}
             />
           ) : selection.view === "run" ? (
             <RunView
@@ -1088,7 +1071,7 @@ export function App() {
               storybookRenderKey={activeStorybookRenderKey}
               storyCommentEditingByStoryId={storyCommentEditing}
               onRetryStorybook={retryStorybook}
-              onView={setView}
+              showHeader={false}
               comments={goalsByTarget}
               onComment={openComment}
               diff={diff}

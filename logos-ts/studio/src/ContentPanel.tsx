@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { CommentCtx, DiffCtx, Row } from "./arch"
-import { GraphView } from "./GraphView"
-import type { ComponentEntry, GoalApi, DiffStatus, FileEntry, FileItem, RunState, RunTarget, SbState, Selection, View } from "./types"
+import { contentPanelLabel } from "./content-label"
+import type { ComponentEntry, GoalApi, DiffStatus, FileEntry, FileItem, RunState, RunTarget, SbState, Selection } from "./types"
 
 export type StoryRenderer = "portable" | "storybook"
 
@@ -15,7 +15,7 @@ interface Props {
   storybookRenderKey: string
   storyCommentEditingByStoryId?: Record<string, boolean>
   onRetryStorybook: (() => void) | null
-  onView: (view: View) => void
+  showHeader?: boolean
   comments: GoalApi["comments"]
   onComment: GoalApi["onComment"]
   diff: Record<string, DiffStatus>
@@ -31,11 +31,12 @@ export function ContentPanel({
   storybookRenderKey,
   storyCommentEditingByStoryId = {},
   onRetryStorybook,
-  onView,
+  showHeader = true,
   comments,
   onComment,
   diff,
 }: Props) {
+  const label = contentPanelLabel(file, selection)
   const comps = componentsOf(file)
   const comp = selection.component
     ? comps.find((candidate) => candidate.name === selection.component) ?? comps[0]
@@ -45,43 +46,20 @@ export function ContentPanel({
   const symbol = selection.symbol
     ? file.items.find((it) => it.name === selection.symbol)
     : null
-
-  const tabs: View[] = comp
-    ? ["code", "arch", "story"]
-    : ["code", "arch"]
-
-  const label = symbol
-    ? `${file.file} / ${symbol.kind === "class" ? "⬚" : symbol.kind === "type" ? "T" : "ƒ"} ${symbol.name}`
-    : comp && selection.view === "arch"
-      ? `${comp.name} / arch`
-      : comp && selection.view === "story"
-        ? `${comp.name} / ${storyExport(comp, selection.storyId)}`
-        : comp
-          ? comp.name
-          : file.file
+  const activeView = selection.view === "story" ? "story" : "code"
 
   return (
     <CommentCtx.Provider value={{ comments, onComment }}>
       <DiffCtx.Provider value={diff}>
       <section className="content">
-        <header className="content-header">
-          <span className="crumb">{label}</span>
-          <div className="tabs">
-            {tabs.map((t) => (
-              <button
-                key={t}
-                className={`tab ${selection.view === t ? "active" : ""}`}
-                onClick={() => onView(t)}
-              >
-                {t === "code" ? "Code" : t === "arch" ? "Arch" : "Story"}
-              </button>
-            ))}
-          </div>
-        </header>
+        {showHeader && (
+          <header className="content-header">
+            <span className="crumb">{label}</span>
+          </header>
+        )}
 
         <div className="content-body">
-          {selection.view === "arch" && <GraphView focusFile={file.file} />}
-          {selection.view === "story" && comp && (
+          {activeView === "story" && comp && (
             <StoryView
               {...(selection.storyId != null ? { storyId: selection.storyId } : {})}
               workspaceId={workspaceId}
@@ -93,9 +71,9 @@ export function ContentPanel({
               onRetryStorybook={onRetryStorybook}
             />
           )}
-          {selection.view === "code" && symbol && <SymbolView item={symbol} />}
-          {selection.view === "code" && !symbol && comp && <ComponentCodeView component={comp} />}
-          {selection.view === "code" && !symbol && !comp && <FileCodeView file={file} />}
+          {activeView === "code" && symbol && <SymbolView item={symbol} />}
+          {activeView === "code" && !symbol && comp && <ComponentCodeView component={comp} />}
+          {activeView === "code" && !symbol && !comp && <FileCodeView file={file} />}
         </div>
       </section>
       </DiffCtx.Provider>
@@ -105,10 +83,6 @@ export function ContentPanel({
 
 function componentsOf(file: FileEntry): ComponentEntry[] {
   return file.components?.length ? file.components : file.component ? [file.component] : []
-}
-
-function storyExport(c: ComponentEntry, storyId?: string): string {
-  return c.stories.find((s) => s.id === storyId)?.exportName ?? c.stories[0]?.exportName ?? "—"
 }
 
 function ComponentCodeView({ component }: { component: ComponentEntry }) {
@@ -339,9 +313,6 @@ function StoryView({
   if (storyRenderer === "portable") {
     return (
       <div className="pane">
-        <div className="pane-path">
-          <span>⟨portable⟩ {storyId}</span>
-        </div>
         <iframe
           className="story-frame"
           key={src}
@@ -349,9 +320,6 @@ function StoryView({
           src={src}
           title={storyId}
         />
-        <div className="hint">
-          Rendered through Portable Stories; no Storybook dev server is required for this view.
-        </div>
       </div>
     )
   }
@@ -395,13 +363,7 @@ function StoryView({
 
   return (
     <div className="pane">
-      <div className="pane-path">
-        <span>⟨live⟩ {src.replace(/^https?:\/\//, "")}</span>
-      </div>
       <iframe className="story-frame" key={src} src={src} title={storyId} />
-      <div className="hint">
-        Requires a Storybook dev server running for this project.
-      </div>
     </div>
   )
 }

@@ -33,9 +33,6 @@ const meta: Meta<typeof ReviewPanel> = {
   args: {
     base: makeIndex(before),
     workspace: makeIndex(after),
-    storybookUrl: "",
-    storybookState: null,
-    onRetryStorybook: () => {},
   },
 }
 export default meta

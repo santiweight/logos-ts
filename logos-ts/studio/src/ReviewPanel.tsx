@@ -7,14 +7,12 @@ import {
   formatSnapshot,
   type SnapshotChange,
 } from "./review"
-import type { SbState, StudioIndex } from "./types"
+import type { StudioIndex } from "./types"
 
 interface Props {
   base: StudioIndex
   workspace: StudioIndex
-  storybookUrl: string
-  storybookState: SbState | null
-  onRetryStorybook: () => void
+  showHeaderTitle?: boolean
 }
 
 type ReviewTab = "architecture" | "snapshots"
@@ -31,6 +29,7 @@ interface ReviewFileDiff {
 export function ReviewPanel({
   base,
   workspace,
+  showHeaderTitle = true,
 }: Props) {
   const architectureLines = useMemo(
     () => lineDiff(indexToArchText(base), indexToArchText(workspace)),
@@ -43,7 +42,7 @@ export function ReviewPanel({
   return (
     <section className="content review-panel">
       <header className="content-header review-header">
-        <span className="crumb">Review workspace changes</span>
+        {showHeaderTitle && <span className="crumb">Review workspace changes</span>}
         <div className="tabs">
           <button
             className={`tab ${tab === "architecture" ? "active" : ""}`}

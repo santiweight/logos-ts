@@ -687,14 +687,38 @@ body.resizing-rail * {
 }
 .main-nav {
   display: flex;
+  flex-direction: column;
   flex: none;
-  gap: 2px;
-  height: 30px;
-  padding: 4px 8px 0;
+  gap: 0;
+  min-height: 44px;
+  padding: 3px 8px 0;
   background: #18181c;
   border-bottom: 1px solid var(--border);
 }
-.main-nav button {
+.main-nav.single {
+  min-height: 28px;
+  padding-bottom: 3px;
+  justify-content: center;
+}
+.main-title-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 20px;
+}
+.main-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.main-tabs {
+  display: flex;
+  gap: 2px;
+  height: 21px;
+}
+.main-tabs button {
   font: inherit;
   color: var(--muted);
   background: transparent;
@@ -703,9 +727,18 @@ body.resizing-rail * {
   padding: 2px 12px 4px;
   cursor: pointer;
 }
-.main-nav button:hover { color: var(--text); }
-.main-nav button.active { color: #fff; border-bottom-color: var(--accent); }
-.main-nav .nav-back { border-bottom: none; padding: 0 8px; font-size: 14px; color: var(--muted); }
+.main-tabs button:hover { color: var(--text); }
+.main-tabs button.active { color: #fff; border-bottom-color: var(--accent); }
+.main-nav .nav-back {
+  flex: none;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0 8px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+}
 .main-nav .nav-back:hover { color: var(--text); }
 .main-view { flex: 1; min-height: 0; overflow: hidden; }
 

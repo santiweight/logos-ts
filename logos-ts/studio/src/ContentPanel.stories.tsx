@@ -62,7 +62,6 @@ const meta: Meta<typeof ContentPanel> = {
     storybookUrl: "",
     storybookState: null,
     storybookRenderKey: "story-render-key",
-    onView: noop,
     comments: {},
     onComment: noop,
     diff: {},

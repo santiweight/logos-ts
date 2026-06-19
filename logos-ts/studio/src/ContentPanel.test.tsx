@@ -30,7 +30,6 @@ function renderStory(storybookRenderKey: string, storyCommentEditingByStoryId: R
       storybookRenderKey={storybookRenderKey}
       storyCommentEditingByStoryId={storyCommentEditingByStoryId}
       onRetryStorybook={() => {}}
-      onView={() => {}}
       comments={{}}
       onComment={() => {}}
       diff={{}}
@@ -50,7 +49,6 @@ describe("ContentPanel", () => {
         storybookState={null}
         storybookRenderKey="inst-1:1000"
         onRetryStorybook={() => {}}
-        onView={() => {}}
         comments={{}}
         onComment={() => {}}
         diff={{}}
@@ -61,6 +59,32 @@ describe("ContentPanel", () => {
       "src",
       "/portable-story.html?storyId=jobcard--default&logosReload=inst-1%3A1000&workspaceId=ws-1"
     )
+    expect(screen.getByText("/components/JobCard/Default")).toBeTruthy()
+    expect(screen.queryByText(/portable/i)).toBeNull()
+    expect(screen.queryByText(/Storybook dev server/i)).toBeNull()
+  })
+
+  it("renders a component path header without content view tabs", () => {
+    render(
+      <ContentPanel
+        file={file}
+        selection={{ file: file.file, component: "JobCard", view: "code" }}
+        workspaceId="ws-1"
+        storyRenderer="portable"
+        storybookUrl=""
+        storybookState={null}
+        storybookRenderKey="inst-1:1000"
+        onRetryStorybook={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+      />
+    )
+
+    expect(screen.getByText("/components/JobCard")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Code" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Arch" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Story" })).toBeNull()
   })
 
   it("changes the Storybook iframe URL when the workspace render key changes", () => {
@@ -82,7 +106,6 @@ describe("ContentPanel", () => {
         storybookRenderKey="inst-2:2000"
         storyCommentEditingByStoryId={{}}
         onRetryStorybook={() => {}}
-        onView={() => {}}
         comments={{}}
         onComment={() => {}}
         diff={{}}
@@ -113,7 +136,6 @@ describe("ContentPanel", () => {
         storybookRenderKey="inst-2:2000"
         storyCommentEditingByStoryId={{ "jobcard--default": true }}
         onRetryStorybook={() => {}}
-        onView={() => {}}
         comments={{}}
         onComment={() => {}}
         diff={{}}
@@ -136,7 +158,6 @@ describe("ContentPanel", () => {
         storybookRenderKey="inst-2:2000"
         storyCommentEditingByStoryId={{}}
         onRetryStorybook={() => {}}
-        onView={() => {}}
         comments={{}}
         onComment={() => {}}
         diff={{}}
