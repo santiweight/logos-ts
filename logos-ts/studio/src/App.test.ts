@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, reviewChangeCount } from "./App"
+import { buildStorybookRenderKey, resolveAgentPanelGoalId, reviewChangeCount } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -98,5 +98,19 @@ describe("reviewChangeCount", () => {
       index([componentFile("export const Default = {}", "<div>before</div>")]),
       index([componentFile("export const Default = {}", "<div>after</div>")]),
     )).toBe(1)
+  })
+})
+
+describe("resolveAgentPanelGoalId", () => {
+  it("prefers the selected goal over the latest agent-run goal", () => {
+    expect(resolveAgentPanelGoalId({ type: "goal", id: "goal-2" }, "goal-1")).toBe("goal-2")
+  })
+
+  it("falls back to the latest agent-run goal when a workspace is selected", () => {
+    expect(resolveAgentPanelGoalId({ type: "workspace", id: "ws-1" }, "goal-1")).toBe("goal-1")
+  })
+
+  it("returns no goal when there is neither a selected goal nor an agent-run goal", () => {
+    expect(resolveAgentPanelGoalId(null, null)).toBeNull()
   })
 })
