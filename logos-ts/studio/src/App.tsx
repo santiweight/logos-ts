@@ -114,6 +114,13 @@ export function buildStorybookRenderKey(
   return `${activeWs?.activeInstanceId ?? ""}:${activeStorybookState?.startedAt ?? 0}:${terminalCount}:${terminalHash.toString(36)}`
 }
 
+export function resolveAgentPanelGoalId(
+  selected: { type: "workspace" | "goal"; id: string } | null,
+  latestAgentGoalId: string | null,
+): string | null {
+  return selected?.type === "goal" ? selected.id : latestAgentGoalId
+}
+
 export function App() {
   const [index, setIndex] = useState<StudioIndex>(seed)
   const [busy, setBusy] = useState<string | null>(null)
@@ -494,6 +501,10 @@ export function App() {
     return next
   }, [runningGoals, workspaces])
 
+  const agentPanelGoalId = resolveAgentPanelGoalId(selected, agentGoalId)
+  const agentPanelGoal = agentPanelGoalId ? activeGoals.find((g) => g.id === agentPanelGoalId) ?? null : null
+  const agentPanelEvents = agentPanelGoalId ? goalEvents[agentPanelGoalId] ?? [] : []
+  const agentPanelRunning = agentPanelGoalId ? effectiveRunningGoals.has(agentPanelGoalId) : false
   const agentEvents = agentGoalId ? goalEvents[agentGoalId] ?? [] : []
   const agentRunning = agentGoalId ? effectiveRunningGoals.has(agentGoalId) : false
 
@@ -643,6 +654,7 @@ export function App() {
   const continueGoal = useCallback(
     (goalId: string, text: string) => {
       if (!activeWorkspaceId) return
+      setSelected({ type: "goal", id: goalId })
       setGoalEvents((prev) => ({ ...prev, [goalId]: [] }))
       setRunningGoals((prev) => new Set(prev).add(goalId))
       setAgentGoalId(goalId)
@@ -1081,7 +1093,7 @@ export function App() {
           )}
         </div>
         {agentOpen && (
-          <AgentPanel events={agentEvents} running={agentRunning} goal={activeGoals.find(g => g.id === agentGoalId) ?? null} onClose={closeAgent} />
+          <AgentPanel events={agentPanelEvents} running={agentPanelRunning} goal={agentPanelGoal} onClose={closeAgent} />
         )}
       </main>
       </GotoCtx.Provider>
