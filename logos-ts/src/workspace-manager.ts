@@ -240,7 +240,17 @@ export class WorkspaceManager {
 
   private loadAll(): void {
     this.workspaces.clear()
-    for (const ws of this.store.listWorkspaces()) this.workspaces.set(ws.id, ws)
+    for (const ws of this.store.listWorkspaces()) {
+      let dirty = false
+      for (const goal of ws.goals) {
+        if (goal.status === "running") {
+          goal.status = "pending"
+          dirty = true
+        }
+      }
+      if (dirty) this.store.saveWorkspace(ws)
+      this.workspaces.set(ws.id, ws)
+    }
   }
 
   private save(ws: WorkspaceRecord): void {
