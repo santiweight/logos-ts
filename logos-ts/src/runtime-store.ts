@@ -482,9 +482,13 @@ export class LogosRuntimeStore {
   }
 
   saveRuns(entries: Record<string, StoredRunEntry>): void {
+    const validWs = new Set(
+      (this.db.prepare(`SELECT id FROM workspaces`).all() as { id: string }[]).map((r) => r.id),
+    )
     this.transaction(() => {
       this.db.prepare(`DELETE FROM runs`).run()
       for (const entry of Object.values(entries)) {
+        if (!validWs.has(entry.workspaceId)) continue
         this.db.prepare(`
           INSERT INTO runs (id, workspace_id, target_id, framework, pid, port, url, cwd, started_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -516,6 +520,8 @@ export class LogosRuntimeStore {
   }
 
   saveRunState(state: StoredRunState): void {
+    const ws = this.db.prepare(`SELECT 1 FROM workspaces WHERE id = ?`).get(state.workspaceId)
+    if (!ws) return
     this.db.prepare(`
       INSERT INTO run_states (id, workspace_id, target_id, status, started_at, updated_at, logs_json, error)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
