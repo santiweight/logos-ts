@@ -24,6 +24,8 @@ function workspace(id = "ws-1"): StoredWorkspaceRecord {
       mode: "code",
       createdAt: 1001,
       status: "pending",
+      lifecycle: { stage: "initializing", state: "creating_goal" },
+      mergePolicy: { autoMerge: true },
     }],
     instances: {
       "inst-1": {
@@ -72,6 +74,28 @@ describe("LogosRuntimeStore", () => {
       startedAt: 1000,
       updatedAt: 1001,
       logs: ["booting", "http://localhost:6006"],
+    })
+  })
+
+  it("persists explicit goal lifecycle and merge metadata", () => {
+    const ws = workspace()
+    ws.goals[0] = {
+      ...ws.goals[0]!,
+      status: "done",
+      lifecycle: { stage: "impl", state: "ready_to_merge" },
+      mergePolicy: { autoMerge: false },
+      workingInstanceId: "inst-review",
+      mergedInstanceId: null,
+    }
+    store.saveWorkspace(ws)
+
+    expect(store.loadWorkspace(ws.id)?.goals[0]).toMatchObject({
+      id: "goal-1",
+      status: "done",
+      lifecycle: { stage: "impl", state: "ready_to_merge" },
+      mergePolicy: { autoMerge: false },
+      workingInstanceId: "inst-review",
+      mergedInstanceId: null,
     })
   })
 

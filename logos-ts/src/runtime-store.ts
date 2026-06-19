@@ -6,6 +6,28 @@ const require = createRequire(import.meta.url)
 
 export type WorkspaceKind = "code" | "arch"
 
+export type StoredGoalLifecycle =
+  | {
+      stage: "initializing"
+      state: "creating_goal" | "creating_workspace" | "creating_instance" | "starting_session"
+    }
+  | {
+      stage: "impl"
+      state: "agent_running" | "agent_finished" | "ready_to_merge" | "impl_blocked" | "impl_failed"
+    }
+  | {
+      stage: "merging"
+      state: "queued" | "rebasing" | "resolving_conflicts" | "running_tests" | "repairing_tests" | "promoting_instance" | "merge_blocked" | "merge_failed"
+    }
+  | {
+      stage: "merged"
+      state: "complete"
+    }
+
+export interface StoredGoalMergePolicy {
+  autoMerge: boolean
+}
+
 export interface StoredGoal {
   id: string
   workspaceId?: string
@@ -18,6 +40,10 @@ export interface StoredGoal {
   selector?: string | null
   component?: string | null
   status: "pending" | "running" | "done" | "error"
+  lifecycle: StoredGoalLifecycle
+  mergePolicy: StoredGoalMergePolicy
+  workingInstanceId?: string | null
+  mergedInstanceId?: string | null
   sessionId?: string | null
 }
 
@@ -174,6 +200,10 @@ export class LogosRuntimeStore {
         selector TEXT,
         component TEXT,
         status TEXT NOT NULL,
+        lifecycle_json TEXT,
+        auto_merge INTEGER NOT NULL DEFAULT 1,
+        working_instance_id TEXT,
+        merged_instance_id TEXT,
         session_id TEXT,
         FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
       );
@@ -247,6 +277,10 @@ export class LogosRuntimeStore {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_goal ON sessions(goal_id);
     `)
     this.addColumnIfMissing("workspaces", "publication_json", "TEXT")
+    this.addColumnIfMissing("goals", "lifecycle_json", "TEXT")
+    this.addColumnIfMissing("goals", "auto_merge", "INTEGER NOT NULL DEFAULT 1")
+    this.addColumnIfMissing("goals", "working_instance_id", "TEXT")
+    this.addColumnIfMissing("goals", "merged_instance_id", "TEXT")
     this.addColumnIfMissing("runs", "framework", "TEXT NOT NULL DEFAULT 'vite'")
   }
 
@@ -326,9 +360,10 @@ export class LogosRuntimeStore {
         this.db.prepare(`
           INSERT INTO goals (
             id, workspace_id, position_index, text, label, target, mode, created_at,
-            story_id, selector, component, status, session_id
+            story_id, selector, component, status, lifecycle_json, auto_merge,
+            working_instance_id, merged_instance_id, session_id
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           goal.id,
           ws.id,
@@ -342,6 +377,10 @@ export class LogosRuntimeStore {
           goal.selector ?? null,
           goal.component ?? null,
           goal.status,
+          JSON.stringify(goal.lifecycle),
+          goal.mergePolicy.autoMerge ? 1 : 0,
+          goal.workingInstanceId ?? null,
+          goal.mergedInstanceId ?? null,
           goal.sessionId ?? null,
         )
       })
@@ -584,7 +623,50 @@ function parsePublication(value: unknown): StoredWorkspacePublication | undefine
   }
 }
 
+function defaultGoalLifecycle(status: StoredGoal["status"]): StoredGoalLifecycle {
+  switch (status) {
+    case "running": return { stage: "impl", state: "agent_running" }
+    case "done": return { stage: "merged", state: "complete" }
+    case "error": return { stage: "impl", state: "impl_failed" }
+    case "pending":
+    default: return { stage: "initializing", state: "creating_goal" }
+  }
+}
+
+function parseGoalLifecycle(value: unknown, status: StoredGoal["status"]): StoredGoalLifecycle {
+  if (typeof value !== "string" || !value) return defaultGoalLifecycle(status)
+  try {
+    const parsed = JSON.parse(value) as Partial<StoredGoalLifecycle>
+    if (parsed.stage === "initializing" && (
+      parsed.state === "creating_goal" ||
+      parsed.state === "creating_workspace" ||
+      parsed.state === "creating_instance" ||
+      parsed.state === "starting_session"
+    )) return parsed as StoredGoalLifecycle
+    if (parsed.stage === "impl" && (
+      parsed.state === "agent_running" ||
+      parsed.state === "agent_finished" ||
+      parsed.state === "ready_to_merge" ||
+      parsed.state === "impl_blocked" ||
+      parsed.state === "impl_failed"
+    )) return parsed as StoredGoalLifecycle
+    if (parsed.stage === "merging" && (
+      parsed.state === "queued" ||
+      parsed.state === "rebasing" ||
+      parsed.state === "resolving_conflicts" ||
+      parsed.state === "running_tests" ||
+      parsed.state === "repairing_tests" ||
+      parsed.state === "promoting_instance" ||
+      parsed.state === "merge_blocked" ||
+      parsed.state === "merge_failed"
+    )) return parsed as StoredGoalLifecycle
+    if (parsed.stage === "merged" && parsed.state === "complete") return parsed as StoredGoalLifecycle
+  } catch {}
+  return defaultGoalLifecycle(status)
+}
+
 function mapGoal(row: Record<string, unknown>): StoredGoal {
+  const status = row["status"] as StoredGoal["status"]
   return {
     id: row["id"] as string,
     workspaceId: row["workspace_id"] as string,
@@ -596,7 +678,11 @@ function mapGoal(row: Record<string, unknown>): StoredGoal {
     storyId: nullableString(row["story_id"]),
     selector: nullableString(row["selector"]),
     component: nullableString(row["component"]),
-    status: row["status"] as StoredGoal["status"],
+    status,
+    lifecycle: parseGoalLifecycle(row["lifecycle_json"], status),
+    mergePolicy: { autoMerge: row["auto_merge"] !== 0 },
+    workingInstanceId: nullableString(row["working_instance_id"]),
+    mergedInstanceId: nullableString(row["merged_instance_id"]),
     sessionId: nullableString(row["session_id"]),
   }
 }

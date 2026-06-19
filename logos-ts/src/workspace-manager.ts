@@ -25,6 +25,8 @@ import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
 import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
 import type {
+  StoredGoalLifecycle,
+  StoredGoalMergePolicy,
   LogosRuntimeStore,
   StoredWorkspacePublication,
   WorkspaceKind,
@@ -48,6 +50,10 @@ export interface Goal {
   selector?: string | null
   component?: string | null
   status: "pending" | "running" | "done" | "error"
+  lifecycle: StoredGoalLifecycle
+  mergePolicy: StoredGoalMergePolicy
+  workingInstanceId?: string | null
+  mergedInstanceId?: string | null
   sessionId?: string | null
   replies?: GoalReply[]
 }
@@ -129,11 +135,18 @@ export interface AgentEvent {
   [key: string]: unknown
 }
 
+export type GoalLifecycle = StoredGoalLifecycle
+export type GoalMergePolicy = StoredGoalMergePolicy
+export type MergeGoalResult =
+  | { ok: true; status: "completed" | "resumed" }
+  | { ok: false }
+
 type AgentEventCallback = (event: AgentEvent) => void
 type AgentSpawner = (command: string, args: string[], options: NonNullable<Parameters<typeof spawn>[2]>) => ChildProcess
 type RunManagerLike = Pick<RunManager, "ensure" | "restart" | "shutdownWorkspace" | "shutdownAll">
 const MAX_ACCEPTANCE_REPAIR_ATTEMPTS = 1
 const INDEX_MAX_BUFFER = 128 * 1024 * 1024
+const DEFAULT_MERGE_POLICY: GoalMergePolicy = { autoMerge: true }
 
 const noopRunManager: RunManagerLike = {
   ensure: () => Promise.resolve(""),
@@ -154,6 +167,18 @@ function extractAgentSummary(events: AgentEvent[]): string | null {
     if (texts.length > 0) return texts.join("\n\n")
   }
   return null
+}
+
+function setGoalLifecycle(goal: Goal, lifecycle: GoalLifecycle): void {
+  goal.lifecycle = lifecycle
+}
+
+function isGoalReadyToMerge(goal: Goal): boolean {
+  return goal.lifecycle.stage === "impl" && goal.lifecycle.state === "ready_to_merge"
+}
+
+function goalLifecycleLabel(lifecycle: GoalLifecycle): string {
+  return `${lifecycle.stage}/${lifecycle.state}`
 }
 
 interface ProjectCaps {
@@ -723,7 +748,11 @@ export class WorkspaceManager {
     this.deletingWorkspaces.clear()
   }
 
-  async addGoal(wsId: string, goal: Omit<Goal, "status">, opts?: { fork?: boolean }): Promise<AddGoalResult> {
+  async addGoal(
+    wsId: string,
+    goal: Omit<Goal, "status" | "lifecycle" | "mergePolicy" | "workingInstanceId" | "mergedInstanceId">,
+    opts?: { fork?: boolean; autoMerge?: boolean },
+  ): Promise<AddGoalResult> {
     let ws = this.workspaces.get(wsId)
     if (!ws) return { error: "workspace not found", status: 404 }
 
@@ -765,10 +794,47 @@ export class WorkspaceManager {
       })
     }
 
-    const g: Goal = { ...goal, status: "pending" }
+    const g: Goal = {
+      ...goal,
+      status: "pending",
+      lifecycle: { stage: "initializing", state: "creating_goal" },
+      mergePolicy: { autoMerge: opts?.autoMerge ?? DEFAULT_MERGE_POLICY.autoMerge },
+      workingInstanceId: null,
+      mergedInstanceId: null,
+    }
     ws.goals.push(g)
     this.save(ws)
     return { goal: g, workspaceId: ws.id }
+  }
+
+  setGoalAutoMerge(wsId: string, goalId: string, autoMerge: boolean): Goal | null {
+    const ws = this.workspaces.get(wsId)
+    if (!ws) return null
+    const goal = ws.goals.find((g) => g.id === goalId)
+    if (!goal) return null
+    goal.mergePolicy = { autoMerge }
+    this.save(ws)
+    return goal
+  }
+
+  async mergeGoal(wsId: string, goalId: string, onEvent: AgentEventCallback): Promise<MergeGoalResult> {
+    const ws = this.workspaces.get(wsId)
+    if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return { ok: false } }
+    const goal = ws.goals.find((g) => g.id === goalId)
+    if (!goal) { onEvent({ type: "error", message: "goal not found" }); return { ok: false } }
+    if (!isGoalReadyToMerge(goal)) {
+      onEvent({ type: "error", message: `goal is ${goalLifecycleLabel(goal.lifecycle)}` })
+      return { ok: false }
+    }
+    const instId = goal.workingInstanceId
+    const inst = instId ? ws.instances[instId] : null
+    if (!inst) { onEvent({ type: "error", message: "working instance not found" }); return { ok: false } }
+    goal.status = "running"
+    setGoalLifecycle(goal, { stage: "merging", state: "queued" })
+    this.save(ws)
+
+    const completed = await this.acceptCodeGoalResult(ws, goal, inst, onEvent)
+    return { ok: true, status: completed ? "completed" : "resumed" }
   }
 
   removeGoal(wsId: string, goalId: string): void {
@@ -826,6 +892,10 @@ export class WorkspaceManager {
     return ws.goals.find((g) => g.status === "running" || this.runningAgents.has(g.id))
   }
 
+  private goalAwaitingMerge(ws: WorkspaceRecord): Goal | undefined {
+    return ws.goals.find(isGoalReadyToMerge)
+  }
+
   private processGoal(wsId: string, goalId: string | null, onEvent: AgentEventCallback): string | null {
     const ws = this.workspaces.get(wsId)
     if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return null }
@@ -877,6 +947,16 @@ export class WorkspaceManager {
       return null
     }
 
+    const awaitingMerge = this.goalAwaitingMerge(ws)
+    if (awaitingMerge && requestedGoal?.id !== awaitingMerge.id) {
+      onEvent({
+        type: "error",
+        goalId: awaitingMerge.id,
+        message: "workspace has a goal ready to merge",
+      })
+      return null
+    }
+
     const goal = goalId
       ? requestedGoal
       : selectNextGoal(ws.goals, this.runningAgents)
@@ -898,6 +978,7 @@ export class WorkspaceManager {
     }
 
     goal.status = "running"
+    setGoalLifecycle(goal, { stage: "initializing", state: "creating_instance" })
     this.save(ws)
 
     this.runGoalAgent(ws, goal, onEvent).catch((error) => {
@@ -913,11 +994,12 @@ export class WorkspaceManager {
 
   private maybeStartNextQueued(wsId: string): void {
     const ws = this.workspaces.get(wsId)
-    if (!ws || this.runningGoal(ws)) return
+    if (!ws || this.runningGoal(ws) || this.goalAwaitingMerge(ws)) return
     const goal = selectNextGoal(ws.goals, this.runningAgents)
     if (!goal || goal.mode !== ws.kind) return
 
     goal.status = "running"
+    setGoalLifecycle(goal, { stage: "initializing", state: "creating_instance" })
     this.save(ws)
     this.runGoalAgent(ws, goal, () => undefined).catch((e) => {
       goal.status = "error"
@@ -965,6 +1047,7 @@ export class WorkspaceManager {
       workingInst = await this.createInstance(ws.id, baseInst.materializedRoot, baseInst.index)
       ws.instances[workingInst.id] = workingInst
       this.goalWorkingInstances.set(goal.id, workingInst.id)
+      goal.workingInstanceId = workingInst.id
       this.save(ws)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1028,6 +1111,8 @@ export class WorkspaceManager {
     const mcpConfigPath = resolve(this.runsDir, `${goal.id}.mcp.json`)
     writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
 
+    setGoalLifecycle(goal, { stage: "initializing", state: "starting_session" })
+    this.save(ws)
     recordAndEmit({ type: "status", goalId: goal.id, message: "starting agent…" })
 
     const child = this.spawnAgent(
@@ -1041,6 +1126,8 @@ export class WorkspaceManager {
       },
     )
     this.runningAgents.set(goal.id, child)
+    setGoalLifecycle(goal, { stage: "impl", state: "agent_running" })
+    this.save(ws)
 
     let buf = ""
     child.stdout?.on("data", (d) => {
@@ -1076,6 +1163,7 @@ export class WorkspaceManager {
       rmSync(mcpConfigPath, { force: true })
       if (code !== 0) {
         goal.status = "error"
+        setGoalLifecycle(goal, { stage: "impl", state: "impl_failed" })
         this.appendAgentSummary(goal, collectedEvents)
         this.save(ws)
         recordAndEmit({ type: "done", code })
@@ -1086,12 +1174,27 @@ export class WorkspaceManager {
       if (mode === "arch") {
         await this.reindexInstance(ws, workingInst)
         goal.status = "done"
+        setGoalLifecycle(goal, { stage: "merged", state: "complete" })
         ws.activeInstanceId = workingInst.id
+        goal.mergedInstanceId = workingInst.id
+        goal.workingInstanceId = null
+        this.goalWorkingInstances.delete(goal.id)
         this.restartWorkspaceServices(ws, workingInst)
         this.appendAgentSummary(goal, collectedEvents)
         this.save(ws)
         recordAndEmit({ type: "done", code })
         this.maybeStartNextQueued(ws.id)
+        return
+      }
+
+      setGoalLifecycle(goal, { stage: "impl", state: "agent_finished" })
+      this.save(ws)
+      if (!goal.mergePolicy.autoMerge) {
+        goal.status = "done"
+        setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
+        this.appendAgentSummary(goal, collectedEvents)
+        this.save(ws)
+        recordAndEmit({ type: "done", code })
         return
       }
 
@@ -1243,6 +1346,8 @@ export class WorkspaceManager {
   ): Promise<boolean> {
     return this.codeService.withWorkspaceLock(ws.id, async () => {
       const activeInst = this.activeInstance(ws)
+      setGoalLifecycle(goal, { stage: "merging", state: "rebasing" })
+      this.save(ws)
       onEvent({ type: "status", goalId: goal.id, message: "rebasing workspace instance…" })
       let rebase: RebaseInstanceResult
       try {
@@ -1254,15 +1359,23 @@ export class WorkspaceManager {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         goal.status = "error"
+        setGoalLifecycle(goal, { stage: "merging", state: "merge_failed" })
         this.save(ws)
         onEvent({ type: "error", goalId: goal.id, message: `workspace rebase failed: ${message}` })
         return true
       }
 
       if (rebase.status === "conflicts") {
+        setGoalLifecycle(goal, { stage: "merging", state: "merge_blocked" })
+        this.save(ws)
         onEvent({ type: "status", goalId: goal.id, message: "rebase conflicts; asking agent to resolve…" })
-        if (!this.resumeGoalInInstance(ws, goal, this.buildRebasePrompt(rebase), workingInst, onEvent)) {
+        if (!this.resumeGoalInInstance(ws, goal, this.buildRebasePrompt(rebase), workingInst, onEvent, {
+          recordUserReply: false,
+          lifecycleOnStart: { stage: "merging", state: "resolving_conflicts" },
+          continueMergeOnClose: true,
+        })) {
           goal.status = "error"
+          setGoalLifecycle(goal, { stage: "merging", state: "merge_failed" })
           this.save(ws)
           onEvent({ type: "error", message: "failed to resume agent for rebase conflicts" })
           return true
@@ -1272,6 +1385,7 @@ export class WorkspaceManager {
 
       if (rebase.status === "error") {
         goal.status = "error"
+        setGoalLifecycle(goal, { stage: "merging", state: "merge_failed" })
         this.save(ws)
         onEvent({ type: "error", goalId: goal.id, message: `workspace rebase failed: ${rebase.message}` })
         return true
@@ -1310,12 +1424,15 @@ export class WorkspaceManager {
       }
 
       await this.reindexInstance(ws, workingInst)
+      setGoalLifecycle(goal, { stage: "merging", state: "running_tests" })
+      this.save(ws)
       onEvent({ type: "status", goalId: goal.id, message: "running acceptance tests…" })
       const tests = await this.runAcceptanceTests(workingInst)
       if (!tests.ok) {
         const attempts = this.acceptanceRepairAttempts.get(goal.id) ?? 0
         if (attempts >= MAX_ACCEPTANCE_REPAIR_ATTEMPTS) {
           goal.status = "error"
+          setGoalLifecycle(goal, { stage: "merging", state: "merge_failed" })
           this.save(ws)
           onEvent({
             type: "error",
@@ -1325,9 +1442,16 @@ export class WorkspaceManager {
           return true
         }
         this.acceptanceRepairAttempts.set(goal.id, attempts + 1)
+        setGoalLifecycle(goal, { stage: "merging", state: "repairing_tests" })
+        this.save(ws)
         onEvent({ type: "status", goalId: goal.id, message: "acceptance tests failed; asking agent to fix…" })
-        if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(tests.output), workingInst, onEvent)) {
+        if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(tests.output), workingInst, onEvent, {
+          recordUserReply: false,
+          lifecycleOnStart: { stage: "merging", state: "repairing_tests" },
+          continueMergeOnClose: true,
+        })) {
           goal.status = "error"
+          setGoalLifecycle(goal, { stage: "merging", state: "merge_failed" })
           this.save(ws)
           onEvent({ type: "error", message: "failed to resume agent after test failure" })
           return true
@@ -1338,10 +1462,15 @@ export class WorkspaceManager {
       const committedGeneratedChanges = await this.codeService.commitWorkspaceChanges(workingInst, "Logos acceptance updates")
       if (committedGeneratedChanges) onEvent({ type: "status", goalId: goal.id, message: "committed acceptance test updates" })
       await this.reindexInstance(ws, workingInst)
+      setGoalLifecycle(goal, { stage: "merging", state: "promoting_instance" })
+      this.save(ws)
       goal.status = "done"
+      setGoalLifecycle(goal, { stage: "merged", state: "complete" })
       ws.activeInstanceId = workingInst.id
       this.goalWorkingInstances.delete(goal.id)
       this.acceptanceRepairAttempts.delete(goal.id)
+      goal.mergedInstanceId = workingInst.id
+      goal.workingInstanceId = null
       this.restartWorkspaceServices(ws, workingInst)
       this.save(ws)
       onEvent({ type: "status", goalId: goal.id, message: "workspace instance accepted" })
@@ -1374,7 +1503,7 @@ export class WorkspaceManager {
     replyText: string,
     inst: WorkspaceInstance,
     onEvent: AgentEventCallback,
-    opts?: { recordUserReply?: boolean },
+    opts?: { recordUserReply?: boolean; lifecycleOnStart?: GoalLifecycle; continueMergeOnClose?: boolean },
   ): boolean {
     if (!goal.sessionId) { onEvent({ type: "error", message: "no session to continue" }); return false }
     if (this.runningAgents.has(goal.id)) { onEvent({ type: "error", message: "goal is already running" }); return false }
@@ -1384,7 +1513,9 @@ export class WorkspaceManager {
       goal.replies.push({ author: "user", text: replyText, createdAt: Date.now() })
     }
     goal.status = "running"
+    setGoalLifecycle(goal, opts?.lifecycleOnStart ?? { stage: "impl", state: "agent_running" })
     this.goalWorkingInstances.set(goal.id, inst.id)
+    goal.workingInstanceId = inst.id
     this.save(ws)
 
     const dir = inst.materializedRoot
@@ -1438,6 +1569,9 @@ export class WorkspaceManager {
 
       if (code !== 0) {
         goal.status = "error"
+        setGoalLifecycle(goal, goal.lifecycle.stage === "merging"
+          ? { stage: "merging", state: "merge_failed" }
+          : { stage: "impl", state: "impl_failed" })
         this.appendAgentSummary(goal, collectedEvents)
         this.save(ws)
         recordAndEmit({ type: "done", code })
@@ -1448,12 +1582,27 @@ export class WorkspaceManager {
       if (goal.mode === "arch") {
         await this.reindexInstance(ws, inst)
         goal.status = "done"
+        setGoalLifecycle(goal, { stage: "merged", state: "complete" })
         ws.activeInstanceId = inst.id
+        goal.mergedInstanceId = inst.id
+        goal.workingInstanceId = null
+        this.goalWorkingInstances.delete(goal.id)
         this.restartWorkspaceServices(ws, inst)
         this.appendAgentSummary(goal, collectedEvents)
         this.save(ws)
         recordAndEmit({ type: "done", code })
         this.maybeStartNextQueued(ws.id)
+        return
+      }
+
+      setGoalLifecycle(goal, { stage: "impl", state: "agent_finished" })
+      this.save(ws)
+      if (!goal.mergePolicy.autoMerge && !opts?.continueMergeOnClose) {
+        goal.status = "done"
+        setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
+        this.appendAgentSummary(goal, collectedEvents)
+        this.save(ws)
+        recordAndEmit({ type: "done", code })
         return
       }
 

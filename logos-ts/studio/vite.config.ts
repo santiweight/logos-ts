@@ -426,13 +426,37 @@ function studioApi(runtime: StudioRuntime): Plugin {
             storyId: body.storyId ?? null,
             selector: body.selector ?? null,
             component: body.component ?? null,
-          }, { fork: body.fork === true })
+          }, { fork: body.fork === true, autoMerge: body.autoMerge !== false })
           if ("error" in result) {
             res.statusCode = result.status
             res.end(JSON.stringify({ error: result.error }))
             return
           }
           res.end(JSON.stringify({ ...result.goal, workspaceId: result.workspaceId }))
+          return
+        }
+
+        // POST /api/workspaces/:id/goals/:goalId/merge — manually integrate a completed goal
+        const mergeGoalMatch = sub.match(/^([^/]+)\/goals\/([^/]+)\/merge$/)
+        if (req.method === "POST" && mergeGoalMatch?.[1] && mergeGoalMatch[2]) {
+          const wsId = mergeGoalMatch[1]
+          const goalId = decodeURIComponent(mergeGoalMatch[2])
+          const events: unknown[] = []
+          const result = await wsMgr.mergeGoal(wsId, goalId, (event) => events.push(event))
+          res.statusCode = result.ok ? 200 : 400
+          res.end(JSON.stringify({ ...result, events }))
+          return
+        }
+
+        // PATCH /api/workspaces/:id/goals/:goalId — update goal controls such as auto-merge
+        const updateGoalMatch = sub.match(/^([^/]+)\/goals\/([^/]+)$/)
+        if (req.method === "PATCH" && updateGoalMatch?.[1] && updateGoalMatch[2]) {
+          const wsId = updateGoalMatch[1]
+          const goalId = decodeURIComponent(updateGoalMatch[2])
+          const body = JSON.parse((await readBody(req)) || "{}")
+          const goal = wsMgr.setGoalAutoMerge(wsId, goalId, body.autoMerge !== false)
+          if (!goal) { res.statusCode = 404; res.end(JSON.stringify({ error: "goal not found" })); return }
+          res.end(JSON.stringify(goal))
           return
         }
 
@@ -584,6 +608,41 @@ function studioApi(runtime: StudioRuntime): Plugin {
           : wsMgr.processNext(wsId, activeHandler)
         activeGoalId = goalId
         if (!goalId) end()
+      })
+
+      // --- Manual goal merge (SSE) — continue the same Claude session with merge instructions ---
+      server.middlewares.use("/api/agent/merge", async (req, res) => {
+        const params = new URL(req.url || "", "http://x").searchParams
+        const wsId = params.get("workspace") || ""
+        const goalId = params.get("goal") || ""
+        res.setHeader("content-type", "text/event-stream")
+        res.setHeader("cache-control", "no-cache")
+        res.setHeader("connection", "keep-alive")
+        let closed = false
+        let ended = false
+        req.on("close", () => { closed = true })
+        const send = (o: unknown) => { if (!closed) res.write(`data: ${JSON.stringify(o)}\n\n`) }
+        const end = () => { if (!closed && !ended) { ended = true; res.end() } }
+
+        const handler = (evt: { type: string; [key: string]: unknown }) => {
+          send(evt)
+          if (evt.type === "done" || evt.type === "error") end()
+        }
+        if (!wsId || !goalId) {
+          send({ type: "error", message: "missing workspace or goal" })
+          end()
+          return
+        }
+
+        const result = await wsMgr.mergeGoal(wsId, goalId, handler)
+        if (!result.ok) {
+          end()
+          return
+        }
+        if (result.status === "completed") {
+          send({ type: "done", goalId, code: 0 })
+          end()
+        }
       })
 
       // --- Continue a completed goal (SSE) — resume the Claude session ---

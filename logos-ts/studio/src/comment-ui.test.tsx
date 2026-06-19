@@ -1,10 +1,37 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CommentThread, type CommentItem } from "./comment-ui"
 
 afterEach(cleanup)
 
 describe("CommentThread replies", () => {
+  it("shows auto merge while creating a code comment and submits the selected policy", () => {
+    const onAdd = vi.fn()
+    render(
+      <CommentThread
+        label="FactTable"
+        comments={[]}
+        onAdd={onAdd}
+        onClose={vi.fn()}
+      />
+    )
+
+    const autoMerge = screen.getByTitle("Auto merge into the parent workspace")
+    expect(autoMerge).toBeTruthy()
+    expect(autoMerge.getAttribute("aria-pressed")).toBe("true")
+
+    fireEvent.click(autoMerge)
+    fireEvent.change(screen.getByPlaceholderText("Reply…"), { target: { value: "make this bold" } })
+    fireEvent.click(screen.getByText("Comment"))
+
+    expect(onAdd).toHaveBeenCalledWith({
+      text: "make this bold",
+      mode: "code",
+      fork: false,
+      autoMerge: false,
+    })
+  })
+
   it("renders agent replies inline", () => {
     const comments: CommentItem[] = [
       {

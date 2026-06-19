@@ -90,6 +90,33 @@ describe("StorybookCommentLayer", () => {
     })
   })
 
+  it("shows auto merge in the story comment composer and posts the selected policy", async () => {
+    vi.spyOn(window.parent, "postMessage").mockImplementation(() => {})
+
+    render(
+      <StorybookCommentLayer storyId="jobcard--default" component="JobCard">
+        <section>
+          <button type="button">Apply</button>
+        </section>
+      </StorybookCommentLayer>
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }), { altKey: true })
+    const autoMerge = screen.getByTitle("Auto merge into the parent workspace")
+    expect(autoMerge.getAttribute("aria-pressed")).toBe("true")
+
+    fireEvent.click(autoMerge)
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Make this clearer" } })
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+
+    await waitFor(() => {
+      expect(lastPosted("logos:story-comment")).toMatchObject({
+        text: "Make this clearer",
+        autoMerge: false,
+      })
+    })
+  })
+
   it("restores an in-progress draft sent back from Studio after an iframe reload", async () => {
     vi.spyOn(window.parent, "postMessage").mockImplementation(() => {})
 

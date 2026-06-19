@@ -25,6 +25,7 @@ export interface StoryComment {
   htmlContext?: string
   mode?: string
   fork?: boolean
+  autoMerge?: boolean
   status?: string
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
 }
@@ -40,6 +41,7 @@ interface Draft {
   text?: string
   mode?: "code" | "arch"
   fork?: boolean
+  autoMerge?: boolean
   htmlContext?: string
   kind?: "new" | "reply"
 }
@@ -50,6 +52,7 @@ interface StoryDraft extends Draft {
   text: string
   mode: "code" | "arch"
   fork: boolean
+  autoMerge: boolean
   kind: "new" | "reply"
 }
 
@@ -363,6 +366,7 @@ export function StorybookCommentLayer({
       author: "you",
       mode: p.mode,
       fork: p.fork,
+      autoMerge: p.autoMerge,
     })
   }
 
@@ -390,6 +394,7 @@ export function StorybookCommentLayer({
       text: p.text,
       mode: p.mode,
       fork: p.fork,
+      autoMerge: p.autoMerge,
       kind: draftUpdate.kind ?? "new",
     })
     sendCommentEditing(true)

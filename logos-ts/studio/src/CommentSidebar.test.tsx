@@ -25,12 +25,16 @@ function renderPanel({
   running = false,
   onNavigate = vi.fn(),
   onReply = vi.fn(),
+  onToggleAutoMerge = vi.fn(),
+  onMerge = vi.fn(),
   onResizeStart = vi.fn(),
 }: {
   selectedGoal?: Goal | null
   running?: boolean
   onNavigate?: (goal: Goal) => void
   onReply?: (goalId: string, text: string) => void
+  onToggleAutoMerge?: (goalId: string, autoMerge: boolean) => void
+  onMerge?: (goalId: string) => void
   onResizeStart?: () => void
 } = {}) {
   render(
@@ -39,10 +43,12 @@ function renderPanel({
       running={running}
       onNavigate={onNavigate}
       onReply={onReply}
+      onToggleAutoMerge={onToggleAutoMerge}
+      onMerge={onMerge}
       onResizeStart={onResizeStart}
     />
   )
-  return { onNavigate, onReply }
+  return { onNavigate, onReply, onToggleAutoMerge, onMerge }
 }
 
 describe("CommentSidebar", () => {
@@ -85,5 +91,29 @@ describe("CommentSidebar", () => {
 
     expect(screen.getByRole("textbox")).toBeDisabled()
     expect(screen.getByText("Send")).toBeDisabled()
+  })
+
+  it("toggles auto merge from the thread header", () => {
+    const onToggleAutoMerge = vi.fn()
+    renderPanel({ onToggleAutoMerge })
+
+    fireEvent.click(screen.getByTitle("Auto merge into the parent workspace"))
+
+    expect(onToggleAutoMerge).toHaveBeenCalledWith("goal-1", false)
+  })
+
+  it("starts manual merge when implementation is ready", () => {
+    const onMerge = vi.fn()
+    renderPanel({
+      onMerge,
+      selectedGoal: goal({
+        lifecycle: { stage: "impl", state: "ready_to_merge" },
+        mergePolicy: { autoMerge: false },
+      }),
+    })
+
+    fireEvent.click(screen.getByText("Merge"))
+
+    expect(onMerge).toHaveBeenCalledWith("goal-1")
   })
 })

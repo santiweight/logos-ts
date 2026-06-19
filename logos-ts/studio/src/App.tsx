@@ -434,6 +434,19 @@ export function App() {
     [refreshWorkspaces]
   )
 
+  const updateGoalAutoMerge = useCallback(
+    async (goalId: string, autoMerge: boolean) => {
+      if (!activeWorkspaceId) return
+      await fetch(`/api/workspaces/${activeWorkspaceId}/goals/${encodeURIComponent(goalId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ autoMerge }),
+      })
+      await refreshWorkspaces()
+    },
+    [activeWorkspaceId, refreshWorkspaces]
+  )
+
   // Boot
   const bootedRef = useRef(false)
   useEffect(() => {
@@ -534,6 +547,20 @@ export function App() {
   const agentEvents = agentGoalId ? goalEvents[agentGoalId] ?? [] : []
   const agentRunning = agentGoalId ? effectiveRunningGoals.has(agentGoalId) : false
 
+  const loadGoalSessionEvents = useCallback(async (goalId: string): Promise<AgentMsg[]> => {
+    const res = await fetch(`/api/sessions?goal=${encodeURIComponent(goalId)}`).catch(() => null)
+    if (!res?.ok) return []
+    const data = await res.json().catch(() => null) as { events?: { payload?: string }[] } | null
+    return (data?.events ?? []).flatMap((event): AgentMsg[] => {
+      if (typeof event.payload !== "string") return []
+      try {
+        return [JSON.parse(event.payload) as AgentMsg]
+      } catch {
+        return []
+      }
+    })
+  }, [])
+
   const runAgent = useCallback(
     (wsId: string, goalId?: string) => {
       if (!goalId) return
@@ -581,6 +608,46 @@ export function App() {
       openStream(0)
     },
     [refreshWorkspaces, refreshTests, refreshStorybooks, refreshRuns, openWorkspace]
+  )
+
+  const mergeGoal = useCallback(
+    async (goalId: string) => {
+      if (!activeWorkspaceId) return
+      const history = await loadGoalSessionEvents(goalId)
+      setGoalEvents((prev) => ({
+        ...prev,
+        [goalId]: [...((prev[goalId]?.length ?? 0) > 0 ? prev[goalId]! : history), { type: "status", message: "manual merge started" }],
+      }))
+      setRunningGoals((prev) => new Set(prev).add(goalId))
+      setAgentGoalId(goalId)
+      setAgentOpen(true)
+      const es = new EventSource(`/api/agent/merge?workspace=${encodeURIComponent(activeWorkspaceId)}&goal=${encodeURIComponent(goalId)}`)
+      esRefs.current.set(goalId, es)
+      let terminal = false
+      es.onmessage = (m) => {
+        const msg = JSON.parse(m.data) as AgentMsg
+        setGoalEvents((prev) => ({ ...prev, [goalId]: [...(prev[goalId] ?? []), msg] }))
+        if (msg.type === "done" || msg.type === "error") {
+          terminal = true
+          es.close()
+          esRefs.current.delete(goalId)
+          setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
+          Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => openWorkspace(activeWorkspaceId))
+        }
+      }
+      es.onerror = () => {
+        if (terminal) return
+        es.close()
+        esRefs.current.delete(goalId)
+        setGoalEvents((prev) => ({
+          ...prev,
+          [goalId]: [...(prev[goalId] ?? []), { type: "error", message: "merge stream disconnected" }],
+        }))
+        setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
+        Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => openWorkspace(activeWorkspaceId))
+      }
+    },
+    [activeWorkspaceId, loadGoalSessionEvents, refreshWorkspaces, refreshTests, refreshStorybooks, refreshRuns, openWorkspace]
   )
   const closeAgent = useCallback(() => setAgentOpen(false), [])
 
@@ -646,7 +713,7 @@ export function App() {
   const addGoal = useCallback(
     async (
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
-      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string },
+      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; autoMerge?: boolean },
     ) => {
       // 1. Code forks are created client-side. Arch isolation is owned by the backend.
       let wsId = fork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
@@ -657,7 +724,7 @@ export function App() {
       const goalRes = await fetch(`/api/workspaces/${wsId}/goals`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target, label, text, mode, fork, ...extra }),
+        body: JSON.stringify({ target, label, text, mode, fork, ...extra, autoMerge: extra?.autoMerge !== false }),
       })
       const result = await goalRes.json()
       if (!goalRes.ok) {
@@ -812,7 +879,7 @@ export function App() {
       }
       if (e.data?.type !== "logos:story-comment") return
       if (!acceptStoryCommentEvent(e.data)) return
-      const { storyId, component, selector, label, text, mode, fork, htmlContext } = e.data
+      const { storyId, component, selector, label, text, mode, fork, autoMerge, htmlContext } = e.data
       if (typeof storyId === "string" && storyId) {
         setStoryCommentDrafts((current) => {
           const next = { ...current }
@@ -826,7 +893,7 @@ export function App() {
         })
       }
       const target = component ? `component:${component}` : `story:${storyId}`
-      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component, htmlContext })
+      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component, htmlContext, autoMerge: autoMerge !== false })
     }
     window.addEventListener("message", onMsg)
     return () => window.removeEventListener("message", onMsg)
@@ -1004,6 +1071,8 @@ export function App() {
         running={selectedGoal != null && effectiveRunningGoals.has(selectedGoal.id)}
         onNavigate={navigateToGoal}
         onReply={continueGoal}
+        onToggleAutoMerge={updateGoalAutoMerge}
+        onMerge={mergeGoal}
         onResizeStart={startCommentResize}
       />
 
@@ -1166,7 +1235,7 @@ export function App() {
           label={popup.label}
           goals={goalsByTarget[popup.target] ?? []}
           workspaceKind={activeWs?.kind}
-          onAdd={(text, mode, fork) => { addGoal(popup.target, popup.label, text, mode, fork); setPopup(null) }}
+          onAdd={(text, mode, fork, autoMerge) => { addGoal(popup.target, popup.label, text, mode, fork, { autoMerge }); setPopup(null) }}
           onReply={(goalId, text) => { continueGoal(goalId, text) }}
           onClose={() => setPopup(null)}
         />

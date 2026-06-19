@@ -15,7 +15,7 @@ interface Props {
   label: string
   goals: Goal[]
   workspaceKind?: "code" | "arch" | undefined
-  onAdd: (text: string, mode: "code" | "arch", fork: boolean) => void
+  onAdd: (text: string, mode: "code" | "arch", fork: boolean, autoMerge: boolean) => void
   onReply?: (goalId: string, text: string) => void
   onClose: () => void
 }
@@ -25,7 +25,7 @@ export function CommentPopup({ x, y, label, goals, workspaceKind, onAdd, onReply
   const top = Math.min(y, window.innerHeight - 280)
   const { offset, reset, dragHandleProps } = usePopoverDrag()
 
-  const handleAdd = (p: SubmitPayload) => onAdd(p.text, p.mode, p.fork)
+  const handleAdd = (p: SubmitPayload) => onAdd(p.text, p.mode, p.fork, p.autoMerge)
   const replyProps = onReply == null
     ? {}
     : { onReply: (p: ReplyPayload) => onReply(p.goalId, p.text) }

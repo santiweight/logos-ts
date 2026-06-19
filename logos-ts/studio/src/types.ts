@@ -86,6 +86,28 @@ export interface GoalReply {
   createdAt: number
 }
 
+export type GoalLifecycle =
+  | {
+      stage: "initializing"
+      state: "creating_goal" | "creating_workspace" | "creating_instance" | "starting_session"
+    }
+  | {
+      stage: "impl"
+      state: "agent_running" | "agent_finished" | "ready_to_merge" | "impl_blocked" | "impl_failed"
+    }
+  | {
+      stage: "merging"
+      state: "queued" | "rebasing" | "resolving_conflicts" | "running_tests" | "repairing_tests" | "promoting_instance" | "merge_blocked" | "merge_failed"
+    }
+  | {
+      stage: "merged"
+      state: "complete"
+    }
+
+export interface GoalMergePolicy {
+  autoMerge: boolean
+}
+
 export interface Goal {
   id: string
   text: string
@@ -97,6 +119,10 @@ export interface Goal {
   selector?: string | null
   component?: string | null
   status: "pending" | "running" | "done" | "error"
+  lifecycle?: GoalLifecycle
+  mergePolicy?: GoalMergePolicy
+  workingInstanceId?: string | null
+  mergedInstanceId?: string | null
   sessionId?: string | null
   replies?: GoalReply[]
 }

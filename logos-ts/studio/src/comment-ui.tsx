@@ -25,6 +25,7 @@ export interface SubmitPayload {
   text: string
   mode: "code" | "arch"
   fork: boolean
+  autoMerge: boolean
 }
 
 export type DraftPayload = SubmitPayload
@@ -72,6 +73,7 @@ export function CommentThread({
   const [text, setText] = useState(initialDraft?.text ?? "")
   const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
   const [fork, setFork] = useState(initialDraft?.fork ?? false)
+  const [autoMerge, setAutoMerge] = useState(initialDraft?.autoMerge ?? true)
   const [replyGoalId, setReplyGoalId] = useState<string | null>(null)
   const [replyText, setReplyText] = useState("")
   const onEditingChangeRef = useRef(onEditingChange)
@@ -81,13 +83,13 @@ export function CommentThread({
   const editingActive = text.trim().length > 0
   useEffect(() => {
     onEditingChangeRef.current?.(editingActive)
-    onDraftChangeRef.current?.({ text, mode, fork })
-  }, [editingActive, fork, mode, text])
+    onDraftChangeRef.current?.({ text, mode, fork, autoMerge })
+  }, [autoMerge, editingActive, fork, mode, text])
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
     if (t.length === 0) return
-    onAdd({ text: t, mode, fork })
+    onAdd({ text: t, mode, fork, autoMerge })
     setText("")
   }
 
@@ -194,7 +196,17 @@ export function CommentThread({
         placeholder="Reply…"
         style={textareaStyle}
       />
-      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={text.trim().length === 0} workspaceKind={workspaceKind} />
+      <ModeBar
+        mode={mode}
+        setMode={setMode}
+        fork={fork}
+        setFork={setFork}
+        autoMerge={autoMerge}
+        setAutoMerge={setAutoMerge}
+        onSubmit={submit}
+        disabled={text.trim().length === 0}
+        workspaceKind={workspaceKind}
+      />
     </>
   )
 }
@@ -223,6 +235,7 @@ export function CommentComposer({
   const [text, setText] = useState(initialDraft?.text ?? "")
   const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
   const [fork, setFork] = useState(initialDraft?.fork ?? false)
+  const [autoMerge, setAutoMerge] = useState(initialDraft?.autoMerge ?? true)
   const onEditingChangeRef = useRef(onEditingChange)
   const onDraftChangeRef = useRef(onDraftChange)
   onEditingChangeRef.current = onEditingChange
@@ -230,12 +243,12 @@ export function CommentComposer({
   const editingActive = text.trim().length > 0
   useEffect(() => {
     onEditingChangeRef.current?.(editingActive)
-    onDraftChangeRef.current?.({ text, mode, fork })
-  }, [editingActive, fork, mode, text])
+    onDraftChangeRef.current?.({ text, mode, fork, autoMerge })
+  }, [autoMerge, editingActive, fork, mode, text])
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
-    if (t.length > 0) onSave({ text: t, mode, fork })
+    if (t.length > 0) onSave({ text: t, mode, fork, autoMerge })
   }
 
   return (
@@ -252,7 +265,17 @@ export function CommentComposer({
         placeholder="Add a comment…"
         style={textareaStyle}
       />
-      <ModeBar mode={mode} setMode={setMode} fork={fork} setFork={setFork} onSubmit={submit} disabled={text.trim().length === 0} workspaceKind={workspaceKind} />
+      <ModeBar
+        mode={mode}
+        setMode={setMode}
+        fork={fork}
+        setFork={setFork}
+        autoMerge={autoMerge}
+        setAutoMerge={setAutoMerge}
+        onSubmit={submit}
+        disabled={text.trim().length === 0}
+        workspaceKind={workspaceKind}
+      />
     </>
   )
 }
@@ -299,6 +322,8 @@ function ModeBar({
   setMode,
   fork,
   setFork,
+  autoMerge,
+  setAutoMerge,
   onSubmit,
   disabled,
   workspaceKind,
@@ -307,6 +332,8 @@ function ModeBar({
   setMode: (m: "code" | "arch") => void
   fork: boolean
   setFork: (f: boolean) => void
+  autoMerge: boolean
+  setAutoMerge: (autoMerge: boolean) => void
   onSubmit: () => void
   disabled: boolean
   workspaceKind?: "code" | "arch" | undefined
@@ -327,6 +354,17 @@ function ModeBar({
         >
           ⑂
         </button>
+        {mode === "code" && (
+          <button
+            type="button"
+            aria-pressed={autoMerge}
+            onClick={() => setAutoMerge(!autoMerge)}
+            style={autoMergeBtn(autoMerge)}
+            title="Auto merge into the parent workspace"
+          >
+            Auto merge
+          </button>
+        )}
       </div>
       <button type="button" onClick={onSubmit} style={primaryBtnStyle} disabled={disabled}>
         Comment
@@ -571,6 +609,20 @@ function forkBtn(active: boolean): React.CSSProperties {
     color: active ? "var(--fg-on-accent, #fff)" : "var(--muted)",
     cursor: "pointer",
     padding: 0,
+  }
+}
+
+function autoMergeBtn(active: boolean): React.CSSProperties {
+  return {
+    font: "inherit",
+    fontSize: 11,
+    height: 26,
+    borderRadius: 6,
+    border: `1px solid ${active ? "var(--success, #16a34a)" : "var(--border)"}`,
+    background: "transparent",
+    color: active ? "var(--success, #16a34a)" : "var(--muted)",
+    cursor: "pointer",
+    padding: "0 7px",
   }
 }
 

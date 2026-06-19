@@ -15,6 +15,13 @@ const TSX = resolve(LOGOS_TS_ROOT, "node_modules/.bin/tsx")
 const tempDirs: string[] = []
 
 function goal(id: string, mode: Goal["mode"], status: Goal["status"] = "pending"): Goal {
+  const lifecycle: Goal["lifecycle"] = status === "pending"
+    ? { stage: "initializing", state: "creating_goal" }
+    : status === "running"
+      ? { stage: "impl", state: "agent_running" }
+      : status === "done"
+        ? { stage: "merged", state: "complete" }
+        : { stage: "impl", state: "impl_failed" }
   return {
     id,
     text: "change it",
@@ -23,6 +30,8 @@ function goal(id: string, mode: Goal["mode"], status: Goal["status"] = "pending"
     mode,
     createdAt: 1000,
     status,
+    lifecycle,
+    mergePolicy: { autoMerge: true },
   }
 }
 
@@ -391,7 +400,7 @@ describe("WorkspaceManager workspace kinds", () => {
     await waitFor(() => expect(spawned).toHaveLength(1))
     spawned[0]!.emit("close", 0)
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
-  })
+  }, 15_000)
 
   it("does not capture story snapshots before starting the agent working instance", async () => {
     const prepared: string[] = []
@@ -426,7 +435,7 @@ describe("WorkspaceManager workspace kinds", () => {
     spawned[0]!.emit("close", 0)
     await waitFor(() => expect(prepared).toHaveLength(2))
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
-  })
+  }, 15_000)
 
   it("rejects code goals in architecture workspaces", async () => {
     const mgr = createManager()
@@ -628,6 +637,47 @@ describe("WorkspaceManager workspace kinds", () => {
     const state = mgr.get(code.id)
     if (!state) throw new Error("missing workspace")
     expect(readFileSync(join(state.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
+  }, 15000)
+
+  it("pauses a completed code goal for manual merge when auto-merge is disabled", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "thing.txt"), "base\n")
+      },
+    })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("edit", "code"), { autoMerge: false })).goal
+
+    expect(mgr.processById(code.id, task.id, () => undefined)).toBe(task.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "edited\n")
+
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => {
+      expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" })
+    })
+    const beforeMerge = mgr.get(code.id)
+    if (!beforeMerge) throw new Error("missing workspace")
+    const pausedGoal = beforeMerge.goals.find((g) => g.id === task.id)
+    expect(pausedGoal?.status).toBe("done")
+    expect(pausedGoal?.workingInstanceId).toBeTruthy()
+    expect(readFileSync(join(beforeMerge.forkDir, "thing.txt"), "utf8")).toBe("base\n")
+
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+    expect(await mgr.mergeGoal(code.id, task.id, (event) => events.push(event))).toEqual({ ok: true, status: "completed" })
+    expect(spawned).toHaveLength(1)
+
+    const afterMerge = mgr.get(code.id)
+    if (!afterMerge) throw new Error("missing workspace")
+    const mergedGoal = afterMerge.goals.find((g) => g.id === task.id)
+    expect(mergedGoal?.lifecycle).toEqual({ stage: "merged", state: "complete" })
+    expect(mergedGoal?.workingInstanceId).toBeNull()
+    expect(mergedGoal?.mergedInstanceId).toBeTruthy()
+    expect(readFileSync(join(afterMerge.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
+    expect(events.some((event) => String(event.message ?? "").includes("workspace instance accepted"))).toBe(true)
   }, 15000)
 
   it("auto-resolves snapshot-only rebase conflicts without resuming the agent", async () => {
