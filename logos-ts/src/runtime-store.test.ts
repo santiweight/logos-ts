@@ -99,6 +99,23 @@ describe("LogosRuntimeStore", () => {
     })
   })
 
+  it("persists workspace initialization state", () => {
+    const ws = workspace()
+    ws.initialization = {
+      status: "initializing",
+      updatedAt: 1002,
+      steps: [
+        { id: "materialize", label: "Materialize workspace", status: "done" },
+        { id: "story_snapshots", label: "Capture story snapshots", status: "running" },
+        { id: "commit_baseline", label: "Commit snapshot baseline", status: "pending" },
+        { id: "index", label: "Index workspace", status: "pending" },
+      ],
+    }
+    store.saveWorkspace(ws)
+
+    expect(store.loadWorkspace(ws.id)?.initialization).toEqual(ws.initialization)
+  })
+
   it("cascades workspace-owned runtime rows on workspace delete", () => {
     const ws = workspace()
     store.saveWorkspace(ws)

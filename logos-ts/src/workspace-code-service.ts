@@ -47,6 +47,7 @@ export interface WorkspaceCodeServiceOptions {
   runsDir: string
   projectRoot: string
   nodeModulesDirs: string[]
+  cacheNodeModules?: boolean
 }
 
 function isSubpath(parent: string, child: string): boolean {
@@ -76,6 +77,17 @@ export class WorkspaceCodeService {
   async commitWorkspaceChanges(instance: CodeWorkspaceInstance, message: string): Promise<boolean> {
     this.ensureRepo(instance.materializedRoot)
     return this.commitWorkingTree(instance.materializedRoot, message)
+  }
+
+  ensureCachedNodeModules(instance: CodeWorkspaceInstance): void {
+    if (this.opts.cacheNodeModules === false) return
+    const nmCache = new NodeModulesCache()
+    for (const pkgDir of this.packageDirsToCache(instance.materializedRoot)) {
+      const result = nmCache.ensureFor(pkgDir)
+      const rel = relative(instance.materializedRoot, pkgDir)
+      const target = join(instance.materializedRoot, rel, "node_modules")
+      nmCache.relinkTo(result.nodeModulesPath, target)
+    }
   }
 
   async withWorkspaceLock<T>(workspaceId: string, fn: () => Promise<T>): Promise<T> {
@@ -160,7 +172,7 @@ export class WorkspaceCodeService {
         },
       })
       const nmCache = new NodeModulesCache()
-      for (const pkgDir of findPackageDirs(sourceRoot)) {
+      for (const pkgDir of this.packageDirsToCache(sourceRoot)) {
         const result = nmCache.ensureFor(pkgDir)
         const rel = relative(sourceRoot, pkgDir)
         const target = join(dir, rel, "node_modules")
@@ -168,6 +180,11 @@ export class WorkspaceCodeService {
       }
     }
     return dir
+  }
+
+  private packageDirsToCache(sourceRoot: string): string[] {
+    if (this.opts.cacheNodeModules === false) return []
+    return findPackageDirs(sourceRoot)
   }
 
   private ensureRepo(root: string): void {

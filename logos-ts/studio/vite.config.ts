@@ -366,8 +366,25 @@ function studioApi(runtime: StudioRuntime): Plugin {
         const entries = runManager.all()
         const states = runManager.allStates()
         const urls: Record<string, string> = {}
-        for (const entry of Object.values(entries)) {
-          urls[entry.id] = entry.url
+        for (const ws of wsMgr.list()) {
+          for (const target of caps.runs) {
+            const url = runManager.get(ws.id, target.id)
+            if (!url) continue
+            const key = `${ws.id}:${target.id}`
+            urls[key] = publicRunUrl(ws.id, target.id)
+            const entry = entries[key]
+            if (entry && !states[key]) {
+              states[key] = {
+                id: key,
+                workspaceId: ws.id,
+                targetId: target.id,
+                status: "ready",
+                startedAt: entry.startedAt,
+                updatedAt: Date.now(),
+                logs: [],
+              }
+            }
+          }
         }
         res.end(JSON.stringify({ urls, states, entries }))
       })
@@ -796,23 +813,27 @@ function autoStorybook(runtime: StudioRuntime): Plugin {
       const { caps, sbManager, runManager, wsMgr } = runtime
       sbManager.cleanupAll()
       runManager.cleanupAll()
-      // Ensure Storybooks are running for all existing workspaces
-      for (const wsMeta of wsMgr.list()) {
-        const ws = wsMgr.get(wsMeta.id)
-        if (!ws) continue
-        for (const storybook of storybookCaps()) {
-          const serviceId = storybookServiceId(ws.activeInstanceId, storybook.frontendDir)
-          if (sbManager.get(serviceId)) continue
-          const wsFrontend = join(ws.forkDir, relative(runtime.projectRoot, storybook.frontendDir))
-          sbManager.ensure(serviceId, wsFrontend).catch((e: any) =>
-            console.error(`[storybook-mgr] failed to restart ${wsMeta.id}:${relative(runtime.projectRoot, storybook.frontendDir) || "."}:`, e.message)
-          )
-        }
-        for (const target of caps.runs) {
-          if (runManager.get(wsMeta.id, target.id)) continue
-          runManager.ensure(wsMeta.id, ws.forkDir, target).catch((e: any) =>
-            console.error(`[run-mgr] failed to restart ${wsMeta.id}:${target.id}:`, e.message)
-          )
+      // Startup should be cheap: reconnect already-running processes, but do
+      // not spawn every persisted workspace runtime unless explicitly asked.
+      if (process.env.LOGOS_EAGER_WORKSPACE_RUNTIMES === "1") {
+        for (const wsMeta of wsMgr.list()) {
+          const ws = wsMgr.get(wsMeta.id)
+          if (!ws) continue
+          if (ws.initialization?.status === "initializing" || ws.initialization?.status === "error") continue
+          for (const storybook of storybookCaps()) {
+            const serviceId = storybookServiceId(ws.activeInstanceId, storybook.frontendDir)
+            if (sbManager.get(serviceId)) continue
+            const wsFrontend = join(ws.forkDir, relative(runtime.projectRoot, storybook.frontendDir))
+            sbManager.ensure(serviceId, wsFrontend).catch((e: any) =>
+              console.error(`[storybook-mgr] failed to restart ${wsMeta.id}:${relative(runtime.projectRoot, storybook.frontendDir) || "."}:`, e.message)
+            )
+          }
+          for (const target of caps.runs) {
+            if (runManager.get(wsMeta.id, target.id)) continue
+            runManager.ensure(wsMeta.id, ws.forkDir, target).catch((e: any) =>
+              console.error(`[run-mgr] failed to restart ${wsMeta.id}:${target.id}:`, e.message)
+            )
+          }
         }
       }
       const cleanup = () => { wsMgr.abortAll(); sbManager.shutdownAll(); runManager.shutdownAll() }

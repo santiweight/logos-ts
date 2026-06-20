@@ -143,6 +143,20 @@ export interface WorkspacePublication {
   updatedAt: number
 }
 
+export interface WorkspaceInitializationStep {
+  id: "materialize" | "story_snapshots" | "commit_baseline" | "index"
+  label: string
+  status: "pending" | "running" | "done" | "error"
+  detail?: string
+  error?: string
+}
+
+export interface WorkspaceInitialization {
+  status: "initializing" | "ready" | "error"
+  updatedAt: number
+  steps: WorkspaceInitializationStep[]
+}
+
 export interface GoalApi {
   comments: Record<string, Goal[]>
   onComment: (target: string, label: string, x: number, y: number) => void
@@ -203,6 +217,7 @@ export interface WorkspaceMeta {
   baseInstanceId: string
   activeInstanceId: string
   goals: Goal[]
+  initialization?: WorkspaceInitialization
   publication?: WorkspacePublication
 }
 

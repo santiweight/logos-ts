@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, statSync, utimesSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
-import { basename, dirname, join } from "node:path"
+import { basename, dirname, join, relative, resolve } from "node:path"
 
 export interface NmCacheResult {
   cacheKey: string
@@ -17,6 +17,7 @@ export interface NmCacheOptions {
 
 const DEFAULT_CACHE_DIR = join(homedir(), ".logos", "nm-cache")
 const DEFAULT_MAX_ENTRIES = 20
+const CACHE_FORMAT_VERSION = "bin-relinked-v2"
 
 export class NodeModulesCache {
   private cacheDir: string
@@ -56,8 +57,11 @@ export class NodeModulesCache {
 
     const sourceNm = join(packageDir, "node_modules")
     if (!existsSync(sourceNm)) mkdirSync(sourceNm, { recursive: true })
-    // -RL dereferences symlinks so file: dependencies survive the move
+    // -RL dereferences package symlinks so file: dependencies survive in the
+    // cache; npm-style .bin symlinks are rebuilt below because some CLIs load
+    // assets relative to their real package path.
     execFileSync("cp", ["-RL", sourceNm, cachedNm])
+    this.rebuildBinLinks(cachedNm)
     rmSync(sourceNm, { recursive: true, force: true })
 
     const lockSrc = existsSync(lockfile) ? lockfile : join(packageDir, "package.json")
@@ -72,6 +76,17 @@ export class NodeModulesCache {
 
   linkTo(cachedNmPath: string, target: string): void {
     if (existsSync(target)) return
+    mkdirSync(dirname(target), { recursive: true })
+    symlinkSync(cachedNmPath, target)
+  }
+
+  relinkTo(cachedNmPath: string, target: string): void {
+    try {
+      if (readlinkSync(target) === cachedNmPath) return
+    } catch {
+      // Missing or non-symlink targets are replaced below.
+    }
+    rmSync(target, { recursive: true, force: true })
     mkdirSync(dirname(target), { recursive: true })
     symlinkSync(cachedNmPath, target)
   }
@@ -95,7 +110,12 @@ export class NodeModulesCache {
       return ""
     }
 
-    return createHash("sha256").update(content).digest("hex").slice(0, 16)
+    return createHash("sha256")
+      .update(CACHE_FORMAT_VERSION)
+      .update("\0")
+      .update(content)
+      .digest("hex")
+      .slice(0, 16)
   }
 
   private installInPlace(packageDir: string): void {
@@ -108,6 +128,55 @@ export class NodeModulesCache {
   private touchEntry(entryDir: string): void {
     const now = new Date()
     try { utimesSync(entryDir, now, now) } catch { /* best effort */ }
+  }
+
+  private rebuildBinLinks(nodeModulesPath: string): void {
+    const binDir = join(nodeModulesPath, ".bin")
+    rmSync(binDir, { recursive: true, force: true })
+    mkdirSync(binDir, { recursive: true })
+
+    for (const pkgDir of this.packageDirs(nodeModulesPath)) {
+      const packageJson = join(pkgDir, "package.json")
+      let parsed: { name?: string; bin?: string | Record<string, string> }
+      try {
+        parsed = JSON.parse(readFileSync(packageJson, "utf8")) as { name?: string; bin?: string | Record<string, string> }
+      } catch {
+        continue
+      }
+
+      const bins = typeof parsed.bin === "string"
+        ? (parsed.name ? { [basename(parsed.name)]: parsed.bin } : {})
+        : (parsed.bin ?? {})
+      for (const [name, target] of Object.entries(bins)) {
+        if (!name || !target) continue
+        const linkPath = join(binDir, name)
+        const packageRel = this.packageRelativePath(nodeModulesPath, pkgDir)
+        const targetPath = join("..", packageRel, target)
+        try { unlinkSync(linkPath) } catch {}
+        try { symlinkSync(targetPath, linkPath) } catch {}
+      }
+    }
+  }
+
+  private packageDirs(nodeModulesPath: string): string[] {
+    const dirs: string[] = []
+    for (const entry of safeReaddir(nodeModulesPath)) {
+      if (entry === ".bin") continue
+      const full = join(nodeModulesPath, entry)
+      if (entry.startsWith("@")) {
+        for (const scopedEntry of safeReaddir(full)) {
+          const scopedFull = join(full, scopedEntry)
+          if (existsSync(join(scopedFull, "package.json"))) dirs.push(scopedFull)
+        }
+      } else if (existsSync(join(full, "package.json"))) {
+        dirs.push(full)
+      }
+    }
+    return dirs
+  }
+
+  private packageRelativePath(nodeModulesPath: string, pkgDir: string): string {
+    return relative(nodeModulesPath, pkgDir)
   }
 
   private evict(): void {

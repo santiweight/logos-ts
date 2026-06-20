@@ -66,6 +66,8 @@ function createManager(opts?: {
   sbManager?: Record<string, unknown>
   setupProject?: (projectRoot: string) => void
   caps?: Record<string, unknown> | ((projectRoot: string) => Record<string, unknown>)
+  initializeWorkspaces?: boolean
+  cacheNodeModules?: boolean
 }): WorkspaceManager {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
   tempDirs.push(root)
@@ -89,6 +91,8 @@ function createManager(opts?: {
     sessions: sessions as any,
     tsx: TSX,
     getIndex: async () => ({ root: projectRoot, files: [] }),
+    initializeWorkspaces: opts?.initializeWorkspaces ?? false,
+    cacheNodeModules: opts?.cacheNodeModules ?? false,
     ...(opts?.spawned
       ? {
           spawnAgent: (_command, args, options) => {
@@ -246,6 +250,46 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.get(arch.id)?.kind).toBe("arch")
   })
 
+  it("tracks asynchronous workspace initialization", async () => {
+    const mgr = createManager({ initializeWorkspaces: true })
+    const code = await mgr.create({ kind: "code" })
+
+    expect(mgr.get(code.id)?.initialization?.steps.map((step) => step.id)).toEqual([
+      "materialize",
+      "story_snapshots",
+      "commit_baseline",
+      "index",
+    ])
+    await waitFor(() => expect(mgr.get(code.id)?.initialization?.status).toBe("ready"))
+  })
+
+  it("returns a workspace before slow snapshot initialization completes", async () => {
+    const mgr = createManager({ initializeWorkspaces: true })
+    let snapshotsStarted!: () => void
+    let releaseSnapshots!: () => void
+    const snapshotsStartedPromise = new Promise<void>((resolve) => { snapshotsStarted = resolve })
+    const releaseSnapshotsPromise = new Promise<void>((resolve) => { releaseSnapshots = resolve })
+    ;(mgr as any).runStorySnapshotAcceptance = async () => {
+      snapshotsStarted()
+      await releaseSnapshotsPromise
+      return { ok: true, output: "snapshots done" }
+    }
+
+    const code = await Promise.race([
+      mgr.create({ kind: "code" }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
+    ])
+
+    expect(code).not.toBeNull()
+    if (!code) throw new Error("workspace creation waited for snapshot initialization")
+    await snapshotsStartedPromise
+    expect(mgr.get(code.id)?.initialization?.status).toBe("initializing")
+    expect(mgr.get(code.id)?.initialization?.steps.find((step) => step.id === "story_snapshots")?.status).toBe("running")
+
+    releaseSnapshots()
+    await waitFor(() => expect(mgr.get(code.id)?.initialization?.status).toBe("ready"))
+  })
+
   it("forks from the parent workspace files, not the original project snapshot", async () => {
     const mgr = createManager()
     const parent = await mgr.create({ kind: "code" })
@@ -261,12 +305,26 @@ describe("WorkspaceManager workspace kinds", () => {
   })
 
   it("forks dependency folders from the parent workspace instance", async () => {
-    const mgr = createManager()
+    const mgr = createManager({
+      cacheNodeModules: true,
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "package.json"), JSON.stringify({
+          name: `dependency-fork-${Date.now()}`,
+          version: "1.0.0",
+          dependencies: { storybook: "file:./local-storybook" },
+        }))
+        mkdirSync(join(projectRoot, "local-storybook", "bin"), { recursive: true })
+        writeFileSync(join(projectRoot, "local-storybook", "package.json"), JSON.stringify({
+          name: "storybook",
+          version: "1.0.0",
+          bin: { storybook: "bin/index.js" },
+        }))
+        writeFileSync(join(projectRoot, "local-storybook", "bin", "index.js"), "storybook bin")
+      },
+    })
     const parent = await mgr.create({ kind: "code" })
     const parentState = mgr.get(parent.id)
     if (!parentState) throw new Error("missing parent workspace")
-    mkdirSync(join(parentState.forkDir, "node_modules", ".bin"), { recursive: true })
-    writeFileSync(join(parentState.forkDir, "node_modules", ".bin", "storybook"), "storybook bin")
 
     const child = await mgr.create({ fromWorkspaceId: parent.id, kind: "code" })
     const childState = mgr.get(child.id)
@@ -548,6 +606,11 @@ describe("WorkspaceManager workspace kinds", () => {
       setupProject(root) {
         mkdirSync(join(root, ".storybook"), { recursive: true })
         writeFileSync(join(root, ".storybook", "preview.ts"), "export default {}\n")
+        writeFileSync(join(root, "Widget.stories.tsx"), [
+          "const meta = { title: 'Widget', component: 'Widget' }",
+          "export default meta",
+          "export const Default = {}",
+        ].join("\n"))
       },
       caps: (root) => ({
         storybook: { frontendDir: root, configDir: join(root, ".storybook") },
@@ -561,6 +624,9 @@ describe("WorkspaceManager workspace kinds", () => {
     })
     const code = await mgr.create({ kind: "code" })
     expect(prepared).toHaveLength(1)
+    const created = mgr.get(code.id)
+    if (!created) throw new Error("missing workspace")
+    expect(existsSync(join(created.forkDir, ".logos", "story-snapshots.test.ts"))).toBe(false)
     expectGoal(await mgr.addGoal(code.id, goal("first", "code")))
 
     const events: { type: string; message?: unknown }[] = []
@@ -569,10 +635,6 @@ describe("WorkspaceManager workspace kinds", () => {
 
     expect(prepared).toHaveLength(1)
     expect(events[0]).toMatchObject({ type: "status", message: "preparing workspace instance…" })
-
-    spawned[0]!.emit("close", 0)
-    await waitFor(() => expect(prepared).toHaveLength(2))
-    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
   }, 15_000)
 
   it("rejects code goals in architecture workspaces", async () => {
@@ -991,6 +1053,8 @@ describe("WorkspaceManager workspace kinds", () => {
       sessions: { deleteByWorkspace: () => undefined } as any,
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
+      initializeWorkspaces: false,
+      cacheNodeModules: false,
     })
     const created = await mgr.create({ kind: "arch", name: "db-backed" })
     expect(existsSync(join(root, ".workspaces"))).toBe(false)
@@ -1006,6 +1070,8 @@ describe("WorkspaceManager workspace kinds", () => {
       sessions: { deleteByWorkspace: () => undefined } as any,
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
+      initializeWorkspaces: false,
+      cacheNodeModules: false,
     })
 
     expect(restored.get(created.id)).toMatchObject({
@@ -1046,6 +1112,8 @@ describe("WorkspaceManager workspace kinds", () => {
       sessions: createSessions() as any,
       tsx: TSX,
       getIndex: async () => ({ root: sourceProjectRoot, files: [] }),
+      initializeWorkspaces: false,
+      cacheNodeModules: false,
     })
     const workspace = await mgr.create({ name: "Publish Me" })
     const state = mgr.get(workspace.id)

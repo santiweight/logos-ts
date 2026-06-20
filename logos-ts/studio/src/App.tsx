@@ -746,6 +746,16 @@ export function App() {
     return () => clearInterval(iv)
   }, [agentRunning, activeWorkspaceId, openWorkspace])
 
+  const workspaceInitializing = workspaces.some((workspace) => workspace.initialization?.status === "initializing")
+  useEffect(() => {
+    if (!workspaceInitializing) return
+    const iv = setInterval(() => {
+      refreshWorkspaces()
+      if (activeWorkspaceId) openWorkspace(activeWorkspaceId)
+    }, 1_000)
+    return () => clearInterval(iv)
+  }, [workspaceInitializing, activeWorkspaceId, refreshWorkspaces, openWorkspace])
+
   // ---- actions ----
   const onFork = useCallback(async () => {
     setBusy("forking workspace…")

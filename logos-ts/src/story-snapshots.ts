@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-syntax */
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { join, relative, resolve, sep } from "node:path"
 import { loadProject } from "./project.js"
 import { indexStories, type StoryEntry } from "./stories.js"
@@ -28,6 +29,8 @@ interface StorybookDirs {
   frontendDir: string
   configDir?: string
 }
+
+const STORY_SNAPSHOT_REQUIRED_PACKAGES = ["playwright"] as const
 
 function posixPath(path: string): string {
   return path.split(sep).join("/")
@@ -148,6 +151,18 @@ function tsconfigAliases(frontendDir: string): Record<string, { replacement: str
   } catch {
     return {}
   }
+}
+
+export function missingStorySnapshotDependencies(frontendDir: string): string[] {
+  const projectRequire = createRequire(join(resolve(frontendDir), "package.json"))
+  return STORY_SNAPSHOT_REQUIRED_PACKAGES.filter((pkg) => {
+    try {
+      projectRequire.resolve(pkg)
+      return false
+    } catch {
+      return true
+    }
+  })
 }
 
 export function ensureStorySnapshotTest(root: string, stories: StoryEntry[], dirs: StorybookDirs): StorySnapshotTestResult {

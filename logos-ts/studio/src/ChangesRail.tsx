@@ -12,6 +12,16 @@ const mergeIcon = svgIcon("M7 3v11a4 4 0 0 0 4 4h6M17 18l-3-3M17 18l-3 3M7 7h5",
 const trashIcon = svgIcon("M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7", 12)
 const pushIcon = svgIcon("M12 21V5M7 10l5-5 5 5M5 21h14", 12)
 
+function initializationStatusText(status: NonNullable<WorkspaceMeta["initialization"]>["steps"][number]["status"]): string {
+  switch (status) {
+    case "done": return "done"
+    case "running": return "running"
+    case "error": return "error"
+    case "pending":
+    default: return "pending"
+  }
+}
+
 interface Props {
   open: boolean
   onToggle: () => void
@@ -104,9 +114,16 @@ export function ChangesRail({
                 <div className="rail-main">
                   <span className="rail-title">{w.name}</span>
                   {w.parentId && <span className="rail-status"> · branch</span>}
+                  {w.initialization?.status === "initializing" && <span className="rail-status"> · initializing</span>}
+                  {w.initialization?.status === "error" && <span className="rail-status error"> · init failed</span>}
                   {!isActive && goals.length > 0 && <span className="rail-status"> · {goals.length}</span>}
                 </div>
                 <div className="rail-actions">
+                  {w.initialization?.status === "initializing" && (
+                    <span className="rail-agent" title="Workspace initializing">
+                      <span className="ag-spin">↻</span>
+                    </span>
+                  )}
                   {goals.some((g) => runningGoals.has(g.id)) && (
                     <span className="rail-agent" title="Agent running">
                       <span className="ag-spin">↻</span>
@@ -148,6 +165,21 @@ export function ChangesRail({
                   </button>
                 </div>
               </div>
+
+              {isActive && w.initialization && w.initialization.status !== "ready" && (
+                <div className={`rail-initialization ${w.initialization.status}`}>
+                  {w.initialization.steps.map((step) => (
+                    <div key={step.id} className={`rail-init-step ${step.status}`}>
+                      <span className="rail-init-mark">
+                        {step.status === "running" ? <span className="ag-spin">↻</span> : step.status === "done" ? "✓" : step.status === "error" ? "!" : "·"}
+                      </span>
+                      <span className="rail-init-label">{step.label}</span>
+                      <span className="rail-init-status">{initializationStatusText(step.status)}</span>
+                      {step.error && <div className="rail-init-error" title={step.error}>{step.error}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {isActive && w.publication && (
                 <div className="rail-publication">

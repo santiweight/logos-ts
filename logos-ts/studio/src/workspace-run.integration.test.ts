@@ -23,16 +23,21 @@ const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
 function createProject(): string {
   const root = mkdtempSync(join(tmpdir(), "logos-run-project-"))
-  const binDir = join(root, "node_modules", ".bin")
-  mkdirSync(binDir, { recursive: true })
+  const fakeVite = join(root, "fake-vite")
+  mkdirSync(fakeVite, { recursive: true })
   writeFileSync(join(root, "package.json"), JSON.stringify({
     type: "module",
     scripts: { dev: "vite" },
-    dependencies: { vite: "0.0.0-test" },
+    dependencies: { vite: "file:./fake-vite" },
   }))
   writeFileSync(join(root, "index.html"), "<div id=\"root\"></div>\n")
+  writeFileSync(join(fakeVite, "package.json"), JSON.stringify({
+    name: "vite",
+    version: "0.0.0-test",
+    bin: { vite: "vite.js" },
+  }))
 
-  const script = join(binDir, "vite")
+  const script = join(fakeVite, "vite.js")
   writeFileSync(script, [
     "#!/usr/bin/env node",
     "const http = require('node:http')",

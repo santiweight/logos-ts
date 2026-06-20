@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -37,6 +37,35 @@ function makeProjectWithDep(root: string): string {
     name: "test-with-dep",
     version: "1.0.0",
     dependencies: { "is-odd": "3.0.1" },
+  }))
+  execFileSync("npm", ["install"], { cwd: root, stdio: "ignore" })
+  const lockContent = readFileSync(join(root, "package-lock.json"), "utf8")
+  rmSync(join(root, "node_modules"), { recursive: true, force: true })
+  writeFileSync(join(root, "package-lock.json"), lockContent)
+  return root
+}
+
+function makeProjectWithCliDep(root: string, packageRoot: string): string {
+  mkdirSync(join(packageRoot, "bin"), { recursive: true })
+  writeFileSync(join(packageRoot, "package.json"), JSON.stringify({
+    name: "asset-cli",
+    version: "1.0.0",
+    bin: { "asset-cli": "bin/cli.js" },
+  }))
+  writeFileSync(join(packageRoot, "bin", "asset.txt"), "asset ok")
+  writeFileSync(join(packageRoot, "bin", "cli.js"), [
+    "#!/usr/bin/env node",
+    "const { readFileSync } = require('node:fs')",
+    "const { join } = require('node:path')",
+    "console.log(readFileSync(join(__dirname, 'asset.txt'), 'utf8'))",
+    "",
+  ].join("\n"))
+
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    name: "test-with-cli-dep",
+    version: "1.0.0",
+    dependencies: { "asset-cli": `file:${packageRoot}` },
   }))
   execFileSync("npm", ["install"], { cwd: root, stdio: "ignore" })
   const lockContent = readFileSync(join(root, "package-lock.json"), "utf8")
@@ -214,6 +243,39 @@ describe("NodeModulesCache", () => {
         expect(existsSync(resolvedTarget)).toBe(true)
       }
     }
+  })
+
+  it("rebuilds .bin links so package-relative CLI assets resolve", () => {
+    const tmp = makeTempDir()
+    const project = makeProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const cacheDir = join(tmp, "cache")
+    const cache = new NodeModulesCache({ cacheDir })
+
+    const result = cache.ensureFor(project)
+    const bin = join(result.nodeModulesPath, ".bin", "asset-cli")
+
+    expect(lstatSync(bin).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(bin)).toBe("../asset-cli/bin/cli.js")
+
+    const output = execFileSync(bin, { cwd: project, encoding: "utf8" })
+    expect(output.trim()).toBe("asset ok")
+  })
+
+  it("relinks stale node_modules symlinks to the current cache entry", () => {
+    const tmp = makeTempDir()
+    const project = makeProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
+    const result = cache.ensureFor(project)
+    const stale = join(tmp, "stale-node-modules")
+    mkdirSync(stale, { recursive: true })
+    const target = join(project, "node_modules")
+    symlinkSync(stale, target)
+
+    cache.relinkTo(result.nodeModulesPath, target)
+
+    expect(readlinkSync(target)).toBe(result.nodeModulesPath)
+    const output = execFileSync(join(target, ".bin", "asset-cli"), { cwd: project, encoding: "utf8" })
+    expect(output.trim()).toBe("asset ok")
   })
 
   it("multiple workspaces share the same cache entry", () => {

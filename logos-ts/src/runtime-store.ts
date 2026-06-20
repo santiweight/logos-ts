@@ -69,6 +69,23 @@ export interface StoredWorkspacePublication {
   updatedAt: number
 }
 
+export type StoredWorkspaceInitializationStatus = "initializing" | "ready" | "error"
+export type StoredWorkspaceInitializationStepStatus = "pending" | "running" | "done" | "error"
+
+export interface StoredWorkspaceInitializationStep {
+  id: "materialize" | "story_snapshots" | "commit_baseline" | "index"
+  label: string
+  status: StoredWorkspaceInitializationStepStatus
+  detail?: string
+  error?: string
+}
+
+export interface StoredWorkspaceInitialization {
+  status: StoredWorkspaceInitializationStatus
+  updatedAt: number
+  steps: StoredWorkspaceInitializationStep[]
+}
+
 export interface StoredWorkspaceRecord {
   id: string
   name: string
@@ -79,6 +96,7 @@ export interface StoredWorkspaceRecord {
   activeInstanceId: string
   goals: StoredGoal[]
   instances: Record<string, StoredWorkspaceInstance>
+  initialization?: StoredWorkspaceInitialization
   publication?: StoredWorkspacePublication
 }
 
@@ -175,6 +193,7 @@ export class LogosRuntimeStore {
         created_at INTEGER NOT NULL,
         base_instance_id TEXT NOT NULL,
         active_instance_id TEXT NOT NULL,
+        initialization_json TEXT,
         publication_json TEXT
       );
       CREATE TABLE IF NOT EXISTS workspace_instances (
@@ -277,6 +296,7 @@ export class LogosRuntimeStore {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_goal ON sessions(goal_id);
     `)
     this.addColumnIfMissing("workspaces", "publication_json", "TEXT")
+    this.addColumnIfMissing("workspaces", "initialization_json", "TEXT")
     this.addColumnIfMissing("goals", "lifecycle_json", "TEXT")
     this.addColumnIfMissing("goals", "auto_merge", "INTEGER NOT NULL DEFAULT 1")
     this.addColumnIfMissing("goals", "working_instance_id", "TEXT")
@@ -359,6 +379,8 @@ export class LogosRuntimeStore {
         return [mapped.id, mapped]
       })),
     }
+    const initialization = parseInitialization(row["initialization_json"])
+    if (initialization) workspace.initialization = initialization
     const publication = parsePublication(row["publication_json"])
     if (publication) workspace.publication = publication
     return workspace
@@ -367,8 +389,8 @@ export class LogosRuntimeStore {
   saveWorkspace(ws: StoredWorkspaceRecord): void {
     this.transaction(() => {
       this.db.prepare(`
-        INSERT INTO workspaces (id, name, kind, parent_id, created_at, base_instance_id, active_instance_id, publication_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO workspaces (id, name, kind, parent_id, created_at, base_instance_id, active_instance_id, initialization_json, publication_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           kind = excluded.kind,
@@ -376,6 +398,7 @@ export class LogosRuntimeStore {
           created_at = excluded.created_at,
           base_instance_id = excluded.base_instance_id,
           active_instance_id = excluded.active_instance_id,
+          initialization_json = excluded.initialization_json,
           publication_json = excluded.publication_json
       `).run(
         ws.id,
@@ -385,6 +408,7 @@ export class LogosRuntimeStore {
         ws.createdAt,
         ws.baseInstanceId,
         ws.activeInstanceId,
+        ws.initialization ? JSON.stringify(ws.initialization) : null,
         ws.publication ? JSON.stringify(ws.publication) : null,
       )
 
@@ -659,6 +683,48 @@ function parsePublication(value: unknown): StoredWorkspacePublication | undefine
     const parsed = JSON.parse(value) as StoredWorkspacePublication
     if (!parsed.branchName || !parsed.remote || !parsed.commit) return undefined
     return parsed
+  } catch {
+    return undefined
+  }
+}
+
+function parseInitialization(value: unknown): StoredWorkspaceInitialization | undefined {
+  if (typeof value !== "string" || !value) return undefined
+  try {
+    const parsed = JSON.parse(value) as Partial<StoredWorkspaceInitialization>
+    if (
+      parsed.status !== "initializing" &&
+      parsed.status !== "ready" &&
+      parsed.status !== "error"
+    ) return undefined
+    if (typeof parsed.updatedAt !== "number") return undefined
+    if (!Array.isArray(parsed.steps)) return undefined
+    const steps = parsed.steps.flatMap((step): StoredWorkspaceInitializationStep[] => {
+      if (!step || typeof step !== "object") return []
+      const candidate = step as Partial<StoredWorkspaceInitializationStep>
+      if (
+        candidate.id !== "materialize" &&
+        candidate.id !== "story_snapshots" &&
+        candidate.id !== "commit_baseline" &&
+        candidate.id !== "index"
+      ) return []
+      if (typeof candidate.label !== "string") return []
+      if (
+        candidate.status !== "pending" &&
+        candidate.status !== "running" &&
+        candidate.status !== "done" &&
+        candidate.status !== "error"
+      ) return []
+      const out: StoredWorkspaceInitializationStep = {
+        id: candidate.id,
+        label: candidate.label,
+        status: candidate.status,
+      }
+      if (typeof candidate.detail === "string") out.detail = candidate.detail
+      if (typeof candidate.error === "string") out.error = candidate.error
+      return [out]
+    })
+    return { status: parsed.status, updatedAt: parsed.updatedAt, steps }
   } catch {
     return undefined
   }

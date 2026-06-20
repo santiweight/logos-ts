@@ -28,10 +28,12 @@ import type {
   StoredGoalLifecycle,
   StoredGoalMergePolicy,
   LogosRuntimeStore,
+  StoredWorkspaceInitialization,
+  StoredWorkspaceInitializationStep,
   StoredWorkspacePublication,
   WorkspaceKind,
 } from "./runtime-store.js"
-import { ensureStorySnapshotTestForRoot } from "./story-snapshots.js"
+import { ensureStorySnapshotTestForRoot, missingStorySnapshotDependencies } from "./story-snapshots.js"
 import { TsIndexCache } from "./ts-index-cache.js"
 
 export interface GoalReply {
@@ -80,6 +82,7 @@ interface WorkspaceRecord {
   activeInstanceId: string
   goals: Goal[]
   instances: Record<string, WorkspaceInstance>
+  initialization?: StoredWorkspaceInitialization
   publication?: StoredWorkspacePublication
 }
 
@@ -95,6 +98,7 @@ export interface WorkspaceState {
   index: unknown
   goals: Goal[]
   instances: Record<string, WorkspaceInstance>
+  initialization?: StoredWorkspaceInitialization
   publication?: StoredWorkspacePublication
 }
 
@@ -107,6 +111,7 @@ export interface WorkspaceMeta {
   baseInstanceId: string
   activeInstanceId: string
   goals: Goal[]
+  initialization?: StoredWorkspaceInitialization
   publication?: StoredWorkspacePublication
 }
 
@@ -210,6 +215,7 @@ export class WorkspaceManager {
   private runningAgents = new Map<string, ChildProcess>() // goalId → child
   private workspaceSeq = 0
   private deletingWorkspaces = new Set<string>()
+  private initializingWorkspaces = new Set<string>()
   private store: LogosRuntimeStore
   private runsDir: string
   private logosTsSrc: string
@@ -222,6 +228,7 @@ export class WorkspaceManager {
   private sessions: ClaudeSessionManager
   private tsx: string
   private getIndex: (() => Promise<unknown>) | null
+  private initializeWorkspaces: boolean
   private indexCache: TsIndexCache
   private goalSubscribers = new Map<string, Set<AgentEventCallback>>()
   private spawnAgent: AgentSpawner
@@ -243,6 +250,8 @@ export class WorkspaceManager {
     tsx: string
     getIndex?: () => Promise<unknown>
     spawnAgent?: AgentSpawner
+    initializeWorkspaces?: boolean
+    cacheNodeModules?: boolean
   }) {
     this.store = opts.store
     this.runsDir = opts.runsDir
@@ -256,12 +265,14 @@ export class WorkspaceManager {
     this.sessions = opts.sessions
     this.tsx = opts.tsx
     this.getIndex = opts.getIndex ?? null
+    this.initializeWorkspaces = opts.initializeWorkspaces ?? true
     this.indexCache = new TsIndexCache({ logosTsRoot: this.logosTsRoot, tsx: this.tsx })
     this.spawnAgent = opts.spawnAgent ?? spawn
     this.codeService = new WorkspaceCodeService({
       runsDir: this.runsDir,
       projectRoot: this.projectRoot,
       nodeModulesDirs: this.caps.nodeModulesDirs,
+      ...(opts.cacheNodeModules === undefined ? {} : { cacheNodeModules: opts.cacheNodeModules }),
     })
 
     this.loadAll()
@@ -279,6 +290,9 @@ export class WorkspaceManager {
       }
       if (dirty) this.store.saveWorkspace(ws)
       this.workspaces.set(ws.id, ws)
+      if (this.initializeWorkspaces && ws.initialization?.status === "initializing") {
+        queueMicrotask(() => this.initializeWorkspace(ws.id, ws.activeInstanceId))
+      }
     }
   }
 
@@ -317,6 +331,7 @@ export class WorkspaceManager {
       goals: ws.goals,
       instances: ws.instances,
     }
+    if (ws.initialization) state.initialization = ws.initialization
     if (ws.publication) state.publication = ws.publication
     return state
   }
@@ -332,6 +347,7 @@ export class WorkspaceManager {
       activeInstanceId: ws.activeInstanceId,
       goals: ws.goals,
     }
+    if (ws.initialization) meta.initialization = ws.initialization
     if (ws.publication) meta.publication = ws.publication
     return meta
   }
@@ -357,6 +373,100 @@ export class WorkspaceManager {
       inst.index = await this.snapshotIndex(inst.materializedRoot)
     }
     return inst
+  }
+
+  private createInitializationState(): StoredWorkspaceInitialization {
+    return {
+      status: "initializing",
+      updatedAt: Date.now(),
+      steps: [
+        { id: "materialize", label: "Materialize workspace", status: "done" },
+        { id: "story_snapshots", label: "Capture story snapshots", status: "pending" },
+        { id: "commit_baseline", label: "Commit snapshot baseline", status: "pending" },
+        { id: "index", label: "Index workspace", status: "pending" },
+      ],
+    }
+  }
+
+  private setInitializationStep(
+    ws: WorkspaceRecord,
+    stepId: StoredWorkspaceInitializationStep["id"],
+    status: StoredWorkspaceInitializationStep["status"],
+    detail?: string,
+  ): void {
+    if (!ws.initialization) ws.initialization = this.createInitializationState()
+    ws.initialization.updatedAt = Date.now()
+    const step = ws.initialization.steps.find((candidate) => candidate.id === stepId)
+    if (!step) return
+    step.status = status
+    delete step.detail
+    delete step.error
+    if (detail && status === "error") step.error = detail
+    else if (detail) step.detail = detail
+    this.save(ws)
+  }
+
+  private setInitializationStatus(ws: WorkspaceRecord, status: StoredWorkspaceInitialization["status"]): void {
+    if (!ws.initialization) ws.initialization = this.createInitializationState()
+    ws.initialization.status = status
+    ws.initialization.updatedAt = Date.now()
+    this.save(ws)
+  }
+
+  private failWorkspaceInitialization(ws: WorkspaceRecord, message: string): void {
+    this.setInitializationStatus(ws, "error")
+    for (const goal of ws.goals.filter((candidate) => candidate.status === "pending")) {
+      this.publishGoalEvent(goal.id, {
+        type: "error",
+        goalId: goal.id,
+        message: `workspace initialization failed: ${message}`,
+      }, () => undefined)
+    }
+  }
+
+  private async initializeWorkspace(workspaceId: string, instanceId: string): Promise<void> {
+    if (this.initializingWorkspaces.has(workspaceId)) return
+    this.initializingWorkspaces.add(workspaceId)
+    try {
+      const ws = this.workspaces.get(workspaceId)
+      if (!ws || this.deletingWorkspaces.has(workspaceId)) return
+      const inst = ws.instances[instanceId]
+      if (!inst) return
+
+      this.setInitializationStep(ws, "story_snapshots", "running")
+      const snapshots = await this.runStorySnapshotAcceptance(inst)
+      if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
+      if (!snapshots.ok) {
+        this.setInitializationStep(ws, "story_snapshots", "error", snapshots.output)
+        this.failWorkspaceInitialization(ws, snapshots.output)
+        console.warn(`[logos] story snapshot capture failed for ${inst.id}: ${snapshots.output}`)
+        return
+      }
+      this.setInitializationStep(ws, "story_snapshots", "done", snapshots.output)
+
+      this.setInitializationStep(ws, "commit_baseline", "running")
+      await this.codeService.commitWorkspaceChanges(inst, "Logos story snapshots")
+      if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
+      this.setInitializationStep(ws, "commit_baseline", "done")
+
+      this.setInitializationStep(ws, "index", "running")
+      inst.index = await this.snapshotIndex(inst.materializedRoot)
+      if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
+      this.setInitializationStep(ws, "index", "done")
+      this.setInitializationStatus(ws, "ready")
+      this.restartWorkspaceServices(ws, inst)
+      this.maybeStartNextQueued(ws.id)
+    } catch (e) {
+      const ws = this.workspaces.get(workspaceId)
+      if (!ws || this.deletingWorkspaces.has(workspaceId)) return
+      const message = e instanceof Error ? e.message : String(e)
+      const runningStep = ws.initialization?.steps.find((step) => step.status === "running")
+      if (runningStep) this.setInitializationStep(ws, runningStep.id, "error", message)
+      this.failWorkspaceInitialization(ws, message)
+      console.error(`[workspace] initialization for ${workspaceId} failed:`, message)
+    } finally {
+      this.initializingWorkspaces.delete(workspaceId)
+    }
   }
 
   private async prepareStorySnapshotsForInstance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
@@ -666,10 +776,6 @@ export class WorkspaceManager {
     const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
     const sourceIndex = parentInst?.index ?? (this.getIndex ? await this.getIndex() : undefined)
     const instance = await this.createInstance(id, sourceRoot, sourceIndex)
-    const snapshots = await this.prepareStorySnapshotsForInstance(instance)
-    if (!snapshots.ok) {
-      console.warn(`[logos] story snapshot capture failed for ${instance.id}: ${snapshots.output}`)
-    }
 
     const ws: WorkspaceRecord = {
       id,
@@ -681,28 +787,23 @@ export class WorkspaceManager {
       activeInstanceId: instance.id,
       goals: [],
       instances: { [instance.id]: instance },
+      ...(this.initializeWorkspaces ? { initialization: this.createInitializationState() } : {}),
     }
     this.workspaces.set(id, ws)
     this.save(ws)
 
-    if (this.storybookCaps().length > 0) {
-      this.startStorybooks(instance).catch((e: any) => {
-        console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
-      })
-    }
-    for (const target of this.caps.runs ?? []) {
-      this.runManager.ensure(id, instance.materializedRoot, target).catch((e: any) => {
-        console.error(`[workspace] run ${target.id} for ${id} failed to start:`, e.message)
-      })
-    }
+    if (this.initializeWorkspaces) this.initializeWorkspace(id, instance.id)
+    else this.restartWorkspaceServices(ws, instance)
     return this.toMeta(ws)
   }
 
   private startStorybooks(inst: WorkspaceInstance): Promise<string[]> {
     const storybooks = this.storybookCaps()
     if (storybooks.length === 0) return Promise.reject(new Error("storybook is not configured for this project"))
+    this.codeService.ensureCachedNodeModules(inst)
     return Promise.all(storybooks.map((storybook) => {
       const wsFrontend = join(inst.materializedRoot, relative(this.projectRoot, storybook.frontendDir))
+      this.sbManager.prepare(wsFrontend)
       return this.sbManager.ensure(this.storybookServiceId(inst, storybook.frontendDir), wsFrontend)
     }))
   }
@@ -719,7 +820,9 @@ export class WorkspaceManager {
     if (!ws) return Promise.reject(new Error("no such workspace"))
     const target = (this.caps.runs ?? []).find((candidate) => candidate.id === targetId)
     if (!target) return Promise.reject(new Error("run target not found"))
-    const root = this.activeInstance(ws).materializedRoot
+    const inst = this.activeInstance(ws)
+    this.codeService.ensureCachedNodeModules(inst)
+    const root = inst.materializedRoot
     return opts?.restart
       ? this.runManager.restart(wsId, root, target)
       : this.runManager.ensure(wsId, root, target)
@@ -998,6 +1101,19 @@ export class WorkspaceManager {
       onEvent({ type: "error", message: `${goal.mode} goal cannot run in ${ws.kind} workspace` })
       return null
     }
+    if (ws.initialization?.status === "error") {
+      onEvent({ type: "error", goalId: goal.id, message: "workspace initialization failed" })
+      return null
+    }
+    if (ws.initialization?.status === "initializing") {
+      this.subscribeGoalEvents(goal.id, onEvent)
+      onEvent({
+        type: "queued",
+        goalId: goal.id,
+        message: "goal queued behind workspace initialization",
+      })
+      return goal.id
+    }
 
     goal.status = "running"
     setGoalLifecycle(goal, { stage: "initializing", state: "creating_instance" })
@@ -1017,6 +1133,7 @@ export class WorkspaceManager {
   private maybeStartNextQueued(wsId: string): void {
     const ws = this.workspaces.get(wsId)
     if (!ws || this.runningGoal(ws) || this.goalAwaitingMerge(ws)) return
+    if (ws.initialization?.status === "initializing" || ws.initialization?.status === "error") return
     const goal = selectNextGoal(ws.goals, this.runningAgents)
     if (!goal || goal.mode !== ws.kind) return
 
@@ -1275,6 +1392,17 @@ export class WorkspaceManager {
     this.sbManager.prepare(dirs.frontendDir)
     const generated = ensureStorySnapshotTestForRoot(inst.materializedRoot, dirs)
     if (generated.storyCount === 0) return { ok: true, output: "no stories to snapshot" }
+    const missingDeps = missingStorySnapshotDependencies(generated.frontendDir)
+    if (missingDeps.length > 0) {
+      return {
+        ok: false,
+        output: [
+          `Missing project devDependencies required for Logos story snapshots: ${missingDeps.join(", ")}`,
+          `Install them in ${relative(inst.materializedRoot, generated.frontendDir) || "."} before initializing a workspace.`,
+          `Example: npm install --save-dev ${missingDeps.join(" ")}`,
+        ].join("\n"),
+      }
+    }
     const vitest = this.resolveVitestCommand(generated.frontendDir)
     const generatedTestFile = relative(generated.frontendDir, generated.testFile)
     try {
@@ -1316,6 +1444,7 @@ export class WorkspaceManager {
   private restartWorkspaceServices(ws: WorkspaceRecord, inst: WorkspaceInstance): void {
     this.shutdownWorkspaceStorybooks(ws)
     this.runManager.shutdownWorkspace(ws.id)
+    this.codeService.ensureCachedNodeModules(inst)
     if (this.storybookCaps().length > 0) {
       this.startStorybooks(inst).catch((e: any) => {
         console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
@@ -1455,7 +1584,6 @@ export class WorkspaceManager {
         return false
       }
 
-      await this.reindexInstance(ws, workingInst)
       setGoalLifecycle(goal, { stage: "merging", state: "running_tests" })
       this.save(ws)
       onEvent({ type: "status", goalId: goal.id, message: "running acceptance tests…" })
