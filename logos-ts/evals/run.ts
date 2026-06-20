@@ -7,7 +7,13 @@
 import { execFileSync } from "node:child_process"
 import { cpSync, rmSync, mkdirSync, existsSync, readFileSync, symlinkSync, copyFileSync } from "node:fs"
 import { resolve, dirname, basename, join } from "node:path"
-import { buildArchPrompt, buildGoalLine } from "../src/prompt.js"
+import {
+  buildArchPrompt,
+  buildGoalLine,
+  buildStoryGenerationContext,
+  buildStoryGenerationSystemPrompt,
+  isStoryGenerationRequest,
+} from "../src/prompt.js"
 
 interface Check {
   cwd: string
@@ -47,15 +53,27 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
 
   const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
 
+  const enrichedContext = isStoryGenerationRequest(c.comment.text)
+    ? `${context}\n\n${buildStoryGenerationContext()}`
+    : context
+
   if (c.agent === "architecture" || c.agent === "testing") {
-    return buildArchPrompt(context, sandbox, goalLine)
+    return buildArchPrompt(enrichedContext, sandbox, goalLine)
   }
 
-  return `${context}\n\n${sandbox}` +
+  return `${enrichedContext}\n\n${sandbox}` +
     `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change.\n\n` +
     `Address these change requests:\n${goalLine}\n\n` +
     `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck.` +
     ` This project has no automated test runner configured. Verify your changes manually.`
+}
+
+function agentArgs(c: EvalCase, prompt: string): string[] {
+  const args = ["-p", prompt, "--model", "sonnet", "--dangerously-skip-permissions"]
+  if (isStoryGenerationRequest(c.comment.text)) {
+    args.push("--append-system-prompt", buildStoryGenerationSystemPrompt())
+  }
+  return args
 }
 
 function runCase(casePath: string) {
@@ -97,7 +115,7 @@ function runCase(casePath: string) {
   const prompt = buildPrompt(c, work, context)
   console.log(`[${c.name}] running agent (${c.agent} mode)…`)
   try {
-    execFileSync("claude", ["-p", prompt, "--model", "sonnet", "--dangerously-skip-permissions"], {
+    execFileSync("claude", agentArgs(c, prompt), {
       cwd: work, stdio: "inherit", timeout: 300_000,
     })
   } catch (e: any) {

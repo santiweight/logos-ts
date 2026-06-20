@@ -51,6 +51,30 @@ export function buildVerifyNote(hasTests: boolean): string {
       : ` This project has no automated test runner configured. Verify your changes manually.`)
 }
 
+export function isStoryGenerationRequest(text: string): boolean {
+  return /\bStorybook stories\b|\bstories for (?:this )?React component\b|\bcomponent stories\b/i.test(text)
+}
+
+export function buildStoryGenerationSystemPrompt(): string {
+  return [
+    "When generating Storybook stories, keep component stories deterministic and self-contained.",
+    "If the target component renders a nested iframe whose src points at an app-owned route, dynamic localhost port, workspace proxy, generated preview page, or external Storybook runtime, do not make the story depend on that live iframe target.",
+    "Mock that iframe boundary in Storybook instead. If the component has no way to do that, add a small optional story/test seam such as a renderStoryFrame or renderFrame prop that defaults to the real iframe in production, and use that seam from the story.",
+    "Do not add component-story variants that exercise live iframe runtime selection, such as renderer/storyRenderer set to storybook, storybookUrl values, hard-coded localhost ports, or external Storybook hosts, unless the user explicitly asks for an integration/runtime story.",
+    "Use app or browser integration tests for the real iframe runtime; component stories should only verify layout, state, props, and fallback UI around the iframe boundary.",
+  ].join("\n")
+}
+
+export function buildStoryGenerationContext(): string {
+  return [
+    "# STORYBOOK STORY-GENERATION CONTEXT",
+    "Storybook stories run inside Storybook's preview iframe. If the component under test creates its own iframe, that nested iframe is a runtime boundary that Storybook does not automatically provide.",
+    "Do not hard-code localhost ports, external Storybook URLs, workspace proxy URLs, or app-owned preview routes in component stories. In particular, avoid values like `http://localhost:6006`, `/portable-story.html`, or `${storybookUrl}/iframe.html` unless the story itself provisions that runtime.",
+    "Do not treat iframe runtime props as ordinary visual variants. Avoid `renderer: \"storybook\"`, `storyRenderer: \"storybook\"`, `storybookUrl`, and similar props in component stories unless the task explicitly asks for an integration story and provides the runtime.",
+    "For iframe-owning components, prefer a deterministic mock/fixture for the nested frame: add or use an optional `renderStoryFrame`/`renderFrame`-style prop that defaults to the real iframe, then pass a mock frame from the story. Keep startup, loading, and failure states as ordinary component stories when they do not need the nested iframe target.",
+  ].join("\n")
+}
+
 export function selectNextGoal<G extends { id: string; status: string }>(
   goals: G[],
   runningIds: { has(id: string): boolean },
