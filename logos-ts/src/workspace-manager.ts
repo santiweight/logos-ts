@@ -32,6 +32,7 @@ import type {
   WorkspaceKind,
 } from "./runtime-store.js"
 import { ensureStorySnapshotTestForRoot } from "./story-snapshots.js"
+import { TsIndexCache } from "./ts-index-cache.js"
 
 export interface GoalReply {
   author: "agent" | "user"
@@ -220,6 +221,7 @@ export class WorkspaceManager {
   private sessions: ClaudeSessionManager
   private tsx: string
   private getIndex: (() => Promise<unknown>) | null
+  private indexCache: TsIndexCache
   private goalSubscribers = new Map<string, Set<AgentEventCallback>>()
   private spawnAgent: AgentSpawner
   private codeService: WorkspaceCodeService
@@ -253,6 +255,7 @@ export class WorkspaceManager {
     this.sessions = opts.sessions
     this.tsx = opts.tsx
     this.getIndex = opts.getIndex ?? null
+    this.indexCache = new TsIndexCache({ logosTsRoot: this.logosTsRoot, tsx: this.tsx })
     this.spawnAgent = opts.spawnAgent ?? spawn
     this.codeService = new WorkspaceCodeService({
       runsDir: this.runsDir,
@@ -284,10 +287,7 @@ export class WorkspaceManager {
 
   private async snapshotIndex(root = this.projectRoot): Promise<unknown> {
     if (root === this.projectRoot && this.getIndex) return this.getIndex()
-    const args = [resolve(this.logosTsRoot, "src/build-index.ts"), root, "-"]
-    return JSON.parse(
-      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
-    )
+    return this.indexCache.buildIndex(root)
   }
 
   private activeInstance(ws: WorkspaceRecord): WorkspaceInstance {
@@ -337,7 +337,11 @@ export class WorkspaceManager {
 
   private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
     const inst = this.codeService.createInstance(workspaceId, sourceRoot, index ?? {})
-    inst.index = await this.snapshotIndex(inst.materializedRoot)
+    if (index) {
+      inst.index = index
+    } else {
+      inst.index = await this.snapshotIndex(inst.materializedRoot)
+    }
     return inst
   }
 
@@ -646,7 +650,8 @@ export class WorkspaceManager {
     const kind = opts?.kind ?? "code"
     const parentInst = parentWs ? this.activeInstance(parentWs) : null
     const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
-    const instance = await this.createInstance(id, sourceRoot, parentInst?.index)
+    const sourceIndex = parentInst?.index ?? (this.getIndex ? await this.getIndex() : undefined)
+    const instance = await this.createInstance(id, sourceRoot, sourceIndex)
     const snapshots = await this.prepareStorySnapshotsForInstance(instance)
     if (!snapshots.ok) {
       console.warn(`[logos] story snapshot capture failed for ${instance.id}: ${snapshots.output}`)
