@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "node -e \"console.log('Strict lint is optional. Run npm run lint:strict for a cleanup pass.')\"",
     "lint:strict": "eslint src/",
-    "test": "vitest run"
+    "test": "vitest run",
+    "evals": "tsx evals/run.ts",
+    "evals:deterministic": "tsx evals/run.ts --tier deterministic"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -1,0 +1,115 @@
+name: Evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Eval tier to run
+        required: true
+        type: choice
+        default: deterministic
+        options:
+          - deterministic
+          - capability
+          - all
+      repeat:
+        description: Override trial count
+        required: false
+        type: string
+      cases:
+        description: Space-separated case names or paths
+        required: false
+        type: string
+  schedule:
+    - cron: "0 13-23 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check scheduled eval window
+        if: github.event_name == 'schedule'
+        env:
+          TZ: America/New_York
+        run: |
+          local_day="$(date +%u)"
+          local_hour="$(date +%H)"
+          echo "Local eval time: day=$local_day hour=$local_hour"
+          case "$local_day:$local_hour" in
+            [1-5]:09|[1-5]:12|[1-5]:15|[1-5]:18)
+              echo "RUN_EVALS=true" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Outside scheduled eval window; skipping."
+              echo "RUN_EVALS=false" >> "$GITHUB_ENV"
+              ;;
+          esac
+
+      - name: Enable manual eval run
+        if: github.event_name != 'schedule'
+        run: echo "RUN_EVALS=true" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v6
+        if: env.RUN_EVALS == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            logos-ts/package-lock.json
+            logos-ts/demos/hn-jobs/package-lock.json
+
+      - name: Install dependencies
+        if: env.RUN_EVALS == 'true'
+        run: |
+          npm ci --prefix logos-ts
+          npm ci --prefix logos-ts/demos/hn-jobs
+
+      - name: Skip when Anthropic credentials are missing
+        if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY == ''
+        run: |
+          echo "Skipping evals because ANTHROPIC_API_KEY is not configured."
+          echo "Add ANTHROPIC_API_KEY as a repository secret to enable scheduled evals."
+
+      - name: Install Claude Code
+        if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY != ''
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run evals
+        if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY != ''
+        working-directory: logos-ts
+        env:
+          EVAL_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.tier || 'deterministic' }}
+          EVAL_REPEAT: ${{ github.event_name == 'workflow_dispatch' && inputs.repeat || '' }}
+          EVAL_CASES: ${{ github.event_name == 'workflow_dispatch' && inputs.cases || '' }}
+        run: |
+          args=()
+          if [ -n "$EVAL_CASES" ]; then
+            for eval_case in $EVAL_CASES; do
+              args+=("$eval_case")
+            done
+          fi
+          if [ -n "$EVAL_TIER" ] && [ "$EVAL_TIER" != "all" ]; then
+            args+=("--tier" "$EVAL_TIER")
+          fi
+          if [ -n "$EVAL_REPEAT" ]; then
+            args+=("--repeat" "$EVAL_REPEAT")
+          fi
+          npm run evals -- "${args[@]}"
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evals-${{ github.run_id }}
+          path: |
+            logos-ts/evals/results
+            logos-ts/evals/cases/runs
+          if-no-files-found: ignore

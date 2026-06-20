@@ -1,12 +1,23 @@
-// Eval harness: given a case (codebase + comment + checks), fork the codebase,
-// build architecture context, have an agent address the comment, then run
-// checks and report.
+// Eval harness: fork a subject codebase, build the same context the studio uses,
+// have an agent address the case comment, then run hidden checks.
 //
-//   npx tsx evals/run.ts evals/cases/bold-role-element.json
+//   npx tsx evals/run.ts
+//   npx tsx evals/run.ts rename-company-header
+//   npx tsx evals/run.ts --tier deterministic --repeat 5
 //
 import { execFileSync } from "node:child_process"
-import { cpSync, rmSync, mkdirSync, existsSync, readFileSync, symlinkSync, copyFileSync } from "node:fs"
-import { resolve, dirname, basename, join } from "node:path"
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
+import { basename, dirname, extname, join, resolve } from "node:path"
 import {
   buildArchPrompt,
   buildGoalLine,
@@ -18,23 +29,46 @@ import {
 interface Check {
   cwd: string
   cmd: string[]
-  oracle?: string
+  oracle?: string | string[]
 }
+
 interface EvalCase {
   name: string
   codebase: string
   comment: { target: string; text: string; label?: string; component?: string; storyId?: string; selector?: string }
   agent: "implementation" | "architecture" | "testing"
+  tier?: "deterministic" | "capability"
+  repeat?: number
+  timeoutMs?: number
   checks: Record<string, Check>
 }
 
+interface TrialResult {
+  caseName: string
+  tier: "deterministic" | "capability"
+  trial: number
+  results: Record<string, boolean>
+  passed: boolean
+}
+
+interface Options {
+  selectors: string[]
+  tier?: "deterministic" | "capability"
+  repeat?: number
+  concurrency: number
+}
+
 const logosTsRoot = resolve(dirname(import.meta.url.replace("file://", "")), "..")
+const evalsRoot = resolve(logosTsRoot, "evals")
+const casesRoot = resolve(evalsRoot, "cases")
 const tsx = resolve(logosTsRoot, "node_modules/.bin/tsx")
 
 function buildContext(work: string, targets: string[]): string {
   try {
     return execFileSync(tsx, [resolve(logosTsRoot, "src/context.ts"), work, "40000", ...targets], {
-      cwd: logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+      cwd: logosTsRoot,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
     })
   } catch (e) {
     console.error("context build failed:", e)
@@ -76,15 +110,23 @@ function agentArgs(c: EvalCase, prompt: string): string[] {
   return args
 }
 
-function runCase(casePath: string) {
+function copyOracles(caseDir: string, check: Check, checkCwd: string): void {
+  const oracles = typeof check.oracle === "string" ? [check.oracle] : check.oracle ?? []
+  for (const oracle of oracles) {
+    copyFileSync(resolve(caseDir, oracle), join(checkCwd, basename(oracle)))
+  }
+}
+
+function runCase(casePath: string, trial: number): TrialResult {
   const caseDir = dirname(resolve(casePath))
   const c: EvalCase = JSON.parse(readFileSync(resolve(casePath), "utf8"))
   const codebase = resolve(caseDir, c.codebase)
-  const work = resolve(caseDir, "runs", c.name)
+  const runDir = resolve(caseDir, "runs", c.name, `t${trial}`)
+  const work = resolve(runDir, "work")
+  const tier = c.tier ?? "capability"
 
-  // 1. Fork: cheap copy of the codebase (sans node_modules), symlink deps
-  console.log(`[${c.name}] forking codebase…`)
-  rmSync(work, { recursive: true, force: true })
+  console.log(`[${c.name} t${trial}] forking codebase...`)
+  rmSync(runDir, { recursive: true, force: true })
   mkdirSync(work, { recursive: true })
   cpSync(codebase, work, {
     recursive: true,
@@ -95,61 +137,196 @@ function runCase(casePath: string) {
     if (existsSync(src) && !existsSync(join(work, rel))) symlinkSync(src, join(work, rel))
   }
 
-  // 2. Architecture mode runs the production pipeline: strip → agent → splice.
   const archMode = c.agent === "architecture" || c.agent === "testing"
-  const bodiesFile = resolve(caseDir, "runs", `${c.name}.bodies.json`)
+  const bodiesFile = resolve(runDir, "bodies.json")
   if (archMode) {
-    console.log(`[${c.name}] stripping to architecture view…`)
+    console.log(`[${c.name} t${trial}] stripping to architecture view...`)
     execFileSync(tsx, [resolve(logosTsRoot, "src/archmode.ts"), "strip", work, bodiesFile], {
-      cwd: logosTsRoot, encoding: "utf8",
+      cwd: logosTsRoot,
+      encoding: "utf8",
     })
   }
 
-  // 3. Build architecture context (same as workspace-manager)
-  console.log(`[${c.name}] building context…`)
+  console.log(`[${c.name} t${trial}] building context...`)
   const targets = [c.comment.component ? `component:${c.comment.component}` : c.comment.target]
   const context = buildContext(work, targets)
-  console.log(`[${c.name}] context: ${context.length} chars`)
+  console.log(`[${c.name} t${trial}] context: ${context.length} chars`)
 
-  // 4. Run agent
   const prompt = buildPrompt(c, work, context)
-  console.log(`[${c.name}] running agent (${c.agent} mode)…`)
+  console.log(`[${c.name} t${trial}] running agent (${c.agent} mode)...`)
   try {
     execFileSync("claude", agentArgs(c, prompt), {
-      cwd: work, stdio: "inherit", timeout: 300_000,
+      cwd: work,
+      stdio: "inherit",
+      timeout: c.timeoutMs ?? (archMode ? 600_000 : 300_000),
     })
   } catch (e: any) {
-    console.error(`[${c.name}] agent failed:`, e.message)
+    console.error(`[${c.name} t${trial}] agent failed:`, e.message)
   }
 
-  // 5. Splice implementations back + infer imports
   if (archMode) {
-    console.log(`[${c.name}] splicing implementations + inferring imports…`)
+    console.log(`[${c.name} t${trial}] splicing implementations + inferring imports...`)
     execFileSync(tsx, [resolve(logosTsRoot, "src/archmode.ts"), "splice", work, bodiesFile], {
-      cwd: logosTsRoot, encoding: "utf8",
+      cwd: logosTsRoot,
+      encoding: "utf8",
     })
   }
 
-  // 4. Run checks
-  console.log(`[${c.name}] running checks…`)
+  console.log(`[${c.name} t${trial}] running checks...`)
   const results: Record<string, boolean> = {}
   for (const [name, check] of Object.entries(c.checks)) {
-    if (check.oracle) copyFileSync(resolve(caseDir, check.oracle), join(work, check.cwd, basename(check.oracle)))
+    const checkCwd = join(work, check.cwd)
     const [cmd, ...args] = check.cmd
     if (!cmd) {
       results[name] = false
       continue
     }
     try {
-      execFileSync(cmd, args, { cwd: join(work, check.cwd), encoding: "utf8" })
+      copyOracles(caseDir, check, checkCwd)
+      execFileSync(cmd, args, { cwd: checkCwd, encoding: "utf8" })
       results[name] = true
-    } catch {
+    } catch (e: any) {
+      console.error(`[${c.name} t${trial}] check failed (${name}):`, e.message)
       results[name] = false
     }
   }
-  console.log(`[${c.name}] results:`, results)
-  return results
+
+  const passed = Object.values(results).every(Boolean)
+  console.log(`[${c.name} t${trial}] results:`, results)
+  return { caseName: c.name, tier, trial, results, passed }
 }
 
-const arg = process.argv[2]
-if (arg) runCase(arg)
+function parseArgs(argv: string[]): Options {
+  const selectors: string[] = []
+  let tier: Options["tier"]
+  let repeat: number | undefined
+  let concurrency = 1
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]
+    if (arg === "--tier") {
+      const value = argv[++i]
+      if (value !== "deterministic" && value !== "capability") throw new Error(`Invalid --tier: ${value}`)
+      tier = value
+    } else if (arg === "--repeat") {
+      repeat = Number(argv[++i])
+      if (!Number.isInteger(repeat) || repeat < 1) throw new Error("--repeat must be a positive integer")
+    } else if (arg === "--concurrency") {
+      concurrency = Number(argv[++i])
+      if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error("--concurrency must be a positive integer")
+    } else if (arg?.startsWith("--")) {
+      throw new Error(`Unknown option: ${arg}`)
+    } else if (arg) {
+      selectors.push(arg)
+    }
+  }
+
+  return {
+    selectors,
+    concurrency,
+    ...(tier ? { tier } : {}),
+    ...(repeat ? { repeat } : {}),
+  }
+}
+
+function collectCasePaths(dir: string, includeSubdirs: boolean): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = resolve(dir, entry.name)
+    if (entry.isDirectory() && includeSubdirs) out.push(...collectCasePaths(path, includeSubdirs))
+    else if (entry.isFile() && extname(entry.name) === ".json") out.push(path)
+  }
+  return out.sort()
+}
+
+function selectCases(options: Options): string[] {
+  const topLevel = collectCasePaths(casesRoot, false)
+  const all = collectCasePaths(casesRoot, true)
+  const byName = new Map<string, string>()
+  for (const path of all) {
+    const c: EvalCase = JSON.parse(readFileSync(path, "utf8"))
+    byName.set(c.name, path)
+  }
+
+  const selected = options.selectors.length === 0
+    ? topLevel
+    : options.selectors.map((selector) => {
+      const direct = resolve(logosTsRoot, selector)
+      if (existsSync(direct)) return direct
+      const byCaseName = byName.get(selector)
+      if (byCaseName) return byCaseName
+      throw new Error(`Unknown eval case: ${selector}`)
+    })
+
+  return selected.filter((path) => {
+    if (!options.tier) return true
+    const c: EvalCase = JSON.parse(readFileSync(path, "utf8"))
+    return (c.tier ?? "capability") === options.tier
+  })
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next]
+      next += 1
+      if (item) await fn(item)
+    }
+  })
+  await Promise.all(workers)
+}
+
+async function main(): Promise<void> {
+  const options = parseArgs(process.argv.slice(2))
+  const casePaths = selectCases(options)
+  if (casePaths.length === 0) {
+    console.log("No eval cases matched.")
+    return
+  }
+
+  const trials: Array<{ casePath: string; trial: number }> = []
+  for (const casePath of casePaths) {
+    const c: EvalCase = JSON.parse(readFileSync(casePath, "utf8"))
+    const repeat = options.repeat ?? c.repeat ?? 1
+    for (let trial = 1; trial <= repeat; trial += 1) trials.push({ casePath, trial })
+  }
+
+  const startedAt = new Date().toISOString()
+  const results: TrialResult[] = []
+  await runWithConcurrency(trials, options.concurrency, async ({ casePath, trial }) => {
+    results.push(runCase(casePath, trial))
+  })
+
+  const summary = {
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    options,
+    results: results.sort((a, b) => a.caseName.localeCompare(b.caseName) || a.trial - b.trial),
+  }
+
+  const resultsDir = resolve(evalsRoot, "results")
+  mkdirSync(resultsDir, { recursive: true })
+  const resultsFile = resolve(resultsDir, `${startedAt.replace(/[:.]/g, "-")}.json`)
+  writeFileSync(resultsFile, `${JSON.stringify(summary, null, 2)}\n`)
+
+  console.log("\nEval summary")
+  for (const caseName of Array.from(new Set(summary.results.map((r) => r.caseName))).sort()) {
+    const caseResults = summary.results.filter((r) => r.caseName === caseName)
+    const passed = caseResults.filter((r) => r.passed).length
+    console.log(`${caseName}: ${passed}/${caseResults.length}`)
+  }
+  console.log(`Results written to ${resultsFile}`)
+
+  const failedGate = summary.results.some((result) => result.tier === "deterministic" && !result.passed)
+  if (failedGate) process.exitCode = 1
+}
+
+main().catch((e: unknown) => {
+  console.error(e instanceof Error ? e.message : String(e))
+  process.exitCode = 1
+})
