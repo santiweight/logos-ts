@@ -59,6 +59,7 @@ describe("ContentPanel", () => {
       "src",
       "/portable-story.html?storyId=jobcard--default&logosReload=inst-1%3A1000&workspaceId=ws-1"
     )
+    expect(screen.getByRole("button", { name: "Refit preview" })).toBeTruthy()
     expect(screen.getByText("/components/JobCard/Default")).toBeTruthy()
     expect(screen.queryByText(/portable/i)).toBeNull()
     expect(screen.queryByText(/Storybook dev server/i)).toBeNull()

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type IframeHTMLAttributes,
+  type Ref,
+} from "react"
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { contentPanelLabel } from "./content-label"
 import type { ComponentEntry, GoalApi, DiffStatus, FileEntry, FileItem, RunState, RunTarget, SbState, Selection } from "./types"
@@ -313,7 +321,7 @@ function StoryView({
   if (storyRenderer === "portable") {
     return (
       <div className="pane">
-        <iframe
+        <FittedIframe
           className="story-frame"
           key={src}
           sandbox="allow-scripts allow-forms allow-same-origin"
@@ -363,7 +371,7 @@ function StoryView({
 
   return (
     <div className="pane">
-      <iframe className="story-frame" key={src} src={src} title={storyId} />
+      <FittedIframe className="story-frame" key={src} src={src} title={storyId} />
     </div>
   )
 }
@@ -436,7 +444,7 @@ export function RunView({
           <button className="sb-retry-btn" onClick={() => onRun(target.id, true)}>↻ Restart</button>
         )}
       </div>
-      <iframe className="story-frame" src={runUrl} title={target.label} />
+      <FittedIframe className="story-frame" src={runUrl} title={target.label} />
       <div className="hint">
         Running from {target.cwd} with hot reload when the underlying dev server supports it.
       </div>
@@ -542,7 +550,7 @@ function SnapshotIframe({
     ? `/portable-story.html?${params.toString()}`
     : `${storybookUrl}/iframe.html?id=${encodeURIComponent(id)}&viewMode=story&logosReload=${encodeURIComponent(storybookRenderKey)}`
   return (
-    <iframe
+    <FittedIframe
       ref={iframeRef}
       className="story-frame"
       src={src}
@@ -550,4 +558,137 @@ function SnapshotIframe({
       onLoad={inject}
     />
   )
+}
+
+const DEFAULT_FRAME_SIZE = { width: 1280, height: 800 }
+
+type FrameSize = typeof DEFAULT_FRAME_SIZE
+
+const FittedIframe = forwardRef<HTMLIFrameElement, IframeHTMLAttributes<HTMLIFrameElement>>(
+  function FittedIframe({ className = "", onLoad, ...props }, forwardedRef) {
+    const viewportRef = useRef<HTMLDivElement | null>(null)
+    const iframeRef = useRef<HTMLIFrameElement | null>(null)
+    const [frameSize, setFrameSize] = useState<FrameSize>(DEFAULT_FRAME_SIZE)
+    const [scale, setScale] = useState(1)
+
+    const setIframeRef = useCallback((node: HTMLIFrameElement | null) => {
+      iframeRef.current = node
+      setForwardedRef(forwardedRef, node)
+    }, [forwardedRef])
+
+    const refit = useCallback((options: { focusIframe?: boolean } = {}) => {
+      const viewport = viewportRef.current
+      const iframe = iframeRef.current
+      if (!viewport || !iframe) return
+
+      const viewportRect = viewport.getBoundingClientRect()
+      const nextFrameSize = measureIframeContent(iframe)
+      setFrameSize(nextFrameSize)
+      setScale(fitScale(viewportRect.width, viewportRect.height, nextFrameSize.width, nextFrameSize.height))
+      if (options.focusIframe) iframe.focus()
+    }, [])
+
+    useEffect(() => {
+      refit()
+      const viewport = viewportRef.current
+      if (!viewport) return
+
+      const ResizeObserverCtor = globalThis.ResizeObserver
+      const observer = ResizeObserverCtor ? new ResizeObserverCtor(() => refit()) : null
+      observer?.observe(viewport)
+      const handleResize = () => refit()
+      window.addEventListener("resize", handleResize)
+      return () => {
+        observer?.disconnect()
+        window.removeEventListener("resize", handleResize)
+      }
+    }, [props.src, refit])
+
+    const handleLoad = useCallback<NonNullable<IframeHTMLAttributes<HTMLIFrameElement>["onLoad"]>>((event) => {
+      onLoad?.(event)
+      refit()
+      window.setTimeout(refit, 250)
+      window.setTimeout(refit, 1000)
+    }, [onLoad, refit])
+
+    return (
+      <div className="fit-frame-shell">
+        <div className="fit-frame-toolbar">
+          <button
+            className="fit-frame-btn"
+            type="button"
+            onClick={() => refit({ focusIframe: true })}
+            aria-label="Refit preview"
+            title="Refit preview"
+          >
+            Fit
+          </button>
+        </div>
+        <div className="fit-frame-viewport" ref={viewportRef}>
+          <div
+            className="fit-frame-stage"
+            style={{ width: `${frameSize.width * scale}px`, height: `${frameSize.height * scale}px` }}
+          >
+            <div
+              className="fit-frame-canvas"
+              style={{ width: `${frameSize.width}px`, height: `${frameSize.height}px`, transform: `scale(${scale})` }}
+            >
+              <iframe
+                {...props}
+                ref={setIframeRef}
+                className={["story-frame", className].filter(Boolean).join(" ")}
+                onLoad={handleLoad}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+)
+
+function setForwardedRef<T>(ref: Ref<T>, value: T | null) {
+  if (typeof ref === "function") {
+    ref(value)
+  } else if (ref) {
+    ;(ref as { current: T | null }).current = value
+  }
+}
+
+function measureIframeContent(iframe: HTMLIFrameElement): FrameSize {
+  try {
+    const doc = iframe.contentDocument
+    const html = doc?.documentElement
+    const body = doc?.body
+    if (!html) return DEFAULT_FRAME_SIZE
+
+    const bodyRect = body?.getBoundingClientRect()
+    return {
+      width: Math.ceil(Math.max(
+        DEFAULT_FRAME_SIZE.width,
+        html.scrollWidth,
+        html.offsetWidth,
+        html.clientWidth,
+        body?.scrollWidth ?? 0,
+        body?.offsetWidth ?? 0,
+        bodyRect?.width ?? 0
+      )),
+      height: Math.ceil(Math.max(
+        DEFAULT_FRAME_SIZE.height,
+        html.scrollHeight,
+        html.offsetHeight,
+        html.clientHeight,
+        body?.scrollHeight ?? 0,
+        body?.offsetHeight ?? 0,
+        bodyRect?.height ?? 0
+      )),
+    }
+  } catch {
+    return DEFAULT_FRAME_SIZE
+  }
+}
+
+function fitScale(viewportWidth: number, viewportHeight: number, frameWidth: number, frameHeight: number): number {
+  if (viewportWidth <= 0 || viewportHeight <= 0 || frameWidth <= 0 || frameHeight <= 0) return 1
+  return Math.min(1, viewportWidth / frameWidth, viewportHeight / frameHeight)
 }

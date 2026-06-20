@@ -825,7 +825,65 @@ body.resizing-rail * {
 }
 .capture-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
 
-.story-frame { flex: 1; border: 0; background: #fff; width: 100%; }
+.fit-frame-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #151518;
+}
+.fit-frame-toolbar {
+  flex: none;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.fit-frame-btn {
+  height: 20px;
+  padding: 0 8px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.fit-frame-btn:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.06);
+}
+.fit-frame-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding: 8px;
+  background: #101114;
+}
+.fit-frame-stage {
+  position: relative;
+  flex: none;
+}
+.fit-frame-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
+.story-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
 .hint { padding: 4px 10px; color: var(--muted); border-top: 1px solid var(--border); font-size: 11px; }
 .hint code { color: var(--text); }
 
