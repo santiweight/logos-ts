@@ -107,16 +107,12 @@ export function AgentPanel({
     endRef.current?.scrollIntoView({ block: "end" })
   }, [events])
 
-  const heading = goal
-    ? `${goal.label} — ${goal.text}`
-    : "Agent activity"
-
   return (
     <div className="agent-panel">
       <div className="agent-head">
         <span className={statusClass(goal)}>
           {running ? <span className="ag-spin">⟳</span> : statusIcon(goal, running)}{" "}
-          {heading}
+          Agent View
           {goal && <span className={`cmode ${goal.mode}`}>{goal.mode}</span>}
         </span>
         <button className="agent-close" onClick={onClose}>
