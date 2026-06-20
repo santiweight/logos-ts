@@ -50,6 +50,19 @@ afterEach(() => {
 })
 
 describe("NodeModulesCache", () => {
+  it("finds nested package directories in demo-style repos", () => {
+    const tmp = makeTempDir()
+    makeProject(join(tmp, "project"))
+    makeProject(join(tmp, "project", "studio"))
+    makeProject(join(tmp, "project", "demos", "hn-jobs"))
+
+    expect(findPackageDirs(join(tmp, "project")).map((dir) => dir.slice(join(tmp, "project").length + 1)).sort()).toEqual([
+      "",
+      "demos/hn-jobs",
+      "studio",
+    ])
+  })
+
   it("installs on cache miss and returns hit on second call", () => {
     const tmp = makeTempDir()
     const project = makeProject(join(tmp, "project"))

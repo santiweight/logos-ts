@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, reviewChangeCount } from "./App"
+import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, reviewChangeCount, selectActiveStorybookRuntime, selectedStorybookRoot } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -82,6 +82,55 @@ describe("buildStorybookRenderKey", () => {
 
     expect(replied).not.toBe(done)
     expect(replied).toMatch(/^inst-1:2000:1:[a-z0-9]+$/)
+  })
+})
+
+describe("selectActiveStorybookRuntime", () => {
+  it("looks up Storybook by the active workspace instance id", () => {
+    const ws = workspace([], "inst-active")
+
+    expect(selectActiveStorybookRuntime(ws.id, ws, undefined, {
+      "ws-1": "/storybooks/ws-1",
+      "inst-active": "/storybooks/inst-active",
+    }, {
+      "ws-1": { status: "ready", startedAt: 1000, logs: [] },
+      "inst-active": { status: "ready", startedAt: 2000, logs: [] },
+    })).toEqual({
+      url: "/storybooks/inst-active",
+      state: { status: "ready", startedAt: 2000, logs: [] },
+    })
+  })
+
+  it("uses the selected story's Storybook root when a repo has multiple Storybooks", () => {
+    const ws = workspace([], "inst-active")
+
+    expect(selectActiveStorybookRuntime(ws.id, ws, "demos/hn-jobs", {
+      "inst-active": "/storybooks/inst-active",
+      "inst-active:demos/hn-jobs": "/storybooks/inst-active%3Ademos%2Fhn-jobs",
+    }, {
+      "inst-active": { status: "ready", startedAt: 1000, logs: [] },
+      "inst-active:demos/hn-jobs": { status: "ready", startedAt: 2000, logs: [] },
+    })).toEqual({
+      url: "/storybooks/inst-active%3Ademos%2Fhn-jobs",
+      state: { status: "ready", startedAt: 2000, logs: [] },
+    })
+  })
+
+  it("finds the Storybook root for the selected story", () => {
+    expect(selectedStorybookRoot([
+      {
+        file: "demos/hn-jobs/app/admin/page.tsx",
+        code: "",
+        items: [],
+        component: {
+          name: "AdminDashboard",
+          signature: "AdminDashboard()",
+          componentCode: "",
+          propsFields: [],
+          stories: [{ id: "admin-page--default", exportName: "Default", storybookRoot: "demos/hn-jobs", snapshot: null }],
+        },
+      },
+    ], { file: "demos/hn-jobs/app/admin/page.tsx", view: "story", storyId: "admin-page--default" })).toBe("demos/hn-jobs")
   })
 })
 

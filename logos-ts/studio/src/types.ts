@@ -8,6 +8,7 @@ export interface StoryNode {
   id: string
   exportName: string
   storyFile?: string
+  storybookRoot?: string
   storyCode?: string
   snapshot: string | null
 }

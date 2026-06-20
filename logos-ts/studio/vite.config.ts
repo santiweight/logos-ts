@@ -470,11 +470,12 @@ function studioApi(runtime: StudioRuntime): Plugin {
         // POST /api/workspaces/:id/storybook — start (or restart after failure) its Storybook
         if (req.method === "POST" && sub.endsWith("/storybook")) {
           const wsId = sub.replace(/\/storybook$/, "")
-          if (!wsMgr.get(wsId)) { res.statusCode = 404; res.end(JSON.stringify({ error: "workspace not found" })); return }
+          const ws = wsMgr.get(wsId)
+          if (!ws) { res.statusCode = 404; res.end(JSON.stringify({ error: "workspace not found" })); return }
           wsMgr.ensureStorybook(wsId).catch((e: any) => {
             console.error(`[logos] storybook for ${wsId} failed to start:`, e.message)
           })
-          res.end(JSON.stringify({ ok: true, state: sbManager.state(wsId) }))
+          res.end(JSON.stringify({ ok: true, state: sbManager.state(ws.activeInstanceId) }))
           return
         }
 
@@ -779,6 +780,16 @@ function workspaceAliasPlugin(runtime: StudioRuntime): Plugin {
 }
 
 function autoStorybook(runtime: StudioRuntime): Plugin {
+  const storybookCaps = () => runtime.caps.storybooks?.length
+    ? runtime.caps.storybooks
+    : runtime.caps.storybook
+      ? [runtime.caps.storybook]
+      : []
+  const storybookServiceId = (instanceId: string, frontendDir: string) => {
+    const rel = relative(runtime.projectRoot, frontendDir).replace(/\\/g, "/")
+    return rel ? `${instanceId}:${rel}` : instanceId
+  }
+
   return {
     name: "auto-workspace-runtimes",
     configureServer() {
@@ -789,10 +800,12 @@ function autoStorybook(runtime: StudioRuntime): Plugin {
       for (const wsMeta of wsMgr.list()) {
         const ws = wsMgr.get(wsMeta.id)
         if (!ws) continue
-        if (!sbManager.get(wsMeta.id) && caps.storybook) {
-          const wsFrontend = join(ws.forkDir, relative(runtime.projectRoot, caps.storybook.frontendDir))
-          sbManager.ensure(wsMeta.id, wsFrontend).catch((e: any) =>
-            console.error(`[storybook-mgr] failed to restart ${wsMeta.id}:`, e.message)
+        for (const storybook of storybookCaps()) {
+          const serviceId = storybookServiceId(ws.activeInstanceId, storybook.frontendDir)
+          if (sbManager.get(serviceId)) continue
+          const wsFrontend = join(ws.forkDir, relative(runtime.projectRoot, storybook.frontendDir))
+          sbManager.ensure(serviceId, wsFrontend).catch((e: any) =>
+            console.error(`[storybook-mgr] failed to restart ${wsMeta.id}:${relative(runtime.projectRoot, storybook.frontendDir) || "."}:`, e.message)
           )
         }
         for (const target of caps.runs) {

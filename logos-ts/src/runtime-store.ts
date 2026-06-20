@@ -220,7 +220,7 @@ export class LogosRuntimeStore {
       );
       CREATE INDEX IF NOT EXISTS idx_policy_events_workspace ON workspace_policy_events(workspace_id, seq);
       CREATE TABLE IF NOT EXISTS storybooks (
-        id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+        id TEXT PRIMARY KEY,
         pid INTEGER NOT NULL,
         port INTEGER NOT NULL,
         url TEXT NOT NULL,
@@ -228,7 +228,7 @@ export class LogosRuntimeStore {
         started_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS storybook_states (
-        id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+        id TEXT PRIMARY KEY,
         status TEXT NOT NULL,
         started_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -282,6 +282,47 @@ export class LogosRuntimeStore {
     this.addColumnIfMissing("goals", "working_instance_id", "TEXT")
     this.addColumnIfMissing("goals", "merged_instance_id", "TEXT")
     this.addColumnIfMissing("runs", "framework", "TEXT NOT NULL DEFAULT 'vite'")
+    this.migrateStorybookServiceTables()
+  }
+
+  private migrateStorybookServiceTables(): void {
+    this.rebuildTableWithoutForeignKeys(
+      "storybooks",
+      `CREATE TABLE storybooks (
+        id TEXT PRIMARY KEY,
+        pid INTEGER NOT NULL,
+        port INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        started_at INTEGER NOT NULL
+      )`,
+      "id, pid, port, url, cwd, started_at",
+    )
+    this.rebuildTableWithoutForeignKeys(
+      "storybook_states",
+      `CREATE TABLE storybook_states (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        logs_json TEXT NOT NULL,
+        error TEXT
+      )`,
+      "id, status, started_at, updated_at, logs_json, error",
+    )
+  }
+
+  private rebuildTableWithoutForeignKeys(table: string, createSql: string, columns: string): void {
+    const foreignKeys = this.db.prepare(`PRAGMA foreign_key_list(${table})`).all()
+    if (foreignKeys.length === 0) return
+    const oldTable = `__old_${table}_fk`
+    this.transaction(() => {
+      this.db.exec(`DROP TABLE IF EXISTS ${oldTable}`)
+      this.db.exec(`ALTER TABLE ${table} RENAME TO ${oldTable}`)
+      this.db.exec(createSql)
+      this.db.exec(`INSERT INTO ${table} (${columns}) SELECT ${columns} FROM ${oldTable}`)
+      this.db.exec(`DROP TABLE ${oldTable}`)
+    })
   }
 
   private addColumnIfMissing(table: string, column: string, definition: string): void {

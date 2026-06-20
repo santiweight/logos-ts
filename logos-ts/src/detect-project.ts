@@ -25,6 +25,7 @@ export interface RunTargetCaps {
 export interface ProjectCaps {
   root: string
   storybook: StorybookCaps | null
+  storybooks: StorybookCaps[]
   tests: TestCaps | null
   runs: RunTargetCaps[]
   nodeModulesDirs: string[]
@@ -32,32 +33,34 @@ export interface ProjectCaps {
 
 export function detectProject(root: string): ProjectCaps {
   const absRoot = resolve(root)
+  const storybooks = detectStorybooks(absRoot)
   return {
     root: absRoot,
-    storybook: detectStorybook(absRoot),
+    storybook: storybooks[0] ?? null,
+    storybooks,
     tests: detectTests(absRoot),
     runs: detectRuns(absRoot),
     nodeModulesDirs: findNodeModules(absRoot),
   }
 }
 
-function detectStorybook(root: string): StorybookCaps | null {
-  // Look for .storybook/ at depth 1 and 2
-  for (const depth1 of safeReaddir(root)) {
-    const d1 = join(root, depth1)
-    if (depth1 === ".storybook") {
-      return { configDir: d1, frontendDir: root }
+function detectStorybooks(root: string): StorybookCaps[] {
+  const out: StorybookCaps[] = []
+  const visit = (dir: string) => {
+    if (existsSync(join(dir, ".storybook"))) {
+      out.push({ configDir: join(dir, ".storybook"), frontendDir: dir })
+      return
     }
-    if (depth1 === "node_modules" || depth1.startsWith(".")) continue
-    try {
-      for (const depth2 of safeReaddir(d1)) {
-        if (depth2 === ".storybook") {
-          return { configDir: join(d1, depth2), frontendDir: d1 }
-        }
-      }
-    } catch { /* not a directory */ }
+    for (const entry of safeReaddir(dir)) {
+      if (entry === "node_modules" || entry === "dist" || entry.startsWith(".")) continue
+      const sub = join(dir, entry)
+      try {
+        if (readdirSync(sub, { withFileTypes: true })) visit(sub)
+      } catch { /* not a directory */ }
+    }
   }
-  return null
+  visit(root)
+  return out.sort((a, b) => relative(root, a.frontendDir).localeCompare(relative(root, b.frontendDir)))
 }
 
 function detectTests(root: string): TestCaps | null {

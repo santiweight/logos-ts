@@ -185,6 +185,7 @@ function goalLifecycleLabel(lifecycle: GoalLifecycle): string {
 interface ProjectCaps {
   root: string
   storybook?: { configDir: string; frontendDir: string }
+  storybooks?: { configDir: string; frontendDir: string }[]
   tests?: { command: string[]; watchDirs: string[] }
   runs?: { id: string; label: string; cwd: string; command: string; args: string[]; framework: "vite" | "next"; env?: Record<string, string> }[]
   nodeModulesDirs: string[]
@@ -335,6 +336,19 @@ export class WorkspaceManager {
     return meta
   }
 
+  private storybookCaps(): { configDir: string; frontendDir: string }[] {
+    return this.caps.storybooks?.length
+      ? this.caps.storybooks
+      : this.caps.storybook
+        ? [this.caps.storybook]
+        : []
+  }
+
+  private storybookServiceId(inst: WorkspaceInstance, frontendDir: string): string {
+    const rel = relative(this.projectRoot, frontendDir).replace(/\\/g, "/")
+    return rel ? `${inst.id}:${rel}` : inst.id
+  }
+
   private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
     const inst = this.codeService.createInstance(workspaceId, sourceRoot, index ?? {})
     if (index) {
@@ -377,7 +391,7 @@ export class WorkspaceManager {
     if (!ws) return undefined
     const inst = this.activeInstance(ws)
     const args = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
-    const wsSbUrl = this.sbManager.get(ws.id)
+    const wsSbUrl = this.sbManager.get(inst.id)
     if (wsSbUrl) args.push(wsSbUrl)
     inst.index = JSON.parse(
       execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
@@ -671,8 +685,8 @@ export class WorkspaceManager {
     this.workspaces.set(id, ws)
     this.save(ws)
 
-    if (this.caps.storybook) {
-      this.startStorybook(id, instance.materializedRoot).catch((e: any) => {
+    if (this.storybookCaps().length > 0) {
+      this.startStorybooks(instance).catch((e: any) => {
         console.error(`[workspace] storybook for ${id} failed to start:`, e.message)
       })
     }
@@ -684,17 +698,20 @@ export class WorkspaceManager {
     return this.toMeta(ws)
   }
 
-  private startStorybook(id: string, forkDir: string): Promise<string> {
-    if (!this.caps.storybook) return Promise.reject(new Error("storybook is not configured for this project"))
-    const wsFrontend = join(forkDir, relative(this.projectRoot, this.caps.storybook.frontendDir))
-    return this.sbManager.ensure(id, wsFrontend)
+  private startStorybooks(inst: WorkspaceInstance): Promise<string[]> {
+    const storybooks = this.storybookCaps()
+    if (storybooks.length === 0) return Promise.reject(new Error("storybook is not configured for this project"))
+    return Promise.all(storybooks.map((storybook) => {
+      const wsFrontend = join(inst.materializedRoot, relative(this.projectRoot, storybook.frontendDir))
+      return this.sbManager.ensure(this.storybookServiceId(inst, storybook.frontendDir), wsFrontend)
+    }))
   }
 
   /** Start (or restart after a failure) the Storybook for a workspace. Idempotent. */
   ensureStorybook(wsId: string): Promise<string> {
     const ws = this.workspaces.get(wsId)
     if (!ws) return Promise.reject(new Error("no such workspace"))
-    return this.startStorybook(wsId, this.activeInstance(ws).materializedRoot)
+    return this.startStorybooks(this.activeInstance(ws)).then((urls) => urls[0] ?? "")
   }
 
   ensureRun(wsId: string, targetId: string, opts?: { restart?: boolean }): Promise<string> {
@@ -720,8 +737,8 @@ export class WorkspaceManager {
       this.runningAgents.delete(g.id)
     }
 
-    // Shutdown workspace storybook
-    this.sbManager.shutdown(id)
+    // Shutdown workspace storybooks
+    this.shutdownWorkspaceStorybooks(ws)
     this.runManager.shutdownWorkspace(id)
 
     // Remove sessions
@@ -1222,7 +1239,7 @@ export class WorkspaceManager {
   private async reindexInstance(ws: WorkspaceRecord, inst: WorkspaceInstance): Promise<void> {
     try {
       const reindexArgs = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
-      const wsSbUrl = this.sbManager.get(ws.id)
+      const wsSbUrl = this.sbManager.get(inst.id)
       if (wsSbUrl) reindexArgs.push(wsSbUrl)
       const { stdout } = await execFileAsync(this.tsx, reindexArgs, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
       inst.index = JSON.parse(stdout)
@@ -1286,11 +1303,21 @@ export class WorkspaceManager {
     }
   }
 
-  private restartWorkspaceServices(ws: WorkspaceRecord, inst: WorkspaceInstance): void {
+  private shutdownWorkspaceStorybooks(ws: WorkspaceRecord): void {
     this.sbManager.shutdown(ws.id)
+    for (const inst of Object.values(ws.instances)) {
+      this.sbManager.shutdown(inst.id)
+      for (const storybook of this.storybookCaps()) {
+        this.sbManager.shutdown(this.storybookServiceId(inst, storybook.frontendDir))
+      }
+    }
+  }
+
+  private restartWorkspaceServices(ws: WorkspaceRecord, inst: WorkspaceInstance): void {
+    this.shutdownWorkspaceStorybooks(ws)
     this.runManager.shutdownWorkspace(ws.id)
-    if (this.caps.storybook) {
-      this.startStorybook(ws.id, inst.materializedRoot).catch((e: any) => {
+    if (this.storybookCaps().length > 0) {
+      this.startStorybooks(inst).catch((e: any) => {
         console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
       })
     }

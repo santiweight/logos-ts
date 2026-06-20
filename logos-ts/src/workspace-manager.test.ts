@@ -374,6 +374,144 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(existsSync(join(prepared[0]!, ".storybook", ".logos", "CommentLayer.tsx"))).toBe(true)
   })
 
+  it("starts baseline Storybook keyed by the workspace instance id", async () => {
+    const ensured: { id: string; frontendDir: string }[] = []
+    const mgr = createManager({
+      setupProject(root) {
+        mkdirSync(join(root, ".storybook"), { recursive: true })
+        writeFileSync(join(root, ".storybook", "preview.ts"), "export default {}\n")
+      },
+      caps: (root) => ({
+        storybook: { frontendDir: root, configDir: join(root, ".storybook") },
+      }),
+      sbManager: {
+        get: () => null,
+        shutdown: () => undefined,
+        prepare: (frontendDir: string) => {
+          mkdirSync(join(frontendDir, ".storybook", ".logos"), { recursive: true })
+          writeFileSync(join(frontendDir, ".storybook", ".logos", "CommentLayer.tsx"), "export const withLogosComments = (Story: any) => Story\n")
+        },
+        ensure: (id: string, frontendDir: string) => {
+          ensured.push({ id, frontendDir })
+          return Promise.resolve("")
+        },
+      },
+    })
+
+    const created = await mgr.create({ kind: "code" })
+
+    expect(ensured).toHaveLength(1)
+    expect(ensured[0]).toMatchObject({ id: created.activeInstanceId })
+    expect(ensured[0]!.id).not.toBe(created.id)
+  })
+
+  it("starts forked workspace Storybook keyed by the fork's instance id", async () => {
+    const ensured: { id: string; frontendDir: string }[] = []
+    const mgr = createManager({
+      setupProject(root) {
+        mkdirSync(join(root, ".storybook"), { recursive: true })
+        writeFileSync(join(root, ".storybook", "preview.ts"), "export default {}\n")
+      },
+      caps: (root) => ({
+        storybook: { frontendDir: root, configDir: join(root, ".storybook") },
+      }),
+      sbManager: {
+        get: () => null,
+        shutdown: () => undefined,
+        prepare: (frontendDir: string) => {
+          mkdirSync(join(frontendDir, ".storybook", ".logos"), { recursive: true })
+          writeFileSync(join(frontendDir, ".storybook", ".logos", "CommentLayer.tsx"), "export const withLogosComments = (Story: any) => Story\n")
+        },
+        ensure: (id: string, frontendDir: string) => {
+          ensured.push({ id, frontendDir })
+          return Promise.resolve("")
+        },
+      },
+    })
+
+    const parent = await mgr.create({ kind: "code" })
+    const fork = await mgr.create({ fromWorkspaceId: parent.id, kind: "code" })
+
+    expect(ensured.map((call) => call.id)).toEqual([
+      parent.activeInstanceId,
+      fork.activeInstanceId,
+    ])
+    expect(ensured.map((call) => call.id)).not.toContain(parent.id)
+    expect(ensured.map((call) => call.id)).not.toContain(fork.id)
+  }, 15_000)
+
+  it("starts every Storybook in a workspace instance with path-scoped ids", async () => {
+    const ensured: { id: string; frontendDir: string }[] = []
+    const mgr = createManager({
+      setupProject(root) {
+        mkdirSync(join(root, "studio", ".storybook"), { recursive: true })
+        mkdirSync(join(root, "demos", "hn-jobs", ".storybook"), { recursive: true })
+        writeFileSync(join(root, "studio", ".storybook", "preview.ts"), "export default {}\n")
+        writeFileSync(join(root, "demos", "hn-jobs", ".storybook", "preview.ts"), "export default {}\n")
+      },
+      caps: (root) => ({
+        storybook: { frontendDir: join(root, "studio"), configDir: join(root, "studio", ".storybook") },
+        storybooks: [
+          { frontendDir: join(root, "studio"), configDir: join(root, "studio", ".storybook") },
+          { frontendDir: join(root, "demos", "hn-jobs"), configDir: join(root, "demos", "hn-jobs", ".storybook") },
+        ],
+      }),
+      sbManager: {
+        get: () => null,
+        shutdown: () => undefined,
+        prepare: (frontendDir: string) => {
+          mkdirSync(join(frontendDir, ".storybook", ".logos"), { recursive: true })
+          writeFileSync(join(frontendDir, ".storybook", ".logos", "CommentLayer.tsx"), "export const withLogosComments = (Story: any) => Story\n")
+        },
+        ensure: (id: string, frontendDir: string) => {
+          ensured.push({ id, frontendDir })
+          return Promise.resolve("")
+        },
+      },
+    })
+
+    const created = await mgr.create({ kind: "code" })
+
+    expect(ensured.map((call) => call.id).sort()).toEqual([
+      `${created.activeInstanceId}:demos/hn-jobs`,
+      `${created.activeInstanceId}:studio`,
+    ])
+  }, 20_000)
+
+  it("shuts down every path-scoped Storybook service when deleting a workspace", async () => {
+    const shutdowns: string[] = []
+    const mgr = createManager({
+      setupProject(root) {
+        mkdirSync(join(root, "studio", ".storybook"), { recursive: true })
+        mkdirSync(join(root, "demos", "hn-jobs", ".storybook"), { recursive: true })
+        writeFileSync(join(root, "studio", ".storybook", "preview.ts"), "export default {}\n")
+        writeFileSync(join(root, "demos", "hn-jobs", ".storybook", "preview.ts"), "export default {}\n")
+      },
+      caps: (root) => ({
+        storybook: { frontendDir: join(root, "studio"), configDir: join(root, "studio", ".storybook") },
+        storybooks: [
+          { frontendDir: join(root, "studio"), configDir: join(root, "studio", ".storybook") },
+          { frontendDir: join(root, "demos", "hn-jobs"), configDir: join(root, "demos", "hn-jobs", ".storybook") },
+        ],
+      }),
+      sbManager: {
+        get: () => null,
+        shutdown: (id: string) => { shutdowns.push(id) },
+        prepare: (frontendDir: string) => {
+          mkdirSync(join(frontendDir, ".storybook", ".logos"), { recursive: true })
+          writeFileSync(join(frontendDir, ".storybook", ".logos", "CommentLayer.tsx"), "export const withLogosComments = (Story: any) => Story\n")
+        },
+        ensure: () => Promise.resolve(""),
+      },
+    })
+
+    const created = await mgr.create({ kind: "code" })
+    mgr.delete(created.id)
+
+    expect(shutdowns).toContain(`${created.activeInstanceId}:demos/hn-jobs`)
+    expect(shutdowns).toContain(`${created.activeInstanceId}:studio`)
+  }, 20_000)
+
   it("creates an agent session and status event before preparing the working instance", async () => {
     const sessions = createSessions()
     const spawned: FakeAgentProcess[] = []

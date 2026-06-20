@@ -13,6 +13,7 @@ export interface StoryNode {
   id: string
   exportName: string
   storyFile?: string
+  storybookRoot?: string
   storyCode?: string
   snapshot: string | null
 }
@@ -208,6 +209,23 @@ function extractSymbols(sfs: SourceFile[], absRoot: string): Record<string, Symb
   return out
 }
 
+function posixPath(path: string): string {
+  return path.replace(/\\/g, "/")
+}
+
+function storybookRootForStory(absRoot: string, storyFile: string): string | undefined {
+  let dir = dirname(storyFile)
+  while (dir.startsWith(absRoot)) {
+    if (existsSync(join(dir, ".storybook"))) {
+      const rel = posixPath(relative(absRoot, dir))
+      return rel || "."
+    }
+    if (dir === absRoot) break
+    dir = dirname(dir)
+  }
+  return undefined
+}
+
 export function buildStudioIndex(root: string, existingProject?: ReturnType<typeof loadProject>): StudioIndex {
   const absRoot = resolve(root)
   const project = existingProject ?? loadProject(root)
@@ -239,13 +257,17 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
       ...(component.propsName != null ? { propsName: component.propsName } : {}),
       ...(component.propsCode != null ? { propsCode: component.propsCode } : {}),
       propsFields: component.propsFields,
-      stories: entries.map((e) => ({
-        id: e.id,
-        exportName: e.exportName,
-        storyFile: relative(absRoot, e.filePath),
-        storyCode: e.code,
-        snapshot: snapshotStore.get(e),
-      })),
+      stories: entries.map((e) => {
+        const storybookRoot = storybookRootForStory(absRoot, e.filePath)
+        return {
+          id: e.id,
+          exportName: e.exportName,
+          storyFile: relative(absRoot, e.filePath),
+          ...(storybookRoot != null ? { storybookRoot } : {}),
+          storyCode: e.code,
+          snapshot: snapshotStore.get(e),
+        }
+      }),
     }
     ;(componentsByFile.get(file) ?? componentsByFile.set(file, []).get(file)!).push(next)
   }

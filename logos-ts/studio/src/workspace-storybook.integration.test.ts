@@ -110,16 +110,16 @@ async function pollFor<T>(fn: () => Promise<T | null>, timeoutMs: number): Promi
   return null
 }
 
-/** Pid of the storybook process spawned for a workspace, if running. */
-function storybookPid(wsId: string): number | null {
-  return getStorybookEntryPid(wsId)
+/** Pid of the storybook process spawned for a workspace instance, if running. */
+function storybookPid(storybookId: string): number | null {
+  return getStorybookEntryPid(storybookId)
 }
 
 let latestStorybookEntries: Record<string, { pid?: number }> = {}
 let latestStorybookStates: Record<string, { status: string; logs: string[]; error?: string }> = {}
 
-function getStorybookEntryPid(wsId: string): number | null {
-  const pid = latestStorybookEntries[wsId]?.pid ?? null
+function getStorybookEntryPid(storybookId: string): number | null {
+  const pid = latestStorybookEntries[storybookId]?.pid ?? null
   return pid == null || Number.isNaN(pid) ? null : pid
 }
 
@@ -166,6 +166,7 @@ describe("workspace + storybook integration", () => {
   })
 
   let wsId: string
+  let storybookId: string
 
   it("starts a workspace storybook on request", async () => {
     const res = await api("/api/workspaces", {
@@ -174,16 +175,18 @@ describe("workspace + storybook integration", () => {
       body: JSON.stringify({}),
     })
     expect(res.ok).toBe(true)
-    const ws = await res.json() as { id: string }
+    const ws = await res.json() as { id: string; activeInstanceId: string }
     expect(ws.id).toBeDefined()
+    expect(ws.activeInstanceId).toBeDefined()
     wsId = ws.id
+    storybookId = `${ws.activeInstanceId}:frontend`
 
     const startRes = await api(`/api/workspaces/${wsId}/storybook`, { method: "POST" })
     expect(startRes.ok).toBe(true)
 
-    const url = await pollFor(async () => (await getStorybookUrls())[wsId] ?? null, 150_000)
+    const url = await pollFor(async () => (await getStorybookUrls())[storybookId] ?? null, 150_000)
     expect(url).not.toBeNull()
-    expect(url).toBe(`/storybooks/${encodeURIComponent(wsId)}`)
+    expect(url).toBe(`/storybooks/${encodeURIComponent(storybookId)}`)
 
     const sbRes = await fetch(`${baseUrl}${url!}`)
     expect(sbRes.ok).toBe(true)
@@ -195,15 +198,15 @@ describe("workspace + storybook integration", () => {
     expect(rootAssetRes.ok).toBe(true)
     expect(await rootAssetRes.text()).toContain("fake storybook /vite-inject-mocker-entry.js")
 
-    expect(latestStorybookStates[wsId]).toMatchObject({ status: "ready" })
-    expect(latestStorybookStates[wsId]?.logs.some((line) => line.includes("http://localhost:"))).toBe(true)
+    expect(latestStorybookStates[storybookId]).toMatchObject({ status: "ready" })
+    expect(latestStorybookStates[storybookId]?.logs.some((line) => line.includes("http://localhost:"))).toBe(true)
   }, 180_000)
 
   it("the spawned storybook carries ownership tags", () => {
-    sbPid = storybookPid(wsId)
+    sbPid = storybookPid(storybookId)
     expect(sbPid).not.toBeNull()
     const env = execSync(`ps eww -p ${sbPid!}`, { encoding: "utf8" })
-    expect(env).toContain(`LOGOS_WS=${wsId}`)
+    expect(env).toContain(`LOGOS_WS=${storybookId}`)
     expect(env).toContain("LOGOS_SESSION=session-")
   })
 
@@ -213,7 +216,7 @@ describe("workspace + storybook integration", () => {
 
     const gone = await pollFor(async () => {
       const urls = await getStorybookUrls()
-      return urls[wsId] == null && !isLiveProcess(sbPid) ? true : null
+      return urls[storybookId] == null && !isLiveProcess(sbPid) ? true : null
     }, 30_000)
     expect(gone).toBe(true)
   }, 45_000)

@@ -19,6 +19,35 @@ function createProject(): string {
 }
 
 describe("buildStudioIndex component detection", () => {
+  it("records the owning Storybook root for stories in multi-Storybook repos", () => {
+    const root = createProject()
+    mkdirSync(join(root, "studio", "src"), { recursive: true })
+    mkdirSync(join(root, "studio", ".storybook"), { recursive: true })
+    mkdirSync(join(root, "demos", "hn-jobs", "app", "admin"), { recursive: true })
+    mkdirSync(join(root, "demos", "hn-jobs", ".storybook"), { recursive: true })
+    writeFileSync(join(root, "studio", "src", "Panel.tsx"), "export function Panel() { return <div /> }\n")
+    writeFileSync(join(root, "studio", "src", "Panel.stories.tsx"), `
+      import { Panel } from "./Panel"
+      export default { title: "Studio/Panel", component: Panel }
+      export const Default = {}
+    `)
+    writeFileSync(join(root, "demos", "hn-jobs", "app", "admin", "page.tsx"), "export function AdminDashboard() { return <div /> }\n")
+    writeFileSync(join(root, "demos", "hn-jobs", "app", "admin", "page.stories.tsx"), `
+      import { AdminDashboard } from "./page"
+      export default { title: "Admin/Page", component: AdminDashboard }
+      export const Default = {}
+    `)
+
+    const index = buildStudioIndex(root)
+
+    expect(index.files
+      .find((entry) => entry.file === "studio/src/Panel.tsx")
+      ?.component?.stories[0]?.storybookRoot).toBe("studio")
+    expect(index.files
+      .find((entry) => entry.file === "demos/hn-jobs/app/admin/page.tsx")
+      ?.component?.stories[0]?.storybookRoot).toBe("demos/hn-jobs")
+  })
+
   it("normalizes absolute inferred import types in function signatures", () => {
     const root = createProject()
     mkdirSync(join(root, "lib", "hn"), { recursive: true })

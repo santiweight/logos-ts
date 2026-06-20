@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
-import { basename, dirname, join, resolve } from "node:path"
+import { basename, dirname, join } from "node:path"
 
 export interface NmCacheResult {
   cacheKey: string
@@ -135,13 +135,17 @@ export class NodeModulesCache {
 
 export function findPackageDirs(root: string): string[] {
   const dirs: string[] = []
-  if (existsSync(join(root, "package.json"))) dirs.push(root)
-
-  for (const entry of safeReaddir(root)) {
-    if (entry === "node_modules" || entry.startsWith(".")) continue
-    const sub = join(root, entry)
-    if (existsSync(join(sub, "package.json"))) dirs.push(sub)
+  const visit = (dir: string) => {
+    if (existsSync(join(dir, "package.json"))) dirs.push(dir)
+    for (const entry of safeReaddir(dir)) {
+      if (entry === "node_modules" || entry === "dist" || entry.startsWith(".")) continue
+      const sub = join(dir, entry)
+      try {
+        if (statSync(sub).isDirectory()) visit(sub)
+      } catch { /* skip */ }
+    }
   }
+  visit(root)
   return dirs
 }
 

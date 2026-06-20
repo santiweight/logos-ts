@@ -15,6 +15,7 @@ import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, snapshotChanges 
 import { indexToArchText } from "./arch-text"
 import { buildStoryWritingPrompt } from "./story-goals"
 import type {
+  FileEntry,
   Goal,
   DiffStatus,
   RunState,
@@ -112,6 +113,33 @@ export function buildStorybookRenderKey(
     }
   }
   return `${activeWs?.activeInstanceId ?? ""}:${activeStorybookState?.startedAt ?? 0}:${terminalCount}:${terminalHash.toString(36)}`
+}
+
+export function selectActiveStorybookRuntime(
+  activeWorkspaceId: string | null,
+  activeWs: Pick<WorkspaceMeta, "activeInstanceId"> | undefined,
+  storybookRoot: string | undefined,
+  storybookUrls: Record<string, string>,
+  storybookStates: Record<string, SbState>,
+): { url: string; state: SbState | null } {
+  const instanceId = activeWs?.activeInstanceId ?? activeWorkspaceId ?? ""
+  const root = storybookRoot && storybookRoot !== "." ? storybookRoot : ""
+  const key = instanceId && root ? `${instanceId}:${root}` : instanceId
+  return {
+    url: key ? storybookUrls[key] ?? "" : "",
+    state: key ? storybookStates[key] ?? null : null,
+  }
+}
+
+export function selectedStorybookRoot(files: FileEntry[], selection: Selection): string | undefined {
+  if (selection.view !== "story" || !selection.storyId) return undefined
+  const file = files.find((candidate) => candidate.file === selection.file) ?? files[0]
+  const components = file?.components ?? (file?.component ? [file.component] : [])
+  for (const component of components) {
+    const story = component.stories.find((candidate) => candidate.id === selection.storyId)
+    if (story) return story.storybookRoot
+  }
+  return undefined
 }
 
 export function resolveAgentPanelGoalId(
@@ -224,12 +252,15 @@ export function App() {
       }
     } catch {}
   }, [])
-  const activeStorybookUrl = activeWorkspaceId
-    ? storybookUrls[activeWorkspaceId] ?? ""
-    : ""
-  const activeStorybookState = activeWorkspaceId
-    ? storybookStates[activeWorkspaceId] ?? null
-    : null
+  const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
+  const activeStorybookRoot = selectedStorybookRoot(view.files, selection)
+  const { url: activeStorybookUrl, state: activeStorybookState } = selectActiveStorybookRuntime(
+    activeWorkspaceId,
+    activeWs,
+    activeStorybookRoot,
+    storybookUrls,
+    storybookStates,
+  )
   const activeStoryRenderer = activeStorybookUrl ? "storybook" : "portable"
   const retryStorybook = useCallback(async () => {
     if (!activeWorkspaceId) return
@@ -294,7 +325,6 @@ export function App() {
     return diffIndex(reviewBaseIndex, workspaceIndex)
   }, [activeWorkspaceId, workspaceIndex, reviewBaseIndex])
 
-  const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
   const activeGoals = activeWs?.goals ?? []
   const activeStorybookRenderKey = buildStorybookRenderKey(activeWs, activeStorybookState)
 
