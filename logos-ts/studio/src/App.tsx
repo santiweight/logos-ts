@@ -461,6 +461,17 @@ export function App() {
         if (wsList.length > 0) {
           const latest = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
           if (latest != null) await openWorkspace(latest.id)
+          for (const ws of wsList) {
+            for (const goal of ws.goals ?? []) {
+              if (goal.status === "running") {
+                const history = await loadGoalSessionEvents(goal.id)
+                if (history.length > 0) setGoalEvents((prev) => ({ ...prev, [goal.id]: history }))
+                setAgentGoalId(goal.id)
+                setAgentOpen(true)
+                attachAgentStream(ws.id, goal.id)
+              }
+            }
+          }
         } else {
           await createWorkspace()
         }
@@ -561,20 +572,15 @@ export function App() {
     })
   }, [])
 
-  const runAgent = useCallback(
-    (wsId: string, goalId?: string) => {
-      if (!goalId) return
-      setGoalEvents((prev) => ({ ...prev, [goalId]: [] }))
+  const attachAgentStream = useCallback(
+    (wsId: string, goalId: string) => {
+      if (esRefs.current.has(goalId)) return
       setRunningGoals((prev) => new Set(prev).add(goalId))
-      setAgentGoalId(goalId)
-      setAgentOpen(true)
       const openStream = (attempt: number) => {
-        let receivedMessage = false
         let terminal = false
         const es = new EventSource(`/api/agent/run?workspace=${encodeURIComponent(wsId)}&goal=${encodeURIComponent(goalId)}`)
         esRefs.current.set(goalId, es)
         es.onmessage = (m) => {
-          receivedMessage = true
           const msg = JSON.parse(m.data) as AgentMsg
           setGoalEvents((prev) => ({ ...prev, [goalId]: [...(prev[goalId] ?? []), msg] }))
           if (msg.type === "done" || msg.type === "error") {
@@ -589,12 +595,17 @@ export function App() {
           if (terminal) return
           es.close()
           esRefs.current.delete(goalId)
-          if (!receivedMessage && attempt < 1) {
+          if (attempt < 3) {
             setGoalEvents((prev) => ({
               ...prev,
               [goalId]: [...(prev[goalId] ?? []), { type: "status", message: "agent stream disconnected; retrying…" }],
             }))
-            window.setTimeout(() => openStream(attempt + 1), 750)
+            const delay = Math.min(1000 * 2 ** attempt, 5000)
+            window.setTimeout(async () => {
+              const history = await loadGoalSessionEvents(goalId)
+              if (history.length > 0) setGoalEvents((prev) => ({ ...prev, [goalId]: history }))
+              openStream(attempt + 1)
+            }, delay)
             return
           }
           setGoalEvents((prev) => ({
@@ -607,7 +618,18 @@ export function App() {
       }
       openStream(0)
     },
-    [refreshWorkspaces, refreshTests, refreshStorybooks, refreshRuns, openWorkspace]
+    [refreshWorkspaces, refreshTests, refreshStorybooks, refreshRuns, openWorkspace, loadGoalSessionEvents]
+  )
+
+  const runAgent = useCallback(
+    (wsId: string, goalId?: string) => {
+      if (!goalId) return
+      setGoalEvents((prev) => ({ ...prev, [goalId]: [] }))
+      setAgentGoalId(goalId)
+      setAgentOpen(true)
+      attachAgentStream(wsId, goalId)
+    },
+    [attachAgentStream]
   )
 
   const mergeGoal = useCallback(
@@ -949,11 +971,18 @@ export function App() {
   const selectedGoal = selectedGoalId != null
     ? activeGoals.find((goal) => goal.id === selectedGoalId) ?? null
     : null
-  const selectGoal = useCallback((id: string) => {
+  const goalEventsRef = useRef(goalEvents)
+  goalEventsRef.current = goalEvents
+  const selectGoal = useCallback(async (id: string) => {
     setSelected({ type: "goal", id })
     const goal = activeGoals.find((candidate) => candidate.id === id)
     if (goal) navigateToGoal(goal)
-  }, [activeGoals, navigateToGoal])
+    const existing = goalEventsRef.current[id]
+    if (!existing || existing.length === 0) {
+      const history = await loadGoalSessionEvents(id)
+      if (history.length > 0) setGoalEvents((prev) => ({ ...prev, [id]: history }))
+    }
+  }, [activeGoals, navigateToGoal, loadGoalSessionEvents])
 
   const nComps = view.files.reduce((n, f) => n + (f.components?.length ?? (f.component ? 1 : 0)), 0)
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)

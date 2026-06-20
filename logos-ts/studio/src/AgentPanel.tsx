@@ -22,7 +22,11 @@ function summarizeToolInput(name: string, input: Record<string, any>): string {
   return Object.keys(input).slice(0, 2).join(", ")
 }
 
-function Line({ m }: { m: AgentMsg }) {
+function isThinkingEvent(m: AgentMsg): boolean {
+  return m.type === "event" && m.event?.type === "system" && m.event?.subtype === "thinking_tokens"
+}
+
+function Line({ m, prevIsThinking }: { m: AgentMsg; prevIsThinking: boolean }) {
   if (m.type === "status") return <div className="ag-line ag-status">▸ {m.message}</div>
   if (m.type === "stderr") return <div className="ag-line ag-err">{m.message}</div>
   if (m.type === "error") return <div className="ag-line ag-err">✗ {m.message}</div>
@@ -35,6 +39,10 @@ function Line({ m }: { m: AgentMsg }) {
   if (!e) return null
   if (e.type === "system" && e.subtype === "init")
     return <div className="ag-line ag-dim">agent session started ({e.model})</div>
+  if (e.type === "system" && e.subtype === "thinking_tokens" && !prevIsThinking)
+    return <div className="ag-line ag-dim ag-thinking"><span className="ag-spin">⟳</span> thinking…</div>
+  if (e.type === "system" && e.subtype === "status" && e.status === "compacting")
+    return <div className="ag-line ag-dim">▸ compacting context…</div>
   if (e.type === "assistant") {
     const blocks = e.message?.content ?? []
     return (
@@ -124,7 +132,7 @@ export function AgentPanel({
           </div>
         )}
         {events.map((m, i) => (
-          <Line key={i} m={m} />
+          <Line key={i} m={m} prevIsThinking={i > 0 && isThinkingEvent(events[i - 1]!)} />
         ))}
         <div ref={endRef} />
       </div>
