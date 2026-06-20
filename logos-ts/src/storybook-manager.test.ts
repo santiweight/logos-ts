@@ -36,10 +36,10 @@ describe("StorybookManager.prepare", () => {
 
     expect(readFileSync(join(frontendDir, ".storybook", "preview.logos-user.ts"), "utf8")).toBe(originalPreview)
     expect(readFileSync(previewFile, "utf8")).toContain("withLogosComments")
-    const commentStore = readFileSync(join(frontendDir, ".storybook", ".logos", "comment-store.ts"), "utf8")
+    const sbLayer = readFileSync(join(frontendDir, ".storybook", ".logos", "storybook-comment-layer.tsx"), "utf8")
     const commentLayer = readFileSync(join(frontendDir, ".storybook", ".logos", "CommentLayer.tsx"), "utf8")
-    expect(commentStore).toContain("clientEventId")
-    expect(commentLayer).toContain("__LOGOS_STORY_COMMENT_LAYER_ACTIVE__")
+    expect(sbLayer).toContain("__LOGOS_STORY_COMMENT_LAYER_ACTIVE__")
+    expect(commentLayer).toContain("withLogosComments")
   })
 
   it("does not wrap a preview that already uses the direct StorybookCommentLayer", () => {
