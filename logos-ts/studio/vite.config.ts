@@ -422,7 +422,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
             selector: typeof body.selector === "string" ? body.selector : null,
             htmlContext: typeof body.htmlContext === "string" ? body.htmlContext : null,
           }
-          const goalName = await generateGoalName(namingInput, PROJECT_ROOT)
+          const goalName = typeof body.goalName === "string" ? body.goalName : await generateGoalName(namingInput, PROJECT_ROOT)
           const result = await wsMgr.addGoal(wsId, {
             id: `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
             text: String(body.text ?? ""),

@@ -735,7 +735,7 @@ export function App() {
   const addGoal = useCallback(
     async (
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
-      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; autoMerge?: boolean },
+      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; autoMerge?: boolean; goalName?: string },
     ) => {
       // 1. Code forks are created client-side. Arch isolation is owned by the backend.
       let wsId = fork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
@@ -825,7 +825,7 @@ export function App() {
 
   const addStoryWritingGoal = useCallback(
     (target: string, label: string) => {
-      addGoal(target, label, buildStoryWritingPrompt(label), "code", false, { component: label })
+      addGoal(target, label, buildStoryWritingPrompt(label), "code", false, { component: label, goalName: `Code Gen Stories ${label}` })
     },
     [addGoal]
   )
