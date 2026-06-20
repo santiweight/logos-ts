@@ -97,6 +97,32 @@ describe("WorkspaceCodeService", () => {
     expect(git(agent.materializedRoot, ["diff", "--cached", "--name-only"])).toBe("")
   })
 
+  it("does not copy previous agent runtime and scratch directories into new instances", () => {
+    const { service, projectRoot } = createService()
+    for (const dir of [
+      ".agent-runs/old-instance",
+      ".dev-sessions/session-old",
+      ".test-fixtures/archmode-test-old",
+      ".workspaces/ws-old",
+      "storybook-static",
+    ]) {
+      mkdirSync(join(projectRoot, dir), { recursive: true })
+      writeFileSync(join(projectRoot, dir, "generated.txt"), "generated\n")
+    }
+    writeFileSync(join(projectRoot, "old.bodies.json"), "{}\n")
+
+    const instance = service.createInstance("ws", projectRoot, {})
+
+    expect(existsSync(join(instance.materializedRoot, ".agent-runs"))).toBe(false)
+    expect(existsSync(join(instance.materializedRoot, ".dev-sessions"))).toBe(false)
+    expect(existsSync(join(instance.materializedRoot, ".test-fixtures"))).toBe(false)
+    expect(existsSync(join(instance.materializedRoot, ".workspaces"))).toBe(false)
+    expect(existsSync(join(instance.materializedRoot, "storybook-static"))).toBe(false)
+    expect(existsSync(join(instance.materializedRoot, "old.bodies.json"))).toBe(false)
+    expect(git(instance.materializedRoot, ["status", "--porcelain"])).toBe("")
+    expect(git(instance.materializedRoot, ["ls-files"])).not.toContain(".agent-runs")
+  })
+
   it("provides node_modules via cache and excludes them from git", () => {
     const { projectRoot, runsDir } = createService()
     writeFileSync(join(projectRoot, ".gitignore"), "node_modules\n")

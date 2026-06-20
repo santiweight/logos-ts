@@ -9,10 +9,12 @@ import { authPlugin } from "./server/auth"
 import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
 import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 import { buildGoalNamePrompt, cleanGoalName, fallbackGoalName, type GoalNameInput } from "../src/goal-naming"
+import { defaultLogosRuntimeDir, resolveLogosRuntimePaths } from "../src/runtime-paths"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
-const DEMO_STATE_FILE = resolve(LOGOS_TS, ".logos", "active-demo.json")
+const STUDIO_RUNTIME_DIR = resolve(process.env.LOGOS_STUDIO_RUNTIME_DIR ?? defaultLogosRuntimeDir(LOGOS_TS))
+const DEMO_STATE_FILE = resolve(STUDIO_RUNTIME_DIR, "active-demo.json")
 const EMBEDDED_HN_JOBS = resolve(LOGOS_TS, "demos/hn-jobs")
 const DEMOS = [
   { id: "hn-jobs", name: "HN Jobs", root: EMBEDDED_HN_JOBS },
@@ -102,17 +104,22 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   ])
 
   const { demoId, sourceProject } = sourceProjectForStartup()
-  const projectRoot = createSessionProject(sourceProject, resolve(LOGOS_TS, ".dev-sessions")).root
+  const runtimePaths = resolveLogosRuntimePaths({
+    sourceProject,
+    ...(process.env.LOGOS_RUNTIME_DIR ? { runtimeRoot: process.env.LOGOS_RUNTIME_DIR } : {}),
+  })
+  const projectRoot = createSessionProject(sourceProject, runtimePaths.devSessions).root
   const caps = detectProject(projectRoot)
   console.log(`[logos] source: ${sourceProject}`)
+  console.log(`[logos] runtime: ${runtimePaths.root}`)
   console.log(`[logos] demo: ${demoId}`)
   console.log(`[logos] project: ${caps.root}`)
   console.log(`[logos] storybook: ${caps.storybook ? caps.storybook.configDir : "not found"}`)
   console.log(`[logos] runs: ${caps.runs.length ? caps.runs.map((run) => run.label).join(", ") : "not found"}`)
   console.log(`[logos] tests: ${caps.tests ? caps.tests.command.join(" ") : "not found"}`)
   const tsx = resolve(LOGOS_TS, "node_modules/.bin/tsx")
-  const studioPortFile = resolve(projectRoot, ".logos", "studio-port")
-  const runtimeStore = new LogosRuntimeStore(resolve(projectRoot, ".logos", "runtime.db"))
+  const studioPortFile = resolve(runtimePaths.root, "studio-port")
+  const runtimeStore = new LogosRuntimeStore(resolve(runtimePaths.root, "runtime.db"))
 
   const indexReady: Promise<StudioIndex> = new Promise((res, rej) => {
     const t0 = Date.now()
@@ -133,7 +140,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
 
   const wsMgr = new WorkspaceManager({
     store: runtimeStore,
-    runsDir: process.env.LOGOS_AGENT_RUNS_DIR ? resolve(process.env.LOGOS_AGENT_RUNS_DIR) : resolve(LOGOS_TS, ".agent-runs"),
+    runsDir: process.env.LOGOS_AGENT_RUNS_DIR ? resolve(process.env.LOGOS_AGENT_RUNS_DIR) : runtimePaths.agentRuns,
     logosTsSrc: resolve(LOGOS_TS, "src"),
     logosTsRoot: LOGOS_TS,
     projectRoot,

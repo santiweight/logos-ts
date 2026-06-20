@@ -6,6 +6,22 @@ import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 
+const GENERATED_WORKSPACE_DIRS = new Set([
+  "node_modules",
+  ".agent-runs",
+  ".dev-project",
+  ".dev-sessions",
+  ".workspaces",
+  ".logos",
+  ".logos_cache",
+  ".test-fixtures",
+  ".vite",
+  ".vite-logos",
+  ".next",
+  "dist",
+  "storybook-static",
+])
+
 export interface CodeWorkspaceInstance {
   id: string
   workspaceId: string
@@ -139,14 +155,8 @@ export class WorkspaceCodeService {
         filter: (sourcePath) => {
           const name = basename(sourcePath)
           if (name === ".git") return copyGit
-          return ![
-            "node_modules",
-            ".workspaces",
-            ".logos",
-            ".logos_cache",
-            ".vite-logos",
-            "dist",
-          ].includes(name)
+          if (name.endsWith(".bodies.json")) return false
+          return !GENERATED_WORKSPACE_DIRS.has(name)
         },
       })
       const nmCache = new NodeModulesCache()
@@ -184,11 +194,9 @@ export class WorkspaceCodeService {
     mkdirSync(dirname(excludePath), { recursive: true })
     const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : ""
     const excludes = [
-      "node_modules",
+      ...GENERATED_WORKSPACE_DIRS,
       "*/node_modules",
-      ".logos_cache",
-      ".vite-logos",
-      "dist",
+      "*.bodies.json",
     ]
     const missing = excludes.filter((entry) => !existing.split(/\r?\n/).includes(entry))
     if (missing.length > 0) {
