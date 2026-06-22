@@ -178,6 +178,21 @@ describe("element context prompt construction", () => {
     expect(parts[1]).toMatch(/^story:/)
     expect(parts[2]).toMatch(/^element:/)
   })
+
+  it("includes app run path context when present", () => {
+    const line = buildGoalLine({
+      label: "Search",
+      text: "make this fuzzy",
+      component: "DirectoryPage",
+      appPath: "/",
+      runTargetId: "root-app",
+      selector: "body > main > form > input",
+    })
+    expect(line).toContain("component: DirectoryPage")
+    expect(line).toContain("app path: /")
+    expect(line).toContain("run target: root-app")
+    expect(line).toContain("element: body > main > form > input")
+  })
 })
 
 describe("selectNextGoal", () => {

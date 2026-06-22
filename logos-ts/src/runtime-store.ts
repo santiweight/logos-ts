@@ -39,6 +39,8 @@ export interface StoredGoal {
   storyId?: string | null
   selector?: string | null
   component?: string | null
+  appPath?: string | null
+  runTargetId?: string | null
   status: "pending" | "running" | "done" | "error"
   lifecycle: StoredGoalLifecycle
   mergePolicy: StoredGoalMergePolicy
@@ -218,6 +220,8 @@ export class LogosRuntimeStore {
         story_id TEXT,
         selector TEXT,
         component TEXT,
+        app_path TEXT,
+        run_target_id TEXT,
         status TEXT NOT NULL,
         lifecycle_json TEXT,
         auto_merge INTEGER NOT NULL DEFAULT 1,
@@ -301,6 +305,8 @@ export class LogosRuntimeStore {
     this.addColumnIfMissing("goals", "auto_merge", "INTEGER NOT NULL DEFAULT 1")
     this.addColumnIfMissing("goals", "working_instance_id", "TEXT")
     this.addColumnIfMissing("goals", "merged_instance_id", "TEXT")
+    this.addColumnIfMissing("goals", "app_path", "TEXT")
+    this.addColumnIfMissing("goals", "run_target_id", "TEXT")
     this.addColumnIfMissing("runs", "framework", "TEXT NOT NULL DEFAULT 'vite'")
     this.migrateStorybookServiceTables()
   }
@@ -425,10 +431,10 @@ export class LogosRuntimeStore {
         this.db.prepare(`
           INSERT INTO goals (
             id, workspace_id, position_index, text, label, target, mode, created_at,
-            story_id, selector, component, status, lifecycle_json, auto_merge,
+            story_id, selector, component, app_path, run_target_id, status, lifecycle_json, auto_merge,
             working_instance_id, merged_instance_id, session_id
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           goal.id,
           ws.id,
@@ -441,6 +447,8 @@ export class LogosRuntimeStore {
           goal.storyId ?? null,
           goal.selector ?? null,
           goal.component ?? null,
+          goal.appPath ?? null,
+          goal.runTargetId ?? null,
           goal.status,
           JSON.stringify(goal.lifecycle),
           goal.mergePolicy.autoMerge ? 1 : 0,
@@ -785,6 +793,8 @@ function mapGoal(row: Record<string, unknown>): StoredGoal {
     storyId: nullableString(row["story_id"]),
     selector: nullableString(row["selector"]),
     component: nullableString(row["component"]),
+    appPath: nullableString(row["app_path"]),
+    runTargetId: nullableString(row["run_target_id"]),
     status,
     lifecycle: parseGoalLifecycle(row["lifecycle_json"], status),
     mergePolicy: { autoMerge: row["auto_merge"] !== 0 },

@@ -27,6 +27,7 @@ function createProject(): string {
   mkdirSync(fakeVite, { recursive: true })
   writeFileSync(join(root, "package.json"), JSON.stringify({
     type: "module",
+    logosFixture: "run-comments-v2",
     scripts: { dev: "vite" },
     dependencies: { vite: "file:./fake-vite" },
   }))
@@ -60,7 +61,9 @@ function createProject(): string {
     "    res.end('outside base')",
     "    return",
     "  }",
-    "  const html = `<!doctype html><title>fake run</title><main>fake run app</main><script>fetch('/api/env').then((res)=>res.json()).then((data)=>{document.body.dataset.apiRunBase=data.LOGOS_RUN_BASE||''}).catch(()=>{document.body.dataset.apiRunBase='failed'})</script>`",
+    "  const rawPath = req.url.slice(base.length).split('?')[0] || '/'",
+    "  const appPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`",
+    "  const html = `<!doctype html><title>fake run</title><main data-logos-component=\"RunSearchPanel\" data-app-path=\"${appPath}\"><h1>fake run app</h1><a href=\"/details\">Details</a><button type=\"button\">Search jobs</button><span data-plain-target>Plain target</span></main><script>fetch('/api/env').then((res)=>res.json()).then((data)=>{document.body.dataset.apiRunBase=data.LOGOS_RUN_BASE||''}).catch(()=>{document.body.dataset.apiRunBase='failed'})</script>`",
     "  const acceptsGzip = req.headers['accept-encoding'] && req.headers['accept-encoding'].includes('gzip')",
     "  if (acceptsGzip && req.headers['accept-encoding'] !== 'identity') {",
     "    res.writeHead(200, { 'content-type': 'text/html', 'content-encoding': 'gzip' })",
@@ -273,6 +276,122 @@ describe("workspace + run integration", () => {
         .toBe(`/runs/${wsId}/root-app/`)
       expect(await page.evaluate(() => window.localStorage.getItem("logos:selection:v1")))
         .toContain("\"view\":\"run\"")
+    } finally {
+      await page.close()
+    }
+  }, 90_000)
+
+  it("lets users leave component comments inside the running app iframe", async () => {
+    const resetRes = await api("/api/reset", { method: "POST" })
+    expect(resetRes.ok).toBe(true)
+    const reset = await resetRes.json() as { workspace: { id: string } }
+    const wsId = reset.workspace.id
+
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+    try {
+      await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
+      await page.evaluate(() => window.localStorage.clear())
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).waitFor({ timeout: 45_000 })
+      await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).click()
+      await page.waitForFunction(
+        (expectedKey) => fetch("/api/runs")
+          .then((res) => res.json())
+          .then((data) => Boolean(data.urls?.[expectedKey])),
+        `${wsId}:root-app`,
+        { timeout: 30_000 },
+      )
+      await page.waitForFunction(
+        (expectedSrc) => document
+          .querySelector("iframe.story-frame[title='App']")
+          ?.getAttribute("src") === expectedSrc,
+        `/runs/${encodeURIComponent(wsId)}/root-app/`,
+        { timeout: 45_000 },
+      )
+
+      const appFrame = page.frameLocator("iframe.story-frame[title='App']")
+      await appFrame.locator("main[data-logos-component='RunSearchPanel']").waitFor({ timeout: 30_000 })
+      await appFrame.locator("button", { hasText: "Search jobs" }).click({ modifiers: ["Alt"] })
+      await appFrame.locator("[data-logos-run-comment-popup]").waitFor({ timeout: 10_000 })
+      await appFrame.locator("[data-logos-run-comment-textarea]").fill("Make this search typo tolerant.")
+      await appFrame.locator("[data-logos-run-comment-popup] [data-save]").click()
+
+      const goal = await pollFor(async () => {
+        const res = await api(`/api/workspaces/${wsId}`)
+        expect(res.ok).toBe(true)
+        const workspace = await res.json() as { goals: Array<Record<string, unknown>> }
+        return workspace.goals.find((candidate) => candidate["text"] === "Make this search typo tolerant.") ?? null
+      }, 30_000)
+      expect(goal).not.toBeNull()
+      expect(goal).toMatchObject({
+        target: "component:RunSearchPanel",
+        component: "RunSearchPanel",
+        appPath: "/",
+        runTargetId: "root-app",
+      })
+      expect(String(goal!["storyId"])).toBe("run:root-app:/")
+      expect(String(goal!["selector"])).toContain("button")
+      await appFrame.locator("[data-logos-run-comment-pin]").waitFor({ timeout: 30_000 })
+      expect(await appFrame.locator("[data-logos-run-comment-pin]").textContent()).toBe("1")
+    } finally {
+      await page.close()
+    }
+  }, 90_000)
+
+  it("records comments against the current app path after in-app navigation", async () => {
+    const resetRes = await api("/api/reset", { method: "POST" })
+    expect(resetRes.ok).toBe(true)
+    const reset = await resetRes.json() as { workspace: { id: string } }
+    const wsId = reset.workspace.id
+
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+    try {
+      await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
+      await page.evaluate(() => window.localStorage.clear())
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).waitFor({ timeout: 45_000 })
+      await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).click()
+      await page.waitForFunction(
+        (expectedKey) => fetch("/api/runs")
+          .then((res) => res.json())
+          .then((data) => Boolean(data.urls?.[expectedKey])),
+        `${wsId}:root-app`,
+        { timeout: 30_000 },
+      )
+      await page.waitForFunction(
+        (expectedSrc) => document
+          .querySelector("iframe.story-frame[title='App']")
+          ?.getAttribute("src") === expectedSrc,
+        `/runs/${encodeURIComponent(wsId)}/root-app/`,
+        { timeout: 45_000 },
+      )
+
+      const appFrame = page.frameLocator("iframe.story-frame[title='App']")
+      await appFrame.locator("main[data-app-path='/']").waitFor({ timeout: 30_000 })
+      await appFrame.locator("a", { hasText: "Details" }).click()
+      await appFrame.locator("main[data-app-path='/details']").waitFor({ timeout: 30_000 })
+      await appFrame.locator("[data-plain-target]").click({ modifiers: ["Alt"] })
+      await appFrame.locator("[data-logos-run-comment-popup]").waitFor({ timeout: 10_000 })
+      await appFrame.locator("[data-logos-run-comment-textarea]").fill("Tighten the details copy.")
+      await appFrame.locator("[data-logos-run-comment-popup] [data-save]").click()
+
+      const goal = await pollFor(async () => {
+        const res = await api(`/api/workspaces/${wsId}`)
+        expect(res.ok).toBe(true)
+        const workspace = await res.json() as { goals: Array<Record<string, unknown>> }
+        return workspace.goals.find((candidate) => candidate["text"] === "Tighten the details copy.") ?? null
+      }, 30_000)
+      expect(goal).not.toBeNull()
+      expect(goal).toMatchObject({
+        target: "component:RunSearchPanel",
+        component: "RunSearchPanel",
+        appPath: "/details",
+        runTargetId: "root-app",
+      })
+      expect(String(goal!["storyId"])).toBe("run:root-app:/details")
+      expect(String(goal!["selector"])).toContain("span")
+      await appFrame.locator("[data-logos-run-comment-pin]").waitFor({ timeout: 30_000 })
+      expect(await appFrame.locator("[data-logos-run-comment-pin]").textContent()).toBe("1")
     } finally {
       await page.close()
     }

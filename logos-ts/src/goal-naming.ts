@@ -7,6 +7,8 @@ export interface GoalNameInput {
   storyId?: string | null
   selector?: string | null
   htmlContext?: string | null
+  appPath?: string | null
+  runTargetId?: string | null
 }
 
 const MAX_GOAL_NAME_LENGTH = 48
@@ -38,6 +40,8 @@ export function buildGoalNamePrompt(input: GoalNameInput): string {
   const context = [
     input.mode ? `Mode: ${input.mode}` : null,
     input.component ? `Component: ${input.component}` : null,
+    input.appPath ? `App path: ${input.appPath}` : null,
+    input.runTargetId ? `Run target: ${input.runTargetId}` : null,
     input.storyId ? `Story: ${input.storyId}` : null,
     input.target ? `Target: ${input.target}` : null,
     input.label ? `Current target label: ${input.label}` : null,

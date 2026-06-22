@@ -44,6 +44,8 @@ interface EvalCase {
     component?: string
     storyId?: string
     selector?: string
+    appPath?: string
+    runTargetId?: string
   }
   agent: "implementation" | "architecture" | "testing" | "arch-impl"
   tier?: "deterministic" | "capability"
@@ -92,6 +94,8 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
     ...(c.comment.component ? { component: c.comment.component } : {}),
     ...(c.comment.storyId ? { storyId: c.comment.storyId } : {}),
     ...(c.comment.selector ? { selector: c.comment.selector } : {}),
+    ...(c.comment.appPath ? { appPath: c.comment.appPath } : {}),
+    ...(c.comment.runTargetId ? { runTargetId: c.comment.runTargetId } : {}),
   })
 
   const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
@@ -140,6 +144,8 @@ function buildArchImplPrompt(c: EvalCase, work: string, context: string): string
     ...(c.comment.component ? { component: c.comment.component } : {}),
     ...(c.comment.storyId ? { storyId: c.comment.storyId } : {}),
     ...(c.comment.selector ? { selector: c.comment.selector } : {}),
+    ...(c.comment.appPath ? { appPath: c.comment.appPath } : {}),
+    ...(c.comment.runTargetId ? { runTargetId: c.comment.runTargetId } : {}),
   })
   const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
   return buildArchImplementationPrompt(
@@ -271,6 +277,10 @@ function runCase(casePath: string, trial: number): TrialResult {
       label: c.comment.label ?? c.comment.target,
       text: c.comment.text,
       ...(c.comment.component ? { component: c.comment.component } : {}),
+      ...(c.comment.storyId ? { storyId: c.comment.storyId } : {}),
+      ...(c.comment.selector ? { selector: c.comment.selector } : {}),
+      ...(c.comment.appPath ? { appPath: c.comment.appPath } : {}),
+      ...(c.comment.runTargetId ? { runTargetId: c.comment.runTargetId } : {}),
     })
 
     const implPrompt = buildImplPrompt(implContext, work, goalLine, archDiff, c.comment.text)
@@ -343,7 +353,7 @@ function collectCasePaths(dir: string, includeSubdirs: boolean): string[] {
   const out: string[] = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = resolve(dir, entry.name)
-    if (entry.isDirectory() && includeSubdirs) out.push(...collectCasePaths(path, includeSubdirs))
+    if (entry.isDirectory() && includeSubdirs && entry.name !== "runs") out.push(...collectCasePaths(path, includeSubdirs))
     else if (entry.isFile() && extname(entry.name) === ".json") out.push(path)
   }
   return out.sort()

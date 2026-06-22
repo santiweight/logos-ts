@@ -4,11 +4,15 @@ export interface GoalFields {
   component?: string | null
   storyId?: string | null
   selector?: string | null
+  appPath?: string | null
+  runTargetId?: string | null
 }
 
-export function buildElementContext(goal: Pick<GoalFields, "component" | "storyId" | "selector">): string {
+export function buildElementContext(goal: Pick<GoalFields, "component" | "storyId" | "selector" | "appPath" | "runTargetId">): string {
   return [
     goal.component && `component: ${goal.component}`,
+    goal.appPath && `app path: ${goal.appPath}`,
+    goal.runTargetId && `run target: ${goal.runTargetId}`,
     goal.storyId && `story: ${goal.storyId}`,
     goal.selector && `element: ${goal.selector}`,
   ].filter(Boolean).join(", ")

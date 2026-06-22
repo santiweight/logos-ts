@@ -438,6 +438,8 @@ function studioApi(runtime: StudioRuntime): Plugin {
             storyId: typeof body.storyId === "string" ? body.storyId : null,
             selector: typeof body.selector === "string" ? body.selector : null,
             htmlContext: typeof body.htmlContext === "string" ? body.htmlContext : null,
+            appPath: typeof body.appPath === "string" ? body.appPath : null,
+            runTargetId: typeof body.runTargetId === "string" ? body.runTargetId : null,
           }
           const goalName = typeof body.goalName === "string" ? body.goalName : await generateGoalName(namingInput, PROJECT_ROOT)
           const result = await wsMgr.addGoal(wsId, {
@@ -450,6 +452,8 @@ function studioApi(runtime: StudioRuntime): Plugin {
             storyId: body.storyId ?? null,
             selector: body.selector ?? null,
             component: body.component ?? null,
+            appPath: body.appPath ?? null,
+            runTargetId: body.runTargetId ?? null,
           }, { fork: body.fork === true, autoMerge: body.autoMerge !== false })
           if ("error" in result) {
             res.statusCode = result.status

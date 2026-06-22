@@ -1,0 +1,47 @@
+{
+  "name": "app-fuzzy-search",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "button \"Search\"",
+    "component": "DirectoryPage",
+    "storyId": "run:root-app:/",
+    "runTargetId": "root-app",
+    "appPath": "/",
+    "selector": "body > main > form > input",
+    "text": "Replace the current search with a server-side fuzzy search. In lib/job-filters.ts expose an exported fuzzyScore helper that returns an integer score for a job/query match, support typo-tolerant near matches, and update sortJobsForDirectory to accept an optional q argument so results rank by fuzzy score when q is present. Structured matches in company/role/tags should score above incidental rawText mentions, so a Backend Engineer role ranks ahead of a Designer posting that merely mentions backend engineer in the body. A completely unrelated Designer/Product Design posting must score 0 for the query 'backend enginer'. Wire DirectoryPage to call sortJobsForDirectory(filtered, sort, filters.q) or sortJobsForDirectory(filtered, sort, q), and keep the existing filters working with search."
+  },
+  "agent": "implementation",
+  "checks": {
+    "behavior": {
+      "oracle": "../checks/fuzzy-search.check.ts",
+      "cwd": "",
+      "cmd": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "--test",
+        "fuzzy-search.check.ts"
+      ]
+    },
+    "rank-api": {
+      "oracle": "../checks/fuzzy-search.check.test.ts",
+      "cwd": "",
+      "cmd": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "--test",
+        "fuzzy-search.check.test.ts"
+      ]
+    },
+    "project-tests": {
+      "cwd": "",
+      "cmd": [
+        "pnpm",
+        "test"
+      ]
+    }
+  },
+  "tier": "capability"
+}

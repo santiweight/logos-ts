@@ -119,6 +119,8 @@ export interface Goal {
   storyId?: string | null
   selector?: string | null
   component?: string | null
+  appPath?: string | null
+  runTargetId?: string | null
   status: "pending" | "running" | "done" | "error"
   lifecycle?: GoalLifecycle
   mergePolicy?: GoalMergePolicy

@@ -774,7 +774,7 @@ export function App() {
   const addGoal = useCallback(
     async (
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
-      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; autoMerge?: boolean; goalName?: string },
+      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; autoMerge?: boolean; goalName?: string; appPath?: string; runTargetId?: string },
     ) => {
       // 1. Code forks are created client-side. Arch isolation is owned by the backend.
       let wsId = fork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
@@ -881,6 +881,8 @@ export function App() {
         author: "you",
         createdAt: g.createdAt,
         component: g.component,
+        appPath: g.appPath,
+        runTargetId: g.runTargetId,
         mode: g.mode,
         status: g.status,
         replies: g.replies,
@@ -940,7 +942,7 @@ export function App() {
       }
       if (e.data?.type !== "logos:story-comment") return
       if (!acceptStoryCommentEvent(e.data)) return
-      const { storyId, component, selector, label, text, mode, fork, autoMerge, htmlContext } = e.data
+      const { storyId, component, selector, label, text, mode, fork, autoMerge, htmlContext, appPath, runTargetId } = e.data
       if (typeof storyId === "string" && storyId) {
         setStoryCommentDrafts((current) => {
           const next = { ...current }
@@ -953,8 +955,20 @@ export function App() {
           return next
         })
       }
-      const target = component ? `component:${component}` : `story:${storyId}`
-      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, { storyId, selector, component, htmlContext, autoMerge: autoMerge !== false })
+      const target = component
+        ? `component:${component}`
+        : typeof appPath === "string" && appPath.length > 0
+          ? `app:${appPath}`
+          : `story:${storyId}`
+      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, {
+        storyId,
+        selector,
+        component,
+        htmlContext,
+        appPath,
+        runTargetId,
+        autoMerge: autoMerge !== false,
+      })
     }
     window.addEventListener("message", onMsg)
     return () => window.removeEventListener("message", onMsg)
