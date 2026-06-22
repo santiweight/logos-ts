@@ -13,7 +13,49 @@ pnpm exec tsx evals/run.ts --tier deterministic            # the must-never-fail
 pnpm exec tsx evals/run.ts --tier deterministic --repeat 5 # crank up trials
 pnpm exec tsx evals/run.ts fuzzy-search-arch --concurrency 1
 pnpm exec tsx evals/run.ts --quick --dry-run               # print selected quick cases without agents
+pnpm exec tsx evals/run.ts --repeat 3 --concurrency 3      # benchmark baseline
+pnpm exec tsx evals/summarize-results.ts                   # summarize latest result JSON
 ```
+
+## Agent backend spike
+
+The harness can run the same eval pipeline through a few experimental backends:
+
+```bash
+pnpm exec tsx evals/run.ts rename-company-header --backend claude-cli
+pnpm exec tsx evals/run.ts rename-company-header --backend claude-cli-safe
+ANTHROPIC_API_KEY=... pnpm exec tsx evals/run.ts rename-company-header --backend claude-cli-bare
+ANTHROPIC_API_KEY=... pnpm exec tsx evals/run.ts rename-company-header --backend claude-sdk
+CODEX_API_KEY=... pnpm exec tsx evals/run.ts rename-company-header --backend codex-cli
+```
+
+Backends:
+
+- `claude-cli` preserves the historical `claude -p` behavior.
+- `claude-cli-safe` disables Claude Code customizations while preserving normal local auth, which makes it a useful low-friction latency baseline.
+- `claude-cli-bare` uses Claude Code bare mode. This is the faster scripted mode, but it requires API-key or provider auth because bare mode skips OAuth/keychain reads.
+- `claude-sdk` uses `@anthropic-ai/claude-agent-sdk` directly with `cwd`, Claude Code tools, bypass permissions, no filesystem settings, and no session persistence.
+- `codex-cli` shells to `codex exec - --sandbox workspace-write --skip-git-repo-check`. The local machine must have Codex installed and authenticated; set `CODEX_API_KEY` for one-off API-key automation.
+
+Optional knobs:
+
+```bash
+LOGOS_EVAL_AGENT=claude-cli-safe pnpm exec tsx evals/run.ts --tier deterministic
+LOGOS_EVAL_MODEL=sonnet pnpm exec tsx evals/run.ts rename-company-header
+LOGOS_CODEX_MODEL=gpt-5.5 pnpm exec tsx evals/run.ts fuzzy-search --backend codex-cli
+LOGOS_CODEX_MODEL=gpt-5.4-mini pnpm exec tsx evals/run.ts fuzzy-search --backend codex-cli
+LOGOS_CODEX_SANDBOX=danger-full-access pnpm exec tsx evals/run.ts fuzzy-search --backend codex-cli
+LOGOS_CODEX_JSON=1 pnpm exec tsx evals/run.ts fuzzy-search --backend codex-cli
+```
+
+Materialization can also be switched from per-trial `cpSync` to a reusable in-memory source snapshot:
+
+```bash
+pnpm exec tsx evals/run.ts --tier deterministic --materializer memory
+LOGOS_EVAL_MATERIALIZER=memory pnpm exec tsx evals/run.ts fuzzy-search --repeat 3
+```
+
+This still writes a real workspace before the agent/checks run, but it avoids rereading and rescanning the source fixture for every trial.
 
 ## Tiers
 
@@ -83,3 +125,12 @@ oracle checks.
 Per-trial workspaces and logs live in `cases/runs/<case>/t<N>/` (`work/` is the
 fork, `agent.log` + `trial.log` next to it). A JSON summary of every run is
 written to `results/<timestamp>.json`; a pass-rate table is printed at the end.
+The benchmark number is the hidden-check pass rate: successful hidden checks
+divided by total hidden checks. The harness reports that number overall and on
+two mode axes:
+
+- `implementation` covers implementation-mode cases.
+- `architecture` covers architecture, testing, and arch-impl cases.
+
+Use `pnpm exec tsx evals/summarize-results.ts <result.json>` to recompute those
+numbers for a saved run.
