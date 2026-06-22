@@ -40,3 +40,32 @@ export const SearchFocused: Story = {
     selectedHoldingId: "hold-001",
   },
 }
+
+export const EmptyResults: Story = {
+  args: {
+    holdings,
+    initialFilters: {
+      searchQuery: "municipal",
+      assetClass: "Crypto",
+      sortMode: "value",
+    },
+  },
+}
+
+export const EmptyPortfolio: Story = {
+  args: {
+    holdings: [],
+  },
+}
+
+export const InvalidEmbeddedState: Story = {
+  args: {
+    holdings,
+    initialFilters: {
+      searchQuery: "",
+      assetClass: "Private Equity" as never,
+      sortMode: "value",
+    },
+    selectedHoldingId: "missing-holding",
+  },
+}

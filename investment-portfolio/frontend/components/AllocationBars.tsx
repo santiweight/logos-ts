@@ -13,6 +13,9 @@ export const AllocationBars: FC<AllocationBarsProps> = ({ allocations }) => {
         <h2>Allocation</h2>
       </header>
       <div className="allocation-list">
+        {allocations.length === 0 && (
+          <p className="empty-cell" role="status">No allocation data available.</p>
+        )}
         {allocations.map((allocation) => (
           <div key={allocation.assetClass} className="allocation-row">
             <div className="allocation-label">

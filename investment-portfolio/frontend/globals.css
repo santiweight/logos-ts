@@ -25,6 +25,10 @@ body {
   letter-spacing: 0;
 }
 
+#root {
+  min-height: 100vh;
+}
+
 button,
 input,
 select {
@@ -289,8 +293,17 @@ tr {
 }
 
 tbody tr:hover,
-tbody tr.selected {
+tbody tr.selected,
+tbody tr:focus-visible {
   background: #f7faf6;
+}
+
+tbody tr:focus-visible,
+.portfolio-controls button:focus-visible,
+.portfolio-controls input:focus-visible,
+.portfolio-controls select:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .num {

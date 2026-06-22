@@ -42,3 +42,34 @@ export const SearchFocused: Story = {
     featuredRecordId: "rec-003",
   },
 }
+
+export const EmptySearch: Story = {
+  args: {
+    records,
+    initialFilters: {
+      searchQuery: "acetate test pressing",
+      genre: "All",
+      shelf: "All",
+      sortMode: "recent",
+    },
+  },
+}
+
+export const EmptyCollection: Story = {
+  args: {
+    records: [],
+  },
+}
+
+export const InvalidFeaturedRecord: Story = {
+  args: {
+    records,
+    initialFilters: {
+      searchQuery: "",
+      genre: "Missing genre",
+      shelf: "Archive shelf",
+      sortMode: "recent",
+    },
+    featuredRecordId: "missing-record",
+  },
+}

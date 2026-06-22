@@ -44,11 +44,19 @@ export const HoldingsTable: FC<HoldingsTableProps> = ({
           <tbody>
             {holdings.map((holding) => {
               const gain = holdingGainPercent(holding)
+              const selectHolding = () => onHoldingSelect?.(holding.id)
               return (
                 <tr
                   key={holding.id}
                   className={holding.id === selectedHoldingId ? "selected" : ""}
-                  onClick={() => onHoldingSelect?.(holding.id)}
+                  aria-selected={holding.id === selectedHoldingId}
+                  tabIndex={0}
+                  onClick={selectHolding}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return
+                    event.preventDefault()
+                    selectHolding()
+                  }}
                 >
                   <td><strong>{holding.symbol}</strong></td>
                   <td>{holding.name}</td>
@@ -64,7 +72,7 @@ export const HoldingsTable: FC<HoldingsTableProps> = ({
             })}
             {holdings.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty-cell">No holdings match these filters.</td>
+                <td colSpan={7} className="empty-cell" role="status">No holdings match these filters.</td>
               </tr>
             )}
           </tbody>

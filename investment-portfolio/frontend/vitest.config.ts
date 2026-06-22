@@ -10,6 +10,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     include: ["**/*.test.{ts,tsx}"],
+    exclude: ["node_modules", "dist", "storybook-static", "test-results", "**/*.e2e.test.ts"],
   },
   esbuild: {
     jsx: "automatic",

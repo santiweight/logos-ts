@@ -9,7 +9,7 @@ interface HoldingDetailProps {
 export const HoldingDetail: FC<HoldingDetailProps> = ({ holding }) => {
   if (!holding) {
     return (
-      <aside className="holding-detail">
+      <aside className="holding-detail" aria-label="Selected holding">
         <p className="eyebrow">Selected holding</p>
         <p>No holding selected.</p>
       </aside>
@@ -19,7 +19,7 @@ export const HoldingDetail: FC<HoldingDetailProps> = ({ holding }) => {
   const gain = holdingGainPercent(holding)
 
   return (
-    <aside className="holding-detail">
+    <aside className="holding-detail" aria-label="Selected holding">
       <p className="eyebrow">Selected holding</p>
       <h2>{holding.symbol}</h2>
       <h3>{holding.name}</h3>

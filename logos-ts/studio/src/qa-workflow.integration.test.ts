@@ -223,6 +223,7 @@ class QaApi {
     { id: "hn-jobs", name: "HN Jobs", root: "/qa/hn-jobs" },
     { id: "vinyl-collection", name: "Vinyl Collection", root: "/qa/vinyl-collection" },
     { id: "investment-portfolio", name: "Investment Portfolio", root: "/qa/investment-portfolio" },
+    { id: "household-maintenance", name: "Household Maintenance", root: "/qa/household-maintenance" },
   ]
   workspaces = new Map<string, Workspace>()
   runUrls: Record<string, string> = {}
@@ -655,6 +656,7 @@ describe("Studio QA workflow", () => {
       const demoMenu = await page.locator(".demo-menu").innerText()
       expect(demoMenu).toContain("OPEN PROJECT")
       expect(demoMenu).toContain("Vinyl Collection")
+      expect(demoMenu).toContain("Household Maintenance")
 
       await page.locator(".demo-menu-item", { hasText: "Vinyl Collection" }).click()
       await waitFor(() => api.demoPosts.includes("vinyl-collection"))

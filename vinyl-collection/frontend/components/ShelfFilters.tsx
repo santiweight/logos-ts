@@ -28,6 +28,7 @@ export const ShelfFilters: FC<ShelfFiltersProps> = ({
       <label>
         <span>Search</span>
         <input
+          type="search"
           value={filters.searchQuery}
           placeholder="Artist, album, note"
           onChange={(event) => update({ searchQuery: event.target.value })}
@@ -52,6 +53,7 @@ export const ShelfFilters: FC<ShelfFiltersProps> = ({
             key={mode.value}
             className={filters.sortMode === mode.value ? "active" : ""}
             type="button"
+            aria-pressed={filters.sortMode === mode.value}
             onClick={() => update({ sortMode: mode.value })}
           >
             {mode.label}

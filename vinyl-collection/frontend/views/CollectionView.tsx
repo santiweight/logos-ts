@@ -19,6 +19,10 @@ const fallbackFilters: CollectionFilters = {
   sortMode: "recent",
 }
 
+function normalizeOption(value: string, options: string[]) {
+  return options.includes(value) ? value : "All"
+}
+
 export const CollectionView: FC<CollectionViewProps> = ({
   records = defaultRecords,
   initialFilters = fallbackFilters,
@@ -26,8 +30,18 @@ export const CollectionView: FC<CollectionViewProps> = ({
 }) => {
   const [filters, setFilters] = useState(initialFilters)
   const [selectedId, setSelectedId] = useState(featuredRecordId ?? records[0]?.id ?? "")
-  const visibleRecords = useMemo(() => filterRecords(records, filters), [records, filters])
+  const genres = useMemo(() => uniqueValues(records, "genre"), [records])
+  const shelves = useMemo(() => uniqueValues(records, "shelf"), [records])
+  const activeFilters = useMemo<CollectionFilters>(() => ({
+    ...filters,
+    genre: normalizeOption(filters.genre, genres),
+    shelf: normalizeOption(filters.shelf, shelves),
+  }), [filters, genres, shelves])
+  const visibleRecords = useMemo(() => filterRecords(records, activeFilters), [records, activeFilters])
   const selectedRecord = visibleRecords.find((record) => record.id === selectedId) ?? visibleRecords[0]
+  const emptyMessage = records.length === 0
+    ? "No records in this crate yet."
+    : "No records match this crate. Clear a filter or search for another artist."
 
   return (
     <main className="collection-shell">
@@ -40,15 +54,15 @@ export const CollectionView: FC<CollectionViewProps> = ({
           totalRecords={records.length}
           visibleRecords={visibleRecords.length}
           averageRating={averageRating(records)}
-          highlightedShelf={filters.shelf}
+          highlightedShelf={activeFilters.shelf}
         />
       </header>
 
       <section className="collection-layout">
         <ShelfFilters
-          filters={filters}
-          genres={uniqueValues(records, "genre")}
-          shelves={uniqueValues(records, "shelf")}
+          filters={activeFilters}
+          genres={genres}
+          shelves={shelves}
           onFiltersChange={setFilters}
         />
 
@@ -62,13 +76,13 @@ export const CollectionView: FC<CollectionViewProps> = ({
             />
           ))}
           {visibleRecords.length === 0 && (
-            <div className="empty-state">
-              No records match this crate. Clear a filter or search for another artist.
+            <div className="empty-state" role="status">
+              {emptyMessage}
             </div>
           )}
         </div>
 
-        <aside className="now-playing">
+        <aside className="now-playing" aria-label="Now spinning">
           <p className="eyebrow">Now spinning</p>
           {selectedRecord ? (
             <>
@@ -85,7 +99,7 @@ export const CollectionView: FC<CollectionViewProps> = ({
               </dl>
             </>
           ) : (
-            <p>Select a record to cue it up.</p>
+            <p>{records.length === 0 ? "Add records to cue up a listening session." : "Select a record to cue it up."}</p>
           )}
         </aside>
       </section>

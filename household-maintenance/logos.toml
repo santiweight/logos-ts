@@ -1,0 +1,5 @@
+[project]
+name = "household-maintenance"
+
+[typescript.frontend]
+root = "frontend"

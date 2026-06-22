@@ -21,6 +21,7 @@ const DEMOS = [
   { id: "hn-jobs", name: "HN Jobs", root: EMBEDDED_HN_JOBS },
   { id: "vinyl-collection", name: "Vinyl Collection", root: resolve(STUDIO, "../../vinyl-collection") },
   { id: "investment-portfolio", name: "Investment Portfolio", root: resolve(STUDIO, "../../investment-portfolio") },
+  { id: "household-maintenance", name: "Household Maintenance", root: resolve(STUDIO, "../../household-maintenance") },
   { id: "logos-studio", name: "Logos Studio", root: LOGOS_TS },
 ] as const
 type DemoId = typeof DEMOS[number]["id"]

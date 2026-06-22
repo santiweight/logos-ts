@@ -16,6 +16,7 @@ export const RecordCard: FC<RecordCardProps> = ({ record, selected = false, onSe
         className={`cover cover-${record.colorway}`}
         type="button"
         aria-label={`Select ${record.title}`}
+        aria-pressed={selected}
         onClick={() => onSelect?.(record.id)}
       >
         <span className="disc" />

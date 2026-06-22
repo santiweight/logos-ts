@@ -9,6 +9,8 @@ comments.json
 .vite/
 dist/
 storybook-static/
+test-results/
+playwright-report/
 .logos/
 .logos_cache/
 **/.storybook/.logos/

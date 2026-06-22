@@ -24,6 +24,10 @@ const fallbackFilters: PortfolioFilters = {
   sortMode: "value",
 }
 
+function normalizeAssetClass(value: PortfolioFilters["assetClass"], options: Array<"All" | AssetClass>) {
+  return options.includes(value) ? value : "All"
+}
+
 export const PortfolioView: FC<PortfolioViewProps> = ({
   holdings = defaultHoldings,
   initialFilters = fallbackFilters,
@@ -32,11 +36,15 @@ export const PortfolioView: FC<PortfolioViewProps> = ({
   const [filters, setFilters] = useState(initialFilters)
   const [selectedId, setSelectedId] = useState(selectedHoldingId ?? holdings[0]?.id ?? "")
   const summary = summarizePortfolio(holdings)
-  const visibleHoldings = useMemo(() => filterHoldings(holdings, filters), [holdings, filters])
-  const selectedHolding = visibleHoldings.find((holding) => holding.id === selectedId) ?? visibleHoldings[0]
   const assetClasses = useMemo<Array<"All" | AssetClass>>(() => {
     return ["All", ...Array.from(new Set(holdings.map((holding) => holding.assetClass))).sort()]
   }, [holdings])
+  const activeFilters = useMemo<PortfolioFilters>(() => ({
+    ...filters,
+    assetClass: normalizeAssetClass(filters.assetClass, assetClasses),
+  }), [assetClasses, filters])
+  const visibleHoldings = useMemo(() => filterHoldings(holdings, activeFilters), [holdings, activeFilters])
+  const selectedHolding = visibleHoldings.find((holding) => holding.id === selectedId) ?? visibleHoldings[0]
 
   return (
     <main className="portfolio-shell">
@@ -49,7 +57,7 @@ export const PortfolioView: FC<PortfolioViewProps> = ({
       </header>
 
       <PortfolioControls
-        filters={filters}
+        filters={activeFilters}
         assetClasses={assetClasses}
         onFiltersChange={setFilters}
       />
