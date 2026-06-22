@@ -136,6 +136,95 @@ describe("buildStudioIndex component detection", () => {
     })
   })
 
+  it("enriches React forwardRef and memo wrapper component variables", () => {
+    const root = createProject()
+    writeFileSync(join(root, "components", "Button.tsx"), `
+      import React, { forwardRef, memo } from "react"
+
+      interface ButtonProps {
+        label: string
+        disabled?: boolean
+      }
+
+      export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+        function Button({ label, disabled }, ref) {
+          return <button ref={ref} disabled={disabled}>{label}</button>
+        }
+      )
+
+      type BadgeProps = {
+        tone: "ok" | "warn"
+        children?: string
+      }
+
+      export const Badge = memo(function Badge({ tone, children }: BadgeProps) {
+        return <span data-tone={tone}>{children}</span>
+      })
+
+      type IconProps = {
+        title: string
+      }
+
+      export const Icon = memo(forwardRef<SVGSVGElement, IconProps>(
+        function Icon({ title }, ref) {
+          return <svg ref={ref}><title>{title}</title></svg>
+        }
+      ))
+
+      export const ElementButton = forwardRef<HTMLButtonElement, ButtonProps>(
+        function ElementButton({ label, disabled }, ref) {
+          return React.createElement("button", { ref, disabled }, label)
+        }
+      )
+
+      export const button = forwardRef<HTMLButtonElement, ButtonProps>(
+        function button({ label }, ref) {
+          return <button ref={ref}>{label}</button>
+        }
+      )
+    `)
+
+    const index = buildStudioIndex(root)
+    const file = index.files.find((entry) => entry.file === "components/Button.tsx")
+
+    expect(file?.components?.map((component) => component.name)).toEqual(["Button", "Badge", "Icon", "ElementButton"])
+    expect(file?.components?.find((component) => component.name === "Button")).toMatchObject({
+      name: "Button",
+      signature: "Button(props: ButtonProps)",
+      propsName: "ButtonProps",
+      componentCode: expect.stringContaining("forwardRef<HTMLButtonElement, ButtonProps>"),
+      propsFields: [
+        { name: "label", type: "string" },
+        { name: "disabled?", type: "boolean" },
+      ],
+    })
+    expect(file?.components?.find((component) => component.name === "Badge")).toMatchObject({
+      name: "Badge",
+      signature: "Badge(props: BadgeProps)",
+      propsName: "BadgeProps",
+      componentCode: expect.stringContaining("memo(function Badge"),
+      propsFields: [
+        { name: "tone", type: '"ok" | "warn"' },
+        { name: "children?", type: "string" },
+      ],
+    })
+    expect(file?.components?.find((component) => component.name === "Icon")).toMatchObject({
+      name: "Icon",
+      signature: "Icon(props: IconProps)",
+      propsName: "IconProps",
+      componentCode: expect.stringContaining("memo(forwardRef<SVGSVGElement, IconProps>"),
+      propsFields: [
+        { name: "title", type: "string" },
+      ],
+    })
+    expect(file?.components?.find((component) => component.name === "ElementButton")).toMatchObject({
+      name: "ElementButton",
+      signature: "ElementButton(props: ButtonProps)",
+      propsName: "ButtonProps",
+      componentCode: expect.stringContaining('React.createElement("button"'),
+    })
+  })
+
   it("keeps every component when a file has multiple components", () => {
     const root = createProject()
     mkdirSync(join(root, "app", "job", "[slug]"), { recursive: true })

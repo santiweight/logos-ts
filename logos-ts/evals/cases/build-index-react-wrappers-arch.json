@@ -1,0 +1,21 @@
+{
+  "name": "build-index-react-wrappers-arch",
+  "codebase": "../../",
+  "comment": {
+    "target": "file:src/build-index.ts",
+    "label": "buildStudioIndex",
+    "text": "Teach buildStudioIndex component detection to index common React wrapper component variables. It should detect forwardRef and memo calls assigned to PascalCase variables, including nested memo(forwardRef(...)) wrappers and forwardRef bodies that return React.createElement instead of JSX. Preserve the wrapper call as componentCode, infer a stable signature like Button(props: ButtonProps), read props from forwardRef generic type arguments and from memo's named function parameter annotation, ignore lowercase wrapper variables, and keep the existing function component and FC component behavior working."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "timeoutMs": 900000,
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/build-index-react-wrappers.check.test.ts",
+      "cwd": "",
+      "cmd": ["node", "--import", "tsx", "--test", "build-index-react-wrappers.check.test.ts"]
+    },
+    "build-index-regression": { "cwd": "", "cmd": ["pnpm", "exec", "vitest", "run", "src/build-index.test.ts"] }
+  }
+}

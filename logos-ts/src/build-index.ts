@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-syntax, @typescript-eslint/no-unused-vars */
 import { writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs"
 import { join, dirname, relative, resolve } from "node:path"
-import { Node, SyntaxKind, type SourceFile, type TypeNode } from "ts-morph"
+import { Node, SyntaxKind, type ArrowFunction, type FunctionExpression, type SourceFile, type TypeNode } from "ts-morph"
 import { loadProject } from "./project.js"
 import { indexStories, type StoryEntry } from "./stories.js"
 import { buildDependencyTree } from "./dependencies.js"
@@ -69,6 +69,62 @@ function reactComponentPropsName(typeText: string): string | undefined {
 
 function directPropsName(typeText: string): string | undefined {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(typeText) ? typeText : undefined
+}
+
+function calleeName(node: Node): string | undefined {
+  if (Node.isIdentifier(node)) return node.getText()
+  if (Node.isPropertyAccessExpression(node)) return node.getName()
+  return undefined
+}
+
+function firstFunctionArgument(node: Node | undefined): ArrowFunction | FunctionExpression | null {
+  if (!node || !Node.isCallExpression(node)) return null
+  const arg = node.getArguments()[0]
+  if (!arg) return null
+  if (Node.isArrowFunction(arg) || Node.isFunctionExpression(arg)) return arg
+  return firstFunctionArgument(arg)
+}
+
+function reactWrapperPropsName(node: Node | undefined, clean: (text: string) => string): string | undefined {
+  if (!node || !Node.isCallExpression(node)) return undefined
+  const kind = reactWrapperComponentKind(node)
+  if (kind === "forwardRef") {
+    return reactForwardRefPropsName(node, clean)
+  }
+  if (kind === "memo") {
+    return reactMemoPropsName(node, clean)
+  }
+  return undefined
+}
+
+function reactWrapperComponentKind(node: Node | undefined): "forwardRef" | "memo" | undefined {
+  if (!node || !Node.isCallExpression(node)) return undefined
+  const name = calleeName(node.getExpression())
+  if (name === "forwardRef") return "forwardRef"
+  if (name === "memo") return "memo"
+  return undefined
+}
+
+function reactForwardRefPropsName(node: Node | undefined, clean: (text: string) => string): string | undefined {
+  if (!node || !Node.isCallExpression(node) || calleeName(node.getExpression()) !== "forwardRef") return undefined
+  const propsType = node.getTypeArguments()[1]
+  return propsType ? directPropsName(clean(propsType.getText())) : undefined
+}
+
+function reactMemoPropsName(node: Node | undefined, clean: (text: string) => string): string | undefined {
+  if (!node || !Node.isCallExpression(node) || calleeName(node.getExpression()) !== "memo") return undefined
+  const propsType = node.getTypeArguments()[0]
+  const direct = propsType ? directPropsName(clean(propsType.getText())) : undefined
+  return direct ?? reactWrapperPropsName(node.getArguments()[0], clean)
+}
+
+function propsNameFromFunctionParameter(fn: ArrowFunction | FunctionExpression | null, clean: (text: string) => string): string | undefined {
+  const typeNode = fn?.getParameters()[0]?.getTypeNode()
+  return typeNode ? directPropsName(clean(typeNode.getText())) : undefined
+}
+
+function componentSignature(name: string, propsName: string | undefined): string {
+  return propsName ? `${name}(props: ${propsName})` : `${name}()`
 }
 
 function propsFieldsFromTypeLiteral(node: TypeNode | undefined, absRoot: string): { name: string; type: string }[] {
@@ -152,13 +208,18 @@ function componentFromVariable(sf: SourceFile, absRoot: string, vd: ReturnType<S
   const clean = (text: string) => normalizeTypeImportPaths(text, absRoot, sf.getFilePath())
   const typeText = vd.getTypeNode() ? clean(vd.getTypeNode()!.getText()) : undefined
   const typedPropsName = typeText ? reactComponentPropsName(typeText) : undefined
-  if (!typedPropsName && (!init || !hasJsx(init))) return null
+  const wrapperKind = reactWrapperComponentKind(init)
+  if (!typedPropsName && !wrapperKind && (!init || !hasJsx(init))) return null
 
-  const fn = init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) ? init : null
+  const fn = init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
+    ? init
+    : firstFunctionArgument(init)
   const firstParam = fn?.getParameters()[0]
   const paramTypeNode = firstParam?.getTypeNode()
   const paramTypeText = paramTypeNode ? clean(paramTypeNode.getText()) : undefined
-  const propsName = typedPropsName ?? (paramTypeText ? directPropsName(paramTypeText) : undefined)
+  const propsName = typedPropsName
+    ?? reactWrapperPropsName(init, clean)
+    ?? propsNameFromFunctionParameter(fn, clean)
   const namedProps = propsFromNamedType(sf, propsName, absRoot)
   const inlineFields = propsFieldsFromTypeLiteral(paramTypeNode, absRoot)
   const propsFields = namedProps.propsFields.length ? namedProps.propsFields : inlineFields
@@ -168,7 +229,7 @@ function componentFromVariable(sf: SourceFile, absRoot: string, vd: ReturnType<S
   return {
     name,
     file: relative(absRoot, sf.getFilePath()),
-    signature: signatureType ? `${name}(props: ${signatureType})` : `${name}()`,
+    signature: componentSignature(name, signatureType),
     componentCode,
     ...(propsName != null ? { propsName } : {}),
     ...(propsCode != null ? { propsCode } : {}),

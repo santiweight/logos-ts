@@ -1,0 +1,20 @@
+{
+  "name": "architecture-top-level-vars-arch",
+  "codebase": "../../",
+  "comment": {
+    "target": "file:src/architecture.ts",
+    "label": "extractArchitecture",
+    "text": "Fix extractArchitecture so it only includes file-level const arrow/function-expression declarations as architecture items. It must not index local function-valued variables declared inside function bodies or other nested scopes, while still preserving top-level function declarations, top-level const arrow functions, top-level const function expressions, classes, and test extraction."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/architecture-top-level-vars.check.test.ts",
+      "cwd": "",
+      "cmd": ["node", "--import", "tsx", "--test", "architecture-top-level-vars.check.test.ts"]
+    },
+    "architecture-regression": { "cwd": "", "cmd": ["pnpm", "exec", "vitest", "run", "src/architecture.test.ts"] }
+  }
+}

@@ -8,6 +8,8 @@ import {
   type MethodDeclaration,
   type ArrowFunction,
   type FunctionExpression,
+  VariableDeclarationKind,
+  type VariableDeclaration,
 } from "ts-morph"
 import type { Architecture, Decl, Field, FunctionModel, Param, TestModel } from "./model.js"
 
@@ -46,6 +48,15 @@ function modelField(p: PropertyDeclaration): Field {
   return { name: p.getName(), type: p.getTypeNode()?.getText() ?? safeTypeText(p, p) }
 }
 
+function fileLevelConstFunctionInitializer(vd: VariableDeclaration): ArrowFunction | FunctionExpression | null {
+  const statement = vd.getVariableStatement()
+  if (!statement || statement.getParent() !== vd.getSourceFile()) return null
+  if (statement.getDeclarationKind() !== VariableDeclarationKind.Const) return null
+
+  const init = vd.getInitializer()
+  return init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) ? init : null
+}
+
 // Extract `it(...)` / `test(...)` calls (covers .test.ts and in-source tests).
 export function extractTests(sf: SourceFile): TestModel[] {
   const tests: TestModel[] = []
@@ -76,10 +87,8 @@ export function extractArchitecture(sf: SourceFile): Architecture {
 
   // `const Foo = (..) => {}` / `const Foo = function () {}`  (top-level)
   for (const vd of sf.getVariableDeclarations()) {
-    const init = vd.getInitializer()
-    if (init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init))) {
-      items.push(modelFunction(vd.getName(), init))
-    }
+    const init = fileLevelConstFunctionInitializer(vd)
+    if (init) items.push(modelFunction(vd.getName(), init))
   }
 
   // `class Foo {}`

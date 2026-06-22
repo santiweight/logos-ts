@@ -139,7 +139,7 @@ function benchmarkMode(agent: EvalCase["agent"]): BenchmarkMode {
 }
 
 function shouldCopySourcePath(path: string): boolean {
-  return !/node_modules|\.git|\.workspaces|\.logos_cache|dist|__snapshots__/.test(path)
+  return !/node_modules|\.git|\.workspaces|\.logos_cache|dist|__snapshots__|evals\/cases\/runs|evals\/results/.test(path)
 }
 
 function loadSourceSnapshot(root: string): SourceSnapshot {
