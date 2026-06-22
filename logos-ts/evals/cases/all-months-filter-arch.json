@@ -1,0 +1,26 @@
+{
+  "name": "all-months-filter-arch",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "file:lib/month-filter.ts",
+    "targets": [
+      "file:lib/month-filter.ts",
+      "component:DirectoryPage",
+      "file:app/api/jobs/route.ts"
+    ],
+    "label": "month filter",
+    "component": "DirectoryPage",
+    "text": "Add a true all-months directory mode. Treat month=all as all indexed months rather than the latest month: resolveMonthFilter should return effectiveMonth undefined and allMonths true for month=all, DirectoryPage should expose an All months option and preserve it through search/filter links, and /api/jobs?month=all should omit the thread month predicate while default requests still use the latest month."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/all-months-filter.check.test.ts",
+      "cwd": "",
+      "cmd": ["node", "--import", "tsx", "--test", "all-months-filter.check.test.ts"]
+    },
+    "month-regression": { "cwd": "", "cmd": ["node", "--import", "tsx", "--test", "tests/month-filter.test.ts"] }
+  }
+}

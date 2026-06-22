@@ -1,0 +1,20 @@
+{
+  "name": "api-jobs-pagination-arch",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "file:app/api/jobs/route.ts",
+    "label": "GET /api/jobs",
+    "text": "Add offset pagination metadata to GET /api/jobs. Parse a non-negative integer offset URL param with default 0, keep the existing limit default and 2000 cap, sort and filter all matches before pagination, compute total before slicing, slice with jobs.slice(offset, offset + limit), and return JSON containing total, count, limit, offset, hasMore, nextOffset, and jobs. count must be the number of returned jobs, total must be the number of matched jobs before pagination, hasMore should be true when offset + jobs.length is less than total, and nextOffset should be offset + jobs.length or null."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/api-jobs-pagination.check.test.ts",
+      "cwd": "",
+      "cmd": ["node", "--import", "tsx", "--test", "api-jobs-pagination.check.test.ts"]
+    },
+    "job-filter-regression": { "cwd": "", "cmd": ["node", "--import", "tsx", "--test", "tests/job-filters.test.ts"] }
+  }
+}
