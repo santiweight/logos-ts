@@ -22,6 +22,12 @@ interface WorkspaceMeta {
   kind: "code" | "arch"
   parentId: string | null
   goals: Goal[]
+  initialization?: WorkspaceInitialization
+}
+
+interface WorkspaceInitialization {
+  status: "initializing" | "ready" | "error"
+  steps: { id: string; status: string; output?: string }[]
 }
 
 interface Goal {
@@ -137,6 +143,20 @@ async function readWorkspace(id: string): Promise<WorkspaceMeta> {
   const res = await api(`/api/workspaces/${id}`)
   expect(res.ok).toBe(true)
   return await res.json() as WorkspaceMeta
+}
+
+async function waitForWorkspaceReady(id: string, timeoutMs = TEST_TIMEOUT): Promise<WorkspaceMeta> {
+  const start = Date.now()
+  let latest: WorkspaceMeta | null = null
+  while (Date.now() - start < timeoutMs) {
+    latest = await readWorkspace(id)
+    if (!latest.initialization || latest.initialization.status === "ready") return latest
+    if (latest.initialization.status === "error") {
+      throw new Error(`workspace initialization failed: ${JSON.stringify(latest.initialization.steps)}`)
+    }
+    await sleep(100)
+  }
+  throw new Error(`workspace ${id} initialization did not finish; latest status: ${latest?.initialization?.status ?? "unknown"}`)
 }
 
 async function readPolicyEvents(workspaceId?: string): Promise<WorkspacePolicyEvent[]> {
@@ -300,6 +320,7 @@ describe("workspace API mode isolation", () => {
 
   it("blocks a second running architecture agent in the same arch workspace", async () => {
     const arch = await createWorkspace("arch")
+    await waitForWorkspaceReady(arch.id)
     const first = await addGoal(arch.id, "arch")
     const second = await addGoal(arch.id, "arch")
     expect(first.res.ok).toBe(true)
@@ -337,6 +358,7 @@ describe("workspace API mode isolation", () => {
 
   it("creates a queryable session as soon as the agent SSE stream starts", async () => {
     const code = await createWorkspace("code")
+    await waitForWorkspaceReady(code.id)
     const { res: goalRes, body: goal } = await addGoal(code.id, "code")
     expect(goalRes.ok).toBe(true)
 
