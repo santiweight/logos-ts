@@ -84,6 +84,25 @@ describe("single-file roundtrip", () => {
     expect(restored).toContain("while (b !== 0)")
   })
 
+  it("does not splice inferred signature annotations into restored source", () => {
+    const src = `export function serialize(input: { value: string | null }) {
+  return { value: input.value }
+}
+`
+    const { dir, recFile } = tracked(setupFixture({ "serialize.ts": src }))
+
+    run("strip", dir, recFile)
+    const stripped = readFile(dir, "serialize.ts")
+    expect(stripped).toContain("declare function serialize")
+    expect(stripped).toContain("value: string | null")
+
+    run("splice", dir, recFile)
+    const restored = readFile(dir, "serialize.ts")
+    expect(restored).toContain("export function serialize(input: { value: string | null }) {")
+    expect(restored).toContain("return { value: input.value }")
+    expect(restored).not.toContain("): { value: string")
+  })
+
   it("default-exported function", () => {
     const src = `import type { MetadataRoute } from "next"
 

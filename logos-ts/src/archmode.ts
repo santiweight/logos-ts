@@ -105,6 +105,14 @@ function ensureParameterType(param: ParameterDeclaration, dir: string) {
   }
 }
 
+function normalizeExistingParameterType(param: ParameterDeclaration, dir: string) {
+  const typeNode = param.getTypeNode()
+  if (!typeNode) return
+  const text = typeNode.getText()
+  const normalized = cleanTypeText(text, dir, param)
+  if (normalized !== text) param.setType(normalized)
+}
+
 function ensureCallableTypes(fn: FunctionDeclaration | MethodDeclaration, dir: string) {
   for (const param of fn.getParameters()) {
     ensureParameterType(param, dir)
@@ -119,6 +127,17 @@ function ensureCallableTypes(fn: FunctionDeclaration | MethodDeclaration, dir: s
   }
 }
 
+function normalizeExistingCallableTypes(fn: FunctionDeclaration | MethodDeclaration, dir: string) {
+  for (const param of fn.getParameters()) {
+    normalizeExistingParameterType(param, dir)
+  }
+  const returnType = fn.getReturnTypeNode()
+  if (!returnType) return
+  const text = returnType.getText()
+  const normalized = cleanTypeText(text, dir, fn)
+  if (normalized !== text) fn.setReturnType(normalized)
+}
+
 function ensureVariableType(decl: VariableDeclaration, dir: string) {
   const typeNode = decl.getTypeNode()
   if (typeNode) {
@@ -128,6 +147,14 @@ function ensureVariableType(decl: VariableDeclaration, dir: string) {
   } else {
     decl.setType(inferredTypeText(decl, dir))
   }
+}
+
+function normalizeExistingVariableType(decl: VariableDeclaration, dir: string) {
+  const typeNode = decl.getTypeNode()
+  if (!typeNode) return
+  const text = typeNode.getText()
+  const normalized = cleanTypeText(text, dir, decl)
+  if (normalized !== text) decl.setType(normalized)
 }
 
 function declQName(stmt: Statement, file: string): string | null {
@@ -301,8 +328,10 @@ function strip(dir: string, recFile: string) {
   for (const sf of srcFiles) {
     for (const fd of sf.getFunctions()) {
       if (!uniq(fd.getName()) || !fd.hasBody() || rendersJsx(fd)) continue
+      normalizeExistingCallableTypes(fd, dir)
+      const originalText = fd.getText()
       ensureCallableTypes(fd, dir)
-      recs.push({ name: fd.getName()!, text: fd.getText() })
+      recs.push({ name: fd.getName()!, text: originalText })
       fd.removeBody()
       markDeclareUnlessDefault(fd)
     }
@@ -311,16 +340,20 @@ function strip(dir: string, recFile: string) {
       const name = decls[0]?.getName()
       if (decls.length !== 1 || !decls[0] || !Node.isIdentifier(decls[0].getNameNode())) continue
       if (!uniq(name) || !decls[0].getInitializer() || rendersJsx(vs)) continue
+      normalizeExistingVariableType(decls[0], dir)
+      const originalText = vs.getText()
       const init = decls[0].getInitializer()
       if (init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init))) ensureVariableType(decls[0], dir)
-      recs.push({ name: name!, text: vs.getText() })
+      recs.push({ name: name!, text: originalText })
       for (const d of decls) if (d.getInitializer()) d.removeInitializer()
       vs.setHasDeclareKeyword(true)
     }
     for (const cd of sf.getClasses()) {
       if (!uniq(cd.getName()) || rendersJsx(cd)) continue
+      for (const m of cd.getMethods()) normalizeExistingCallableTypes(m, dir)
+      const originalText = cd.getText()
       for (const m of cd.getMethods()) ensureCallableTypes(m, dir)
-      recs.push({ name: cd.getName()!, text: cd.getText() })
+      recs.push({ name: cd.getName()!, text: originalText })
       for (const m of cd.getMethods()) if (m.hasBody()) m.removeBody()
       for (const c of cd.getConstructors()) if (c.hasBody()) c.removeBody()
       for (const p of cd.getProperties()) if (p.getInitializer()) p.removeInitializer()
