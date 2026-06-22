@@ -1,0 +1,21 @@
+{
+  "name": "salary-range-filter-arch",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Add server-side salary range filters to the directory. Parse minSalary and maxSalary integer URL params, treat invalid values as absent, match disclosed salary ranges that overlap the requested range, exclude undisclosed salaries when a salary bound is present, and preserve the existing salary=disclosed filter behavior."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/salary-range-filter.check.test.ts",
+      "cwd": "",
+      "cmd": ["pnpm", "exec", "tsx", "--test", "salary-range-filter.check.test.ts"]
+    },
+    "job-filter-regression": { "cwd": "", "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"] }
+  }
+}

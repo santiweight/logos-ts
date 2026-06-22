@@ -1,0 +1,21 @@
+{
+  "name": "direct-apply-filter-arch",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Add an Apply filter option called Direct apply. It should match jobs with either an application link or an application email, not HN-reply-only or missing-apply jobs. Keep the existing link, email, hn-reply, and missing apply filters working, and show the Direct apply option in DirectoryPage."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/direct-apply-filter.check.test.ts",
+      "cwd": "",
+      "cmd": ["pnpm", "exec", "tsx", "--test", "direct-apply-filter.check.test.ts"]
+    },
+    "job-filter-regression": { "cwd": "", "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"] }
+  }
+}
