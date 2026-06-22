@@ -556,7 +556,7 @@ describe("Studio QA workflow", () => {
           autoMerge: true,
         },
       })
-      await page.locator(".rail-row.comment", { hasText: "JobCard" }).waitFor({ timeout: 15_000 })
+      await page.locator(".rail-row.comment[title^='JobCard (']").waitFor({ timeout: 15_000 })
 
       await page.evaluate(() => {
         window.postMessage({
