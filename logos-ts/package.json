@@ -6,7 +6,8 @@
   "type": "module",
   "description": "A Logos-style compiler for TypeScript: architecture, dependency, and story extraction.",
   "scripts": {
-    "studio": "node studio/bin/logos-studio.mjs",
+    "studio": "node studio/bin/logos-studio.mjs demos/hn-jobs",
+    "studio:repo": "node studio/bin/logos-studio.mjs .",
     "demo": "tsx src/demo.ts",
     "typecheck": "tsc --noEmit",
     "lint": "node -e \"console.log('Strict lint is optional. Run pnpm run lint:strict for a cleanup pass.')\"",

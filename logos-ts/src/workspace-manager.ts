@@ -1226,6 +1226,8 @@ export class WorkspaceManager {
         const message = "strip failed: " + String(e)
         goal.status = "error"
         setGoalLifecycle(goal, { stage: "impl", state: "impl_failed" })
+        goal.workingInstanceId = null
+        this.goalWorkingInstances.delete(goal.id)
         this.save(ws)
         recordAndEmit({ type: "error", goalId: goal.id, message })
         rmSync(bodiesFile, { force: true })

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -597,6 +597,27 @@ describe("WorkspaceManager workspace kinds", () => {
     await waitFor(() => expect(spawned).toHaveLength(1))
     spawned[0]!.emit("close", 0)
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+  }, 15_000)
+
+  it("stops architecture goals when stripping fails", async () => {
+    const binDir = mkdtempSync(join(tmpdir(), "logos-failing-tsx-"))
+    tempDirs.push(binDir)
+    const failingTsx = join(binDir, "tsx")
+    writeFileSync(failingTsx, "#!/bin/sh\nexit 42\n")
+    chmodSync(failingTsx, 0o755)
+
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned, tsx: failingTsx })
+    const arch = await mgr.create({ kind: "arch" })
+    const task = expectGoal(await mgr.addGoal(arch.id, goal("strip-fails", "arch"))).goal
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+
+    expect(mgr.processNext(arch.id, (event) => events.push(event))).toBe(task.id)
+
+    await waitFor(() => expect(events.some((event) => String(event.message ?? "").includes("strip failed"))).toBe(true))
+    expect(mgr.goalsForWorkspace(arch.id).find((g) => g.id === task.id)?.status).toBe("error")
+    expect(spawned).toHaveLength(0)
+    expect(events.some((event) => event.message === "building architecture context…")).toBe(false)
   }, 15_000)
 
   it("does not capture story snapshots before starting the agent working instance", async () => {
