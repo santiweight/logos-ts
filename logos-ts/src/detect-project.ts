@@ -146,8 +146,8 @@ function detectRuns(root: string): RunTargetCaps[] {
         cwd: dir,
         command: devScript ? "pnpm" : "node_modules/.bin/next",
         args: devScript
-          ? ["dev", "-H", "127.0.0.1", "-p", "${PORT}"]
-          : ["dev", "-H", "127.0.0.1", "-p", "${PORT}"],
+          ? ["dev", "--hostname", "127.0.0.1", "--port", "${PORT}"]
+          : ["dev", "--hostname", "127.0.0.1", "--port", "${PORT}"],
         framework: "next",
         ...(env ? { env } : {}),
       })

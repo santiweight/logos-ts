@@ -30,7 +30,7 @@ describe("detectProject", () => {
 
     expect(detectProject(root).runs[0]).toMatchObject({
       command: "pnpm",
-      args: ["dev", "-H", "127.0.0.1", "-p", "${PORT}"],
+      args: ["dev", "--hostname", "127.0.0.1", "--port", "${PORT}"],
     })
   })
 

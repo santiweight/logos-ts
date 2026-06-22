@@ -10,7 +10,7 @@ import { CommentSidebar } from "./CommentSidebar"
 import { ReviewPanel } from "./ReviewPanel"
 import { mainChromeState } from "./main-chrome"
 import { GotoCtx } from "./highlight"
-import { diffIndex } from "./diff"
+import { architectureDiffIndex, diffIndex } from "./diff"
 import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, snapshotChanges } from "./review"
 import { buildStoryWritingPrompt } from "./story-goals"
 import type {
@@ -404,8 +404,10 @@ export function App() {
 
   const diff = useMemo(() => {
     if (!activeWorkspaceId || !workspaceIndex) return {}
-    return diffIndex(reviewBaseIndex, workspaceIndex)
-  }, [activeWorkspaceId, workspaceIndex, reviewBaseIndex])
+    return activeWs?.kind === "arch"
+      ? architectureDiffIndex(reviewBaseIndex, workspaceIndex)
+      : diffIndex(reviewBaseIndex, workspaceIndex)
+  }, [activeWorkspaceId, activeWs?.kind, workspaceIndex, reviewBaseIndex])
 
   const activeGoals = activeWs?.goals ?? []
   const activeStorybookRenderKey = buildStorybookRenderKey(activeWs, activeStorybookState)
