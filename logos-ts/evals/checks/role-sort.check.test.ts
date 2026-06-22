@@ -41,10 +41,10 @@ test("parseJobFilters accepts sort=role and still rejects invalid sort values", 
 
 test("role sort browses by title, tie-breaks by company, and leaves missing roles last", () => {
   const rows = [
-    job({ company: "Zeta", role: null, postedAt: new Date("2026-05-05T00:00:00Z") }),
-    job({ company: "Beta", role: "Designer", postedAt: new Date("2026-05-04T00:00:00Z") }),
-    job({ company: "Charlie", role: "Backend Engineer", postedAt: new Date("2026-05-03T00:00:00Z") }),
-    job({ company: "Alpha", role: "Backend Engineer", postedAt: new Date("2026-05-01T00:00:00Z") }),
+    job({ company: "Zeta", role: null, roles: "[]", postedAt: new Date("2026-05-05T00:00:00Z") }),
+    job({ company: "Beta", role: "Designer", roles: JSON.stringify(["Designer"]), postedAt: new Date("2026-05-04T00:00:00Z") }),
+    job({ company: "Charlie", role: "Backend Engineer", roles: JSON.stringify(["Backend Engineer"]), postedAt: new Date("2026-05-03T00:00:00Z") }),
+    job({ company: "Alpha", role: "Backend Engineer", roles: JSON.stringify(["Backend Engineer"]), postedAt: new Date("2026-05-01T00:00:00Z") }),
   ];
 
   assert.deepEqual(

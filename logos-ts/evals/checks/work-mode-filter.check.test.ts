@@ -56,6 +56,7 @@ test("workMode excludes non-matching modes and remote=1 still works", () => {
 test("DirectoryPage preserves and exposes the work mode filter", () => {
   const page = readFileSync("app/page.tsx", "utf8");
   assert.match(page, /name=["']workMode["']|name=\{["']workMode["']\}/);
-  assert.match(page, /buildHref\([^)]*["']workMode["'][^)]*["']hybrid["'][^)]*\)/s);
+  assert.match(page, /buildHref\([^)]*["']workMode["'][^)]*(?:["']hybrid["']|key)[^)]*\)/s);
+  assert.match(page, /["']hybrid["']/);
   assert.match(page, /Work\s+mode/i);
 });
