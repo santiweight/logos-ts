@@ -424,6 +424,8 @@ function runEnv(opts: {
   out["PORT"] = String(opts.port)
   out["HOST"] = "127.0.0.1"
   out["BROWSER"] = "none"
+  out["CI"] = process.env["CI"] ?? "true"
+  out["npm_config_confirm_modules_purge"] = "false"
   out["LOGOS_SESSION"] = basename(opts.projectRoot)
   out["LOGOS_WS"] = opts.workspaceId
   out["LOGOS_RUN_TARGET"] = opts.targetId

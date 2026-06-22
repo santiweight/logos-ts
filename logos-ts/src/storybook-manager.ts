@@ -204,12 +204,12 @@ export class StorybookManager {
 
     const promise = new Promise<string>((resolve_, reject) => {
       this.prepareCommentBridge(frontendDir)
-      const npx = resolve(frontendDir, "node_modules/.bin/storybook")
+      const storybookBin = resolve(frontendDir, "node_modules/.bin/storybook")
       // node_modules is symlinked to the shared install, so Vite's default
       // cacheDir (node_modules/.vite) would be shared by every concurrent
       // instance — point each instance at its own cache inside the fork.
       const cacheDir = resolve(frontendDir, ".vite-logos")
-      const child = spawn(npx, ["dev", "--ci", "--no-open", "--host", "127.0.0.1"], {
+      const child = spawn(storybookBin, ["dev", "--ci", "--no-open", "--host", "127.0.0.1"], {
         cwd: frontendDir,
         stdio: ["ignore", "pipe", "pipe"],
         env: {

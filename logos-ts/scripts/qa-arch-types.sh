@@ -51,20 +51,20 @@ export function classifyJobRow(job: { id: number }) {
 TS
 
 INDEX_JSON="$TMP/index.json"
-(cd "$ROOT" && npx tsx src/build-index.ts "$TMP" "$INDEX_JSON" >/dev/null)
+(cd "$ROOT" && pnpm exec tsx src/build-index.ts "$TMP" "$INDEX_JSON" >/dev/null)
 
 assert_contains "$INDEX_JSON" 'classifyJobRow(job: { id: number }): import(\"./taxonomy\").JobTaxonomy'
 assert_not_contains "$INDEX_JSON" 'import("/'
 assert_not_contains "$INDEX_JSON" "$TMP"
 
 REC_FILE="$TMP/.bodies.json"
-(cd "$ROOT" && npx tsx src/archmode.ts strip "$TMP" "$REC_FILE" >/dev/null)
+(cd "$ROOT" && pnpm exec tsx src/archmode.ts strip "$TMP" "$REC_FILE" >/dev/null)
 
 assert_contains "$TMP/classify.ts" 'export declare function classifyJobRow(job: { id: number }): import("./taxonomy").JobTaxonomy;'
 assert_not_contains "$TMP/classify.ts" 'import("/'
 assert_not_contains "$TMP/classify.ts" "$TMP"
 
-(cd "$ROOT" && npx tsx src/archmode.ts splice "$TMP" "$REC_FILE" >/dev/null)
+(cd "$ROOT" && pnpm exec tsx src/archmode.ts splice "$TMP" "$REC_FILE" >/dev/null)
 
 assert_contains "$TMP/classify.ts" 'export function classifyJobRow(job: { id: number }): import("./taxonomy").JobTaxonomy'
 assert_contains "$TMP/classify.ts" 'return classifyJobTaxonomy()'

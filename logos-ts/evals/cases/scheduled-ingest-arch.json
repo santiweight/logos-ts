@@ -11,7 +11,7 @@
     "typecheck": {
       "cwd": "frontend",
       "cmd": [
-        "npx",
+        "pnpm", "exec",
         "tsc",
         "--noEmit"
       ]
@@ -23,7 +23,7 @@
       ],
       "cwd": "frontend",
       "cmd": [
-        "npx",
+        "pnpm", "exec",
         "vitest",
         "run",
         "scheduled-ingest.check.test.tsx"

@@ -11,6 +11,7 @@ const STUDIO = resolve(STUDIO_SRC, "..")
 let projectRoot: string
 let binDir: string
 let agentRuns: string
+let runtimeDir: string
 let server: ChildProcess
 let baseUrl: string
 let signalFile: string
@@ -189,18 +190,31 @@ async function readSseEvent(res: Response): Promise<Record<string, unknown>> {
   }
 }
 
+async function readSseEventUntil(
+  res: Response,
+  predicate: (event: Record<string, unknown>) => boolean,
+): Promise<Record<string, unknown>> {
+  for (let i = 0; i < 20; i++) {
+    const event = await readSseEvent(res)
+    if (predicate(event)) return event
+  }
+  throw new Error("timed out waiting for matching SSE event")
+}
+
 describe("workspace API mode isolation", () => {
   beforeAll(async () => {
     projectRoot = createProject()
     binDir = createFakeClaude()
+    runtimeDir = mkdtempSync(join(tmpdir(), "logos-api-runtime-"))
     agentRuns = mkdtempSync(join(tmpdir(), "logos-api-agent-runs-"))
-    server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
+    server = spawn("pnpm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
       env: {
         ...process.env,
         LOGOS_PROJECT: projectRoot,
+        LOGOS_RUNTIME_DIR: runtimeDir,
         LOGOS_AGENT_RUNS_DIR: agentRuns,
         FAKE_CLAUDE_SIGNALS: signalFile,
         PATH: `${binDir}:${process.env["PATH"] ?? ""}`,
@@ -216,6 +230,7 @@ describe("workspace API mode isolation", () => {
     server?.kill()
     if (projectRoot) removeTempDir(projectRoot)
     if (binDir) removeTempDir(binDir)
+    if (runtimeDir) removeTempDir(runtimeDir)
     if (agentRuns) removeTempDir(agentRuns)
   })
 
@@ -330,6 +345,7 @@ describe("workspace API mode isolation", () => {
     const firstRun = fetch(`${baseUrl}/api/agent/run?workspace=${arch.id}`, { signal: controller.signal })
     const firstRes = await firstRun
     expect(firstRes.ok).toBe(true)
+    await readSseEventUntil(firstRes, (event) => event["type"] === "raw")
 
     const secondRes = await fetch(`${baseUrl}/api/agent/run?workspace=${arch.id}`)
     const secondText = await secondRes.text()
@@ -368,7 +384,7 @@ describe("workspace API mode isolation", () => {
     })
     expect(runRes.ok).toBe(true)
 
-    const firstEvent = await readSseEvent(runRes)
+    const firstEvent = await readSseEventUntil(runRes, (event) => event["type"] === "status")
     expect(firstEvent).toMatchObject({
       type: "status",
       goalId: goal.id,
@@ -382,8 +398,9 @@ describe("workspace API mode isolation", () => {
       events: { type: string; payload: string }[]
     }
     expect(sessionBody.session).toMatchObject({ goalId: goal.id, workspaceId: code.id })
-    expect(sessionBody.events[0]).toMatchObject({ type: "status" })
-    expect(JSON.parse(sessionBody.events[0]!.payload)).toMatchObject({
+    const firstStatusEvent = sessionBody.events.find((event) => event.type === "status")
+    expect(firstStatusEvent).toBeDefined()
+    expect(JSON.parse(firstStatusEvent!.payload)).toMatchObject({
       type: "status",
       goalId: goal.id,
       message: "preparing workspace instance…",

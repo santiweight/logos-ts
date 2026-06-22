@@ -14,7 +14,7 @@
     "typecheck": {
       "cwd": "frontend",
       "cmd": [
-        "npx",
+        "pnpm", "exec",
         "tsc",
         "--noEmit"
       ]
@@ -26,7 +26,7 @@
       ],
       "cwd": "frontend",
       "cmd": [
-        "npx",
+        "pnpm", "exec",
         "vitest",
         "run",
         "rename-company-header.check.test.tsx"

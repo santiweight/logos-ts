@@ -86,7 +86,7 @@ export class WorkspaceCodeService {
       const result = nmCache.ensureFor(pkgDir)
       const rel = relative(instance.materializedRoot, pkgDir)
       const target = join(instance.materializedRoot, rel, "node_modules")
-      nmCache.relinkTo(result.nodeModulesPath, target)
+      if (resolve(result.nodeModulesPath) !== resolve(target)) nmCache.relinkTo(result.nodeModulesPath, target)
     }
   }
 
@@ -172,11 +172,11 @@ export class WorkspaceCodeService {
         },
       })
       const nmCache = new NodeModulesCache()
-      for (const pkgDir of this.packageDirsToCache(sourceRoot)) {
+      for (const pkgDir of this.packageDirsToCache(dir)) {
         const result = nmCache.ensureFor(pkgDir)
-        const rel = relative(sourceRoot, pkgDir)
+        const rel = relative(dir, pkgDir)
         const target = join(dir, rel, "node_modules")
-        nmCache.linkTo(result.nodeModulesPath, target)
+        if (resolve(result.nodeModulesPath) !== resolve(target)) nmCache.linkTo(result.nodeModulesPath, target)
       }
     }
     return dir

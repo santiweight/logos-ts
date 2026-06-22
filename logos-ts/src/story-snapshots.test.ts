@@ -87,6 +87,9 @@ describe("story snapshot virtual storage", () => {
     expect(config).toContain("fileURLToPath(import.meta.url)")
     expect(config).not.toContain("find: \"playwright\"")
     expect(config).not.toContain(root)
+    expect(testSource).toContain("createRequire(resolve(projectRoot, \"package.json\"))")
+    expect(testSource).toContain("projectRequire.resolve(\"vite\")")
+    expect(testSource).not.toContain("from \"vite\"")
     expect(testSource).toContain("chromium.launch")
     expect(testSource).toContain("toMatchFileSnapshot")
     expect(entrySource).toContain("createRoot")
@@ -191,6 +194,17 @@ describe("story snapshot virtual storage", () => {
     linkProjectDependency(root, "@storybook/react")
 
     expect(missingStorySnapshotDependencies(root)).toEqual(["playwright"])
+  })
+
+  it("reports Vite as a missing project dependency", () => {
+    const root = createProject()
+    mkdirSync(join(root, "node_modules"), { recursive: true })
+    linkProjectDependency(root, "react")
+    linkProjectDependency(root, "react-dom")
+    linkProjectDependency(root, "@storybook/react")
+    linkProjectDependency(root, "playwright")
+
+    expect(missingStorySnapshotDependencies(root)).toEqual(["vite"])
   })
 
   it("captures browser snapshots when the project depends on Playwright", () => {

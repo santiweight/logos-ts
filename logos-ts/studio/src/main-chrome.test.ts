@@ -19,7 +19,7 @@ const appTarget: RunTarget = {
   id: "root-app",
   label: "App",
   cwd: "/project",
-  command: "npm",
+  command: "pnpm",
   args: ["run", "dev"],
 }
 

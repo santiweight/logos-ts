@@ -1,6 +1,7 @@
 {
   "name": "investment-portfolio",
   "private": true,
+  "packageManager": "pnpm@11.8.0",
   "devDependencies": {
     "vitest": "^2.1.8"
   }

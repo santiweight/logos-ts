@@ -1,7 +1,7 @@
 // Goal naming eval: calls haiku via the claude CLI with various inputs
 // and checks that the generated names are reasonable.
 //
-//   npx tsx evals/goal-naming-eval.ts
+//   pnpm exec tsx evals/goal-naming-eval.ts
 //
 import { execFile } from "node:child_process"
 import { buildGoalNamePrompt, cleanGoalName, type GoalNameInput } from "../src/goal-naming.js"

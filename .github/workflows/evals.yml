@@ -32,6 +32,7 @@ jobs:
     timeout-minutes: 180
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      PNPM_HOME: /home/runner/.local/share/pnpm
     steps:
       - uses: actions/checkout@v5
 
@@ -57,20 +58,27 @@ jobs:
         if: github.event_name != 'schedule'
         run: echo "RUN_EVALS=true" >> "$GITHUB_ENV"
 
+      - name: Enable PNPM
+        if: env.RUN_EVALS == 'true'
+        run: |
+          corepack enable pnpm
+          corepack prepare pnpm@11.8.0 --activate
+          echo "$PNPM_HOME" >> "$GITHUB_PATH"
+
       - uses: actions/setup-node@v6
         if: env.RUN_EVALS == 'true'
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
           cache-dependency-path: |
-            logos-ts/package-lock.json
-            logos-ts/demos/hn-jobs/package-lock.json
+            logos-ts/pnpm-lock.yaml
+            logos-ts/demos/hn-jobs/pnpm-lock.yaml
 
       - name: Install dependencies
         if: env.RUN_EVALS == 'true'
         run: |
-          npm ci --prefix logos-ts
-          npm ci --prefix logos-ts/demos/hn-jobs
+          pnpm --dir logos-ts install --frozen-lockfile
+          pnpm --dir logos-ts/demos/hn-jobs install --frozen-lockfile
 
       - name: Skip when Anthropic credentials are missing
         if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY == ''
@@ -80,7 +88,7 @@ jobs:
 
       - name: Install Claude Code
         if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY != ''
-        run: npm install -g @anthropic-ai/claude-code
+        run: pnpm add --global @anthropic-ai/claude-code
 
       - name: Run evals
         if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY != ''
@@ -102,7 +110,7 @@ jobs:
           if [ -n "$EVAL_REPEAT" ]; then
             args+=("--repeat" "$EVAL_REPEAT")
           fi
-          npm run evals -- "${args[@]}"
+          pnpm run evals -- "${args[@]}"
 
       - name: Upload eval artifacts
         if: always()

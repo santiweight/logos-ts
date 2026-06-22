@@ -31,6 +31,27 @@ function makeProject(root: string, opts?: { lockfile?: boolean; seed?: string })
   return root
 }
 
+function makePnpmProject(root: string, opts?: { lockfile?: boolean; seed?: string }): string {
+  mkdirSync(root, { recursive: true })
+  const seed = opts?.seed ?? "default"
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: `pnpm-test-${seed}`, version: "1.0.0", packageManager: "pnpm@11.8.0" }))
+  if (opts?.lockfile !== false) {
+    writeFileSync(join(root, "pnpm-lock.yaml"), [
+      "lockfileVersion: '9.0'",
+      "",
+      "settings:",
+      "  autoInstallPeers: true",
+      "  excludeLinksFromLockfile: false",
+      "",
+      "importers:",
+      "",
+      "  .: {}",
+      "",
+    ].join("\n"))
+  }
+  return root
+}
+
 function makeProjectWithDep(root: string): string {
   mkdirSync(root, { recursive: true })
   writeFileSync(join(root, "package.json"), JSON.stringify({
@@ -71,6 +92,36 @@ function makeProjectWithCliDep(root: string, packageRoot: string): string {
   const lockContent = readFileSync(join(root, "package-lock.json"), "utf8")
   rmSync(join(root, "node_modules"), { recursive: true, force: true })
   writeFileSync(join(root, "package-lock.json"), lockContent)
+  return root
+}
+
+function makePnpmProjectWithCliDep(root: string, packageRoot: string): string {
+  mkdirSync(join(packageRoot, "bin"), { recursive: true })
+  writeFileSync(join(packageRoot, "package.json"), JSON.stringify({
+    name: "asset-cli",
+    version: "1.0.0",
+    bin: { "asset-cli": "bin/cli.js" },
+  }))
+  writeFileSync(join(packageRoot, "bin", "asset.txt"), "asset ok")
+  writeFileSync(join(packageRoot, "bin", "cli.js"), [
+    "#!/usr/bin/env node",
+    "const { readFileSync } = require('node:fs')",
+    "const { join } = require('node:path')",
+    "console.log(readFileSync(join(__dirname, 'asset.txt'), 'utf8'))",
+    "",
+  ].join("\n"))
+
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    name: "pnpm-test-with-cli-dep",
+    version: "1.0.0",
+    packageManager: "pnpm@11.8.0",
+    dependencies: { "asset-cli": `file:${packageRoot}` },
+  }))
+  execFileSync("pnpm", ["install"], { cwd: root, stdio: "ignore" })
+  const lockContent = readFileSync(join(root, "pnpm-lock.yaml"), "utf8")
+  rmSync(join(root, "node_modules"), { recursive: true, force: true })
+  writeFileSync(join(root, "pnpm-lock.yaml"), lockContent)
   return root
 }
 
@@ -140,6 +191,24 @@ describe("NodeModulesCache", () => {
     expect(result.hit).toBe(false)
     expect(result.cacheKey).toBeTruthy()
     expect(existsSync(result.nodeModulesPath)).toBe(true)
+  })
+
+  it("uses an ancestor PNPM project for nested packages without lockfiles", () => {
+    const tmp = makeTempDir()
+    const root = join(tmp, "project")
+    makePnpmProject(root)
+    const nested = join(root, "lib", "generated", "snapshot")
+    mkdirSync(nested, { recursive: true })
+    writeFileSync(join(nested, "package.json"), JSON.stringify({ name: "generated-snapshot", version: "1.0.0" }))
+    const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
+
+    const result = cache.ensureFor(nested)
+
+    expect(result.hit).toBe(false)
+    expect(existsSync(result.nodeModulesPath)).toBe(true)
+    expect(existsSync(join(nested, "package-lock.json"))).toBe(false)
+    expect(result.nodeModulesPath).toBe(join(nested, "node_modules"))
+    expect(result.cacheKey).toBe("")
   })
 
   it("evicts oldest entries when cache exceeds max", () => {
@@ -224,6 +293,70 @@ describe("NodeModulesCache", () => {
 
     const output = execFileSync("node", ["test.js"], { cwd: workspace, encoding: "utf8" })
     expect(output.trim()).toBe("true")
+  })
+
+  it("installs PNPM projects in place instead of linking shared cached node_modules", () => {
+    const tmp = makeTempDir()
+    const project = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const cacheDir = join(tmp, "cache")
+    const cache = new NodeModulesCache({ cacheDir })
+
+    const result = cache.ensureFor(project)
+
+    expect(result.hit).toBe(false)
+    expect(result.cacheKey).toBe("")
+    expect(result.nodeModulesPath).toBe(join(project, "node_modules"))
+    expect(lstatSync(result.nodeModulesPath).isDirectory()).toBe(true)
+    expect(existsSync(cacheDir)).toBe(false)
+
+    const output = execFileSync(join(project, "node_modules", ".bin", "asset-cli"), { cwd: project, encoding: "utf8" })
+    expect(output.trim()).toBe("asset ok")
+  })
+
+  it("replaces stale node_modules symlinks when installing PNPM projects in place", () => {
+    const tmp = makeTempDir()
+    const project = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
+    const stale = join(tmp, "stale-node-modules")
+    mkdirSync(stale, { recursive: true })
+    symlinkSync(stale, join(project, "node_modules"))
+
+    const result = cache.ensureFor(project)
+
+    expect(result.nodeModulesPath).toBe(join(project, "node_modules"))
+    expect(lstatSync(result.nodeModulesPath).isDirectory()).toBe(true)
+    expect(existsSync(join(result.nodeModulesPath, ".bin", "asset-cli"))).toBe(true)
+  })
+
+  it("recovers from self-referential PNPM node_modules symlinks", () => {
+    const tmp = makeTempDir()
+    const project = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
+    const target = join(project, "node_modules")
+    symlinkSync(target, target)
+
+    const result = cache.ensureFor(project)
+
+    expect(result.nodeModulesPath).toBe(target)
+    expect(lstatSync(target).isDirectory()).toBe(true)
+    expect(lstatSync(target).isSymbolicLink()).toBe(false)
+    expect(existsSync(join(target, ".bin", "asset-cli"))).toBe(true)
+  })
+
+  it("replaces valid-looking PNPM node_modules symlinks with workspace-local installs", () => {
+    const tmp = makeTempDir()
+    const source = makePnpmProjectWithCliDep(join(tmp, "source"), join(tmp, "asset-cli"))
+    const project = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    execFileSync("pnpm", ["install", "--frozen-lockfile"], { cwd: source, stdio: "ignore" })
+    symlinkSync(join(source, "node_modules"), join(project, "node_modules"))
+    const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
+
+    const result = cache.ensureFor(project)
+
+    expect(result.nodeModulesPath).toBe(join(project, "node_modules"))
+    expect(lstatSync(result.nodeModulesPath).isDirectory()).toBe(true)
+    expect(lstatSync(result.nodeModulesPath).isSymbolicLink()).toBe(false)
+    expect(existsSync(join(result.nodeModulesPath, ".bin", "asset-cli"))).toBe(true)
   })
 
   it("preserves .bin symlinks so binaries resolve correctly", () => {
@@ -404,6 +537,22 @@ describe("workspace code service integration", () => {
 
     expect(existsSync(join(instance.materializedRoot, "node_modules"))).toBe(true)
     expect(lstatSync(join(instance.materializedRoot, "node_modules")).isSymbolicLink()).toBe(true)
+  })
+
+  it("keeps PNPM workspace instance node_modules local when dependency ensure runs again", () => {
+    const tmp = makeTempDir()
+    const projectRoot = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const runsDir = join(tmp, "runs")
+    const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [] })
+
+    const instance = service.createInstance("ws", projectRoot, {})
+    service.ensureCachedNodeModules(instance)
+
+    const nodeModules = join(instance.materializedRoot, "node_modules")
+    expect(existsSync(nodeModules)).toBe(true)
+    expect(lstatSync(nodeModules).isDirectory()).toBe(true)
+    expect(lstatSync(nodeModules).isSymbolicLink()).toBe(false)
+    expect(existsSync(join(nodeModules, ".bin", "asset-cli"))).toBe(true)
   })
 
   it("shares the same cache entry across multiple workspace instances", () => {

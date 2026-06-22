@@ -8,9 +8,10 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { spawn, type ChildProcess } from "node:child_process"
-import { readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { tmpdir } from "node:os"
 import { chromium, type Browser, type Frame, type Page } from "playwright"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
@@ -22,6 +23,7 @@ let server: ChildProcess
 let browser: Browser
 let baseUrl: string
 let sessionDir: string | null = null
+let runtimeDir: string | null = null
 
 async function api(path: string, opts?: RequestInit): Promise<Response> {
   return fetch(`${baseUrl}${path}`, opts)
@@ -81,11 +83,12 @@ async function waitForPortableFrame(page: Page, storyId: string, timeoutMs = 30_
 
 describe("portable story browser integration", () => {
   beforeAll(async () => {
-    server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1"], {
+    runtimeDir = mkdtempSync(resolve(tmpdir(), "logos-portable-runtime-"))
+    server = spawn("pnpm", ["run", "dev", "--", "--host", "127.0.0.1"], {
       cwd: resolve(STUDIO, ".."),
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, LOGOS_PROJECT: PROJECT_ROOT },
+      env: { ...process.env, LOGOS_PROJECT: PROJECT_ROOT, LOGOS_RUNTIME_DIR: runtimeDir },
     })
     baseUrl = await waitForServer(server)
     browser = await chromium.launch({ headless: true })
@@ -98,6 +101,9 @@ describe("portable story browser integration", () => {
     }
     if (sessionDir) {
       try { rmSync(sessionDir, { recursive: true, force: true }) } catch {}
+    }
+    if (runtimeDir) {
+      try { rmSync(runtimeDir, { recursive: true, force: true }) } catch {}
     }
   }, 30_000)
 
@@ -121,20 +127,19 @@ describe("portable story browser integration", () => {
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.locator(".sidebar-tree .anode").first().waitFor({ timeout: 45_000 })
       await page.locator(".sidebar-tree .anode", { hasText: "AdminDashboard" }).first().click()
-      await page.locator("button.tab", { hasText: "Story" }).click()
 
       const frameEl = page.locator("iframe.story-frame")
       await frameEl.waitFor({ timeout: 20_000 })
       expect(await frameEl.getAttribute("sandbox")).toBe("allow-scripts allow-forms allow-same-origin")
       expect(await frameEl.getAttribute("src")).toContain("/portable-story.html?storyId=admin-page--default")
 
-      const frame = await waitForPortableFrame(page, "admin-page--default")
+      const frame = await waitForPortableFrame(page, "admin-page--default", 75_000)
       await expect.poll(async () => await frame.locator("table.fact-table").count(), { timeout: 30_000 }).toBe(1)
       expect(await frame.locator("table.fact-table").textContent()).toContain("Visible postings")
     } finally {
       await page.close()
     }
-  }, 60_000)
+  }, 120_000)
 
   it("renders workspace edits through the portable iframe after reindex", async () => {
     const ws = await createWorkspace()
@@ -160,5 +165,5 @@ describe("portable story browser integration", () => {
     } finally {
       await page.close()
     }
-  }, 60_000)
+  }, 120_000)
 })

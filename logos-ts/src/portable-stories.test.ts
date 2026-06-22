@@ -1,6 +1,6 @@
 /* eslint-disable functional/no-let */
 import { describe, expect, it } from "vitest"
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createPortableStoryResolver, storybookDirsForRoot } from "./portable-stories.js"
@@ -71,6 +71,28 @@ describe("portable story resolver", () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
       rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it("ignores node_modules while checking story cache mtimes", () => {
+    const root = copyFixture()
+    try {
+      symlinkSync(join(root, "deleted-cache", "node_modules"), join(root, "node_modules"))
+      const resolver = createPortableStoryResolver({
+        projectRoot: root,
+        storybook: {
+          frontendDir: root,
+          configDir: join(root, ".storybook"),
+        },
+        workspaceRoot: () => root,
+      })
+
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=admin-page--default")
+
+      expect(mod).toContain("app/admin/page.stories.tsx")
+      expect(mod).toContain('storyId = "admin-page--default"')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

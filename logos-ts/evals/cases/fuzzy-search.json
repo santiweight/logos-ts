@@ -2,27 +2,28 @@
   "name": "fuzzy-search",
   "codebase": "../../demos/hn-jobs",
   "comment": {
-    "target": "component:DirectoryView",
-    "text": "Make search into a fuzzy search"
+    "target": "file:lib/job-filters.ts",
+    "targets": ["file:lib/job-filters.ts", "file:app/page.tsx"],
+    "text": "Make directory search fuzzy in the shared job filtering logic, and keep the page wired so queried results are relevance-ranked."
   },
   "agent": "implementation",
   "checks": {
     "typecheck": {
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
-        "npx",
+        "pnpm", "exec",
         "tsc",
         "--noEmit"
       ]
     },
     "behavior": {
-      "oracle": "../checks/fuzzy-search.check.test.tsx",
-      "cwd": "frontend",
+      "oracle": "../checks/fuzzy-search.check.ts",
+      "cwd": "",
       "cmd": [
-        "npx",
-        "vitest",
-        "run",
-        "fuzzy-search.check.test.tsx"
+        "pnpm", "exec",
+        "tsx",
+        "--test",
+        "fuzzy-search.check.ts"
       ]
     }
   },

@@ -49,7 +49,7 @@ done
 
 # 5. Build-index attaches snapshots to stories
 step "Build-index produces snapshot-on-story (no captured field)"
-INDEX=$(cd "$(dirname "$0")/.." && npx tsx src/build-index.ts "$ROOT" - 2>/dev/null)
+INDEX=$(cd "$(dirname "$0")/.." && pnpm exec tsx src/build-index.ts "$ROOT" - 2>/dev/null)
 HAS_CAPTURED=$(echo "$INDEX" | node -e "
   const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
   const any=d.files.some(f=>(f.components||[]).some(c=>'captured' in c));

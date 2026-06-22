@@ -5,7 +5,7 @@
 //   node bench-storybook-startup.mjs [studio-url]
 //
 // Default studio URL: http://localhost:5173 (or pass your own).
-// The studio must already be running (`npm run dev` in studio/).
+// The studio must already be running (`pnpm run dev` in studio/).
 
 import { chromium } from "playwright"
 

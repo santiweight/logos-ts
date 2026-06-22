@@ -45,7 +45,7 @@ async function run() {
   const studioOk = await fetch(`${STUDIO}/api/index`).then(r => r.ok).catch(() => false)
   assert(studioOk, "studio /api/index reachable")
   if (!studioOk) {
-    console.error("\nStudio not reachable — is it running? (`cd logos-ts/studio && npm run dev`)")
+    console.error("\nStudio not reachable — is it running? (`cd logos-ts/studio && pnpm run dev`)")
     process.exit(1)
   }
 
@@ -190,7 +190,7 @@ async function run() {
   const sbOk = sbUrl ? await fetch(`${sbUrl}/api/story-comments`).then(r => r.ok).catch(() => false) : false
 
   if (!sbOk) {
-    skip("Storybook not reachable - run `cd demos/hn-jobs && npm run storybook` to test this section")
+    skip("Storybook not reachable - run `cd demos/hn-jobs && pnpm run storybook` to test this section")
   } else {
     const sbCommentRes = await fetch(`${sbUrl}/api/story-comments`, {
       method: "POST",

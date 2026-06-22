@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
 import { basename, dirname, join, relative, resolve } from "node:path"
@@ -17,7 +17,16 @@ export interface NmCacheOptions {
 
 const DEFAULT_CACHE_DIR = join(homedir(), ".logos", "nm-cache")
 const DEFAULT_MAX_ENTRIES = 20
-const CACHE_FORMAT_VERSION = "bin-relinked-v2"
+const CACHE_FORMAT_VERSION = "package-manager-v4"
+
+type PackageManagerName = "pnpm" | "npm"
+
+interface PackageManagerInstall {
+  name: PackageManagerName
+  command: PackageManagerName
+  lockfilePath?: string
+  installArgs: string[]
+}
 
 export class NodeModulesCache {
   private cacheDir: string
@@ -29,6 +38,13 @@ export class NodeModulesCache {
   }
 
   ensureFor(packageDir: string): NmCacheResult {
+    if (!existsSync(join(packageDir, "package.json"))) {
+      return { cacheKey: "", nodeModulesPath: join(packageDir, "node_modules"), hit: false }
+    }
+
+    const manager = this.packageManagerInstall(packageDir)
+    if (manager.name === "pnpm") return this.ensurePnpmInPlace(packageDir, manager)
+
     const key = this.computeKey(packageDir)
     if (!key) {
       this.installInPlace(packageDir)
@@ -47,9 +63,8 @@ export class NodeModulesCache {
     console.log(`[logos] nm-cache miss: installing ${basename(packageDir)}…`)
     mkdirSync(entryDir, { recursive: true })
 
-    const lockfile = join(packageDir, "package-lock.json")
-    const installCmd = existsSync(lockfile) ? "ci" : "install"
-    execFileSync("npm", [installCmd], {
+    this.removeNodeModules(join(packageDir, "node_modules"))
+    execFileSync(manager.command, manager.installArgs, {
       cwd: packageDir,
       stdio: "inherit",
       env: { ...process.env, NODE_ENV: "" },
@@ -57,14 +72,14 @@ export class NodeModulesCache {
 
     const sourceNm = join(packageDir, "node_modules")
     if (!existsSync(sourceNm)) mkdirSync(sourceNm, { recursive: true })
-    // -RL dereferences package symlinks so file: dependencies survive in the
-    // cache; npm-style .bin symlinks are rebuilt below because some CLIs load
-    // assets relative to their real package path.
+    // npm installs are flat enough to dereference safely; npm-style .bin
+    // symlinks are rebuilt below because some CLIs load assets relative to
+    // their real package path.
     execFileSync("cp", ["-RL", sourceNm, cachedNm])
     this.rebuildBinLinks(cachedNm)
     rmSync(sourceNm, { recursive: true, force: true })
 
-    const lockSrc = existsSync(lockfile) ? lockfile : join(packageDir, "package.json")
+    const lockSrc = manager.lockfilePath ?? join(packageDir, "package.json")
     writeFileSync(join(entryDir, "source-lock.json"), readFileSync(lockSrc))
 
     this.touchEntry(entryDir)
@@ -81,6 +96,7 @@ export class NodeModulesCache {
   }
 
   relinkTo(cachedNmPath: string, target: string): void {
+    if (resolve(cachedNmPath) === resolve(target)) return
     try {
       if (readlinkSync(target) === cachedNmPath) return
     } catch {
@@ -93,17 +109,19 @@ export class NodeModulesCache {
 
   ensureAndLink(packageDir: string, target: string): NmCacheResult {
     const result = this.ensureFor(packageDir)
+    if (resolve(result.nodeModulesPath) === resolve(target)) return result
     this.linkTo(result.nodeModulesPath, target)
     return result
   }
 
   private computeKey(packageDir: string): string {
-    const lockfile = join(packageDir, "package-lock.json")
+    const lockfile = this.lockfileFor(packageDir)
     const packageJson = join(packageDir, "package.json")
 
     let content: string
-    if (existsSync(lockfile)) {
-      content = readFileSync(lockfile, "utf8")
+    if (lockfile) {
+      const packageContent = existsSync(packageJson) ? readFileSync(packageJson, "utf8") : ""
+      content = `${basename(lockfile)}\0${readFileSync(lockfile, "utf8")}\0package.json\0${packageContent}`
     } else if (existsSync(packageJson)) {
       content = readFileSync(packageJson, "utf8")
     } else {
@@ -122,7 +140,112 @@ export class NodeModulesCache {
     if (!existsSync(join(packageDir, "package.json"))) return
     if (existsSync(join(packageDir, "node_modules"))) return
     console.log(`[logos] installing ${basename(packageDir)} (no lockfile, in-place)…`)
-    execFileSync("npm", ["install"], { cwd: packageDir, stdio: "inherit" })
+    const manager = this.packageManagerInstall(packageDir)
+    execFileSync(manager.command, ["install"], { cwd: packageDir, stdio: "inherit" })
+  }
+
+  private ensurePnpmInPlace(packageDir: string, manager: PackageManagerInstall): NmCacheResult {
+    const nodeModulesPath = join(packageDir, "node_modules")
+    if (this.isPnpmInstallUsable(packageDir)) {
+      console.log(`[logos] pnpm install present: ${basename(packageDir)}`)
+      return { cacheKey: "", nodeModulesPath, hit: true }
+    }
+
+    console.log(`[logos] pnpm install: ${basename(packageDir)}…`)
+    this.removeNodeModules(nodeModulesPath)
+    execFileSync(manager.command, manager.installArgs, {
+      cwd: packageDir,
+      stdio: "inherit",
+      env: { ...process.env, NODE_ENV: "" },
+    })
+    return { cacheKey: "", nodeModulesPath, hit: false }
+  }
+
+  private isPnpmInstallUsable(packageDir: string): boolean {
+    const nodeModulesPath = join(packageDir, "node_modules")
+    try {
+      if (lstatSync(nodeModulesPath).isSymbolicLink()) return false
+      if (!statSync(nodeModulesPath).isDirectory()) return false
+      if (!statSync(join(nodeModulesPath, ".pnpm")).isDirectory()) return false
+    } catch {
+      return false
+    }
+
+    const pkg = readPackageJson(packageDir)
+    const binDir = join(nodeModulesPath, ".bin")
+    for (const name of Object.keys({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) })) {
+      try {
+        const depPkg = JSON.parse(readFileSync(join(nodeModulesPath, name, "package.json"), "utf8")) as { name?: string; bin?: string | Record<string, string> }
+        const bins = typeof depPkg.bin === "string"
+          ? [basename(depPkg.name ?? name)]
+          : Object.keys(depPkg.bin ?? {})
+        if (bins.some((bin) => !existsSync(join(binDir, bin)))) return false
+      } catch {
+        return false
+      }
+    }
+    return true
+  }
+
+  private removeNodeModules(nodeModulesPath: string): void {
+    try {
+      if (lstatSync(nodeModulesPath).isSymbolicLink()) {
+        unlinkSync(nodeModulesPath)
+        return
+      }
+    } catch {
+      return
+    }
+    rmSync(nodeModulesPath, { recursive: true, force: true })
+  }
+
+  private lockfileFor(packageDir: string): string | undefined {
+    for (const name of ["pnpm-lock.yaml", "package-lock.json"]) {
+      const lockfile = join(packageDir, name)
+      if (existsSync(lockfile)) return lockfile
+    }
+    return undefined
+  }
+
+  private packageManagerInstall(packageDir: string): PackageManagerInstall {
+    const pnpmLockfile = join(packageDir, "pnpm-lock.yaml")
+    if (existsSync(pnpmLockfile)) {
+      return {
+        name: "pnpm",
+        command: "pnpm",
+        lockfilePath: pnpmLockfile,
+        installArgs: ["install", "--frozen-lockfile"],
+      }
+    }
+
+    const npmLockfile = join(packageDir, "package-lock.json")
+    if (existsSync(npmLockfile)) {
+      return {
+        name: "npm",
+        command: "npm",
+        lockfilePath: npmLockfile,
+        installArgs: ["ci"],
+      }
+    }
+
+    return this.packageJsonManager(packageDir) === "pnpm"
+      ? { name: "pnpm", command: "pnpm", installArgs: ["install"] }
+      : { name: "npm", command: "npm", installArgs: ["install"] }
+  }
+
+  private packageJsonManager(packageDir: string): PackageManagerName {
+    let dir = resolve(packageDir)
+    for (;;) {
+      if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm"
+      try {
+        const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { packageManager?: string }
+        if (pkg.packageManager?.startsWith("pnpm@")) return "pnpm"
+      } catch { /* missing or malformed package.json */ }
+
+      const parent = dirname(dir)
+      if (parent === dir) return "npm"
+      dir = parent
+    }
   }
 
   private touchEntry(entryDir: string): void {
@@ -220,4 +343,15 @@ export function findPackageDirs(root: string): string[] {
 
 function safeReaddir(dir: string): string[] {
   try { return readdirSync(dir) } catch { return [] }
+}
+
+function readPackageJson(packageDir: string): { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } {
+  try {
+    return JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+  } catch {
+    return {}
+  }
 }

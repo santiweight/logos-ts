@@ -38,15 +38,15 @@ hn-jobs/           demo app — a real TS port of the HN "who is hiring" directo
 
 ```bash
 # deps (first time)
-cd logos-ts && npm install
-cd studio && npm install
-cd ../../hn-jobs/frontend && npm install
+cd logos-ts && pnpm install
+cd studio && pnpm install
+cd ../demos/hn-jobs && pnpm install
 
-# Storybook (backs the studio's Story tab) — from hn-jobs/frontend
-npm run storybook        # auto-assigns a free port
+# Storybook (backs the studio's Story tab) — from logos-ts/demos/hn-jobs
+pnpm run storybook        # auto-assigns a free port
 
 # studio (auto-starts Storybook) — from logos-ts/studio
-npm run dev              # auto-assigns a free port, prints the URL
+pnpm run dev              # auto-assigns a free port, prints the URL
 ```
 
 Leaving a comment in the studio (alt-click a node) declares a change and
@@ -79,4 +79,4 @@ cd hn-jobs && node scripts/healthcheck.mjs job-filters   # scope by path substri
 ```
 
 Strict linting is intentionally optional. Use typecheck/tests as the regular
-verification gate; run `npm run lint:strict` only for deliberate cleanup passes.
+verification gate; run `pnpm run lint:strict` only for deliberate cleanup passes.

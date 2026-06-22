@@ -6,11 +6,11 @@ architecture cases run the real `archmode strip → agent → splice` pipeline
 followed by an implementation pass), then runs checks the agent never sees.
 
 ```bash
-npx tsx evals/run.ts                                 # all cases, default trial counts
-npx tsx evals/run.ts rename-company-header           # one case by name
-npx tsx evals/run.ts --tier deterministic            # the must-never-fail suite
-npx tsx evals/run.ts --tier deterministic --repeat 5 # crank up trials
-npx tsx evals/run.ts fuzzy-search-arch --concurrency 1
+pnpm exec tsx evals/run.ts                                 # all cases, default trial counts
+pnpm exec tsx evals/run.ts rename-company-header           # one case by name
+pnpm exec tsx evals/run.ts --tier deterministic            # the must-never-fail suite
+pnpm exec tsx evals/run.ts --tier deterministic --repeat 5 # crank up trials
+pnpm exec tsx evals/run.ts fuzzy-search-arch --concurrency 1
 ```
 
 ## Tiers
@@ -35,11 +35,11 @@ npx tsx evals/run.ts fuzzy-search-arch --concurrency 1
   "repeat": 3,                             // default trials (CLI --repeat overrides)
   "timeoutMs": 300000,                     // optional; defaults: impl 300s, arch 600s
   "checks": {
-    "typecheck": { "cwd": "frontend", "cmd": ["npx", "tsc", "--noEmit"] },
+    "typecheck": { "cwd": "frontend", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
     "behavior": {
       "oracle": ["../checks/foo.check.test.tsx", "../checks/fixtures.ts"],
       "cwd": "frontend",
-      "cmd": ["npx", "vitest", "run", "foo.check.test.tsx"]
+      "cmd": ["pnpm", "exec", "vitest", "run", "foo.check.test.tsx"]
     }
   }
 }

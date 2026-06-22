@@ -56,11 +56,11 @@ export function createSessionProject(sourceRoot: string, preferredSessionsDir: s
   writeDevSessionPid(root)
 
   const nmCache = new NodeModulesCache()
-  for (const pkgDir of findPackageDirs(sourceRoot)) {
+  for (const pkgDir of findPackageDirs(root)) {
     const result = nmCache.ensureFor(pkgDir)
-    const rel = relative(sourceRoot, pkgDir)
+    const rel = relative(root, pkgDir)
     const target = join(root, rel, "node_modules")
-    nmCache.linkTo(result.nodeModulesPath, target)
+    if (resolve(result.nodeModulesPath) !== resolve(target)) nmCache.linkTo(result.nodeModulesPath, target)
   }
 
   console.log(`[logos] session: ${id}`)

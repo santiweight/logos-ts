@@ -13,7 +13,7 @@
     "no-server-imports": {
       "oracle": "../checks/write-server-component-stories.check.ts",
       "cwd": ".",
-      "cmd": ["npx", "tsx", "--test", "write-server-component-stories.check.ts"]
+      "cmd": ["pnpm", "exec", "tsx", "--test", "write-server-component-stories.check.ts"]
     }
   }
 }

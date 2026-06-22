@@ -68,6 +68,7 @@ function createManager(opts?: {
   caps?: Record<string, unknown> | ((projectRoot: string) => Record<string, unknown>)
   initializeWorkspaces?: boolean
   cacheNodeModules?: boolean
+  tsx?: string
 }): WorkspaceManager {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
   tempDirs.push(root)
@@ -89,7 +90,7 @@ function createManager(opts?: {
     caps: { root: projectRoot, nodeModulesDirs: [], ...extraCaps },
     sbManager: sbManager as any,
     sessions: sessions as any,
-    tsx: TSX,
+    tsx: opts?.tsx ?? TSX,
     getIndex: async () => ({ root: projectRoot, files: [] }),
     initializeWorkspaces: opts?.initializeWorkspaces ?? false,
     cacheNodeModules: opts?.cacheNodeModules ?? false,
@@ -704,6 +705,38 @@ describe("WorkspaceManager workspace kinds", () => {
         },
       }),
     ])
+  })
+
+  it("fails an architecture goal without starting an agent when strip fails", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      tsx: "/usr/bin/false",
+      setupProject: (projectRoot) => {
+        mkdirSync(join(projectRoot, "app"), { recursive: true })
+        writeFileSync(join(projectRoot, "app", "robots.ts"), `export default function robots() {
+  return { rules: { userAgent: "*", allow: "/" } }
+}
+`)
+      },
+    })
+    const arch = await mgr.create({ kind: "arch" })
+    const task = expectGoal(await mgr.addGoal(arch.id, goal("strip-fails", "arch"))).goal
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+
+    expect(mgr.processNext(arch.id, (event) => events.push(event))).toBe(task.id)
+
+    await waitFor(() => {
+      const current = mgr.goalsForWorkspace(arch.id).find((g) => g.id === task.id)
+      expect(current?.status).toBe("error")
+      expect(current?.lifecycle).toEqual({ stage: "impl", state: "impl_failed" })
+    })
+    expect(spawned).toHaveLength(0)
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      goalId: task.id,
+      message: expect.stringContaining("strip failed:"),
+    }))
   })
 
   it("starts a requested code goal while another code goal owns the workspace", async () => {

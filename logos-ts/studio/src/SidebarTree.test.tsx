@@ -125,7 +125,12 @@ describe("SidebarTree", () => {
 
     fireEvent.contextMenu(screen.getByText("JobCard"))
 
-    expect(onSelect).toHaveBeenCalledWith({ file: "src/components/JobCard.tsx", component: "JobCard", view: "code" })
+    expect(onSelect).toHaveBeenCalledWith({
+      file: "src/components/JobCard.tsx",
+      component: "JobCard",
+      view: "story",
+      storyId: "jobcard--default",
+    })
     expect(onWriteStories).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: "Generate stories" }))
@@ -299,7 +304,7 @@ describe("SidebarTree", () => {
           id: "root-app",
           label: "App",
           cwd: "/tmp/app",
-          command: "npm",
+          command: "pnpm",
           args: ["run", "dev"],
           framework: "vite",
         }]}
@@ -330,7 +335,7 @@ describe("SidebarTree", () => {
           id: "root-app",
           label: "App",
           cwd: "/tmp/app",
-          command: "npm",
+          command: "pnpm",
           args: ["run", "dev"],
           framework: "vite",
         }]}

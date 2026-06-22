@@ -729,13 +729,25 @@ function studioApi(runtime: StudioRuntime): Plugin {
 function portableStoriesPlugin(runtime: StudioRuntime): Plugin {
   const prefix = "virtual:logos-portable-story"
   const resolvedPrefix = `\0${prefix}`
+  const nextLinkShim = "\0logos-next-link-shim"
   return {
     name: "logos-portable-stories",
     resolveId(id) {
       if (id.startsWith(prefix)) return `\0${id}`
+      if (id === "next/link") return nextLinkShim
       return null
     },
     load(id) {
+      if (id === nextLinkShim) {
+        return [
+          "import React from 'react'",
+          "const Link = React.forwardRef(function Link({ href, as, replace, scroll, shallow, passHref, prefetch, locale, legacyBehavior, children, ...props }, ref) {",
+          "  const target = typeof href === 'string' ? href : (href && typeof href === 'object' && 'pathname' in href ? href.pathname : '#')",
+          "  return React.createElement('a', { ...props, ref, href: target }, children)",
+          "})",
+          "export default Link",
+        ].join("\n")
+      }
       if (!id.startsWith(resolvedPrefix)) return null
       return runtime.portableStories.moduleFor(id.slice(1))
     },
@@ -873,7 +885,14 @@ export default defineConfig(async ({ command }) => {
       alias: {
         "@logos-studio": resolve(STUDIO, "src"),
         "@logos-src": resolve(LOGOS_TS, "src"),
+        "next/link": resolve(STUDIO, "src/next-link-shim.tsx"),
       },
+    },
+    optimizeDeps: {
+      exclude: ["next/link"],
+    },
+    define: {
+      "process.env": {},
     },
   }
 })

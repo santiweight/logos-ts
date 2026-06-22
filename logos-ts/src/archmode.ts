@@ -3,6 +3,7 @@ import {
   Node,
   SyntaxKind,
   type FunctionDeclaration,
+  type ClassDeclaration,
   type MethodDeclaration,
   type ParameterDeclaration,
   type SourceFile,
@@ -49,6 +50,30 @@ function rendersJsx(node: Node): boolean {
     }
   })
   return found
+}
+
+function hasDefaultModifier(node: Node): boolean {
+  const getModifiers = (node as any).getModifiers
+  if (typeof getModifiers !== "function") return false
+  return getModifiers.call(node).some((modifier: Node) => modifier.getKind() === SyntaxKind.DefaultKeyword)
+}
+
+function markDeclareUnlessDefault(node: Node & { setHasDeclareKeyword(value: boolean): void }): void {
+  if (!hasDefaultModifier(node)) node.setHasDeclareKeyword(true)
+}
+
+function findTopLevelFunction(sf: SourceFile, name: string): FunctionDeclaration | undefined {
+  return sf.getFunctions().find((fn) => fn.getName() === name)
+    ?? sf.getStatements().find((stmt): stmt is FunctionDeclaration =>
+      Node.isFunctionDeclaration(stmt) && stmt.getName() === name,
+    )
+}
+
+function findTopLevelClass(sf: SourceFile, name: string): ClassDeclaration | undefined {
+  return sf.getClasses().find((cls) => cls.getName() === name)
+    ?? sf.getStatements().find((stmt): stmt is ClassDeclaration =>
+      Node.isClassDeclaration(stmt) && stmt.getName() === name,
+    )
 }
 
 const allSources = (project: ReturnType<typeof loadProject>) =>
@@ -279,7 +304,7 @@ function strip(dir: string, recFile: string) {
       ensureCallableTypes(fd, dir)
       recs.push({ name: fd.getName()!, text: fd.getText() })
       fd.removeBody()
-      fd.setHasDeclareKeyword(true)
+      markDeclareUnlessDefault(fd)
     }
     for (const vs of sf.getVariableStatements()) {
       const decls = vs.getDeclarations()
@@ -299,7 +324,7 @@ function strip(dir: string, recFile: string) {
       for (const m of cd.getMethods()) if (m.hasBody()) m.removeBody()
       for (const c of cd.getConstructors()) if (c.hasBody()) c.removeBody()
       for (const p of cd.getProperties()) if (p.getInitializer()) p.removeInitializer()
-      cd.setHasDeclareKeyword(true)
+      markDeclareUnlessDefault(cd)
     }
   }
 
@@ -408,10 +433,10 @@ function splice(dir: string, recFile: string) {
   let n = 0
   for (const sf of nonTests(allSources(project))) {
     for (const [name, text] of byName) {
-      const fd = sf.getFunction(name)
-      if (fd != null && fd.hasDeclareKeyword()) { fd.replaceWithText(withDocs(fd, text)); n++; continue }
-      const cd = sf.getClass(name)
-      if (cd != null && cd.hasDeclareKeyword()) { cd.replaceWithText(withDocs(cd, text)); n++; continue }
+      const fd = findTopLevelFunction(sf, name)
+      if (fd != null && (fd.hasDeclareKeyword() || hasDefaultModifier(fd) || !fd.hasBody())) { fd.replaceWithText(withDocs(fd, text)); n++; continue }
+      const cd = findTopLevelClass(sf, name)
+      if (cd != null && (cd.hasDeclareKeyword() || hasDefaultModifier(cd))) { cd.replaceWithText(withDocs(cd, text)); n++; continue }
       const vd = sf.getVariableDeclaration(name)
       const vs = vd != null ? vd.getVariableStatement() : undefined
       if (vs != null && vs.hasDeclareKeyword()) { vs.replaceWithText(withDocs(vs, text)); n++ }

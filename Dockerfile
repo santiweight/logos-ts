@@ -1,22 +1,26 @@
 FROM node:22-bookworm-slim
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git openssh-client \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable pnpm \
+    && corepack prepare pnpm@11.8.0 --activate
 
 WORKDIR /app
 
-COPY logos-ts/package.json logos-ts/package-lock.json ./logos-ts/
-COPY logos-ts/studio/package.json logos-ts/studio/package-lock.json ./logos-ts/studio/
-COPY investment-portfolio/frontend/package.json investment-portfolio/frontend/package-lock.json ./investment-portfolio/frontend/
+COPY logos-ts/package.json logos-ts/pnpm-lock.yaml logos-ts/pnpm-workspace.yaml ./logos-ts/
+COPY logos-ts/studio/package.json logos-ts/studio/pnpm-lock.yaml logos-ts/studio/pnpm-workspace.yaml ./logos-ts/studio/
+COPY investment-portfolio/frontend/package.json investment-portfolio/frontend/pnpm-lock.yaml investment-portfolio/frontend/pnpm-workspace.yaml ./investment-portfolio/frontend/
 
-RUN npm ci --prefix logos-ts \
-    && npm ci --prefix logos-ts/studio \
-    && npm ci --prefix investment-portfolio/frontend \
-    && npm install --global @anthropic-ai/claude-code@2.1.175 \
-    && npx --prefix logos-ts playwright install --with-deps chromium
+RUN pnpm --dir logos-ts install --frozen-lockfile \
+    && pnpm --dir logos-ts/studio install --frozen-lockfile \
+    && pnpm --dir investment-portfolio/frontend install --frozen-lockfile \
+    && pnpm add --global @anthropic-ai/claude-code@2.1.175 \
+    && pnpm --dir logos-ts exec playwright install --with-deps chromium
 
 COPY --chown=node:node . .
 

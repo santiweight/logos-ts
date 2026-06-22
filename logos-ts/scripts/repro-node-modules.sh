@@ -38,7 +38,7 @@ echo ""
 # Ensure source has node_modules
 if [ ! -d "$DEMOS_HN_JOBS/node_modules" ]; then
   echo "SETUP: installing deps in hn-jobs source..."
-  (cd "$DEMOS_HN_JOBS" && npm install --silent 2>/dev/null)
+  (cd "$DEMOS_HN_JOBS" && pnpm install --silent 2>/dev/null)
 fi
 
 WORKDIR="$(mktemp -d /tmp/logos-nm-repro-XXXXXX)"
@@ -66,7 +66,7 @@ else
   check "symlink: prisma runs" "FAIL" "${err:-prisma failed}"
 fi
 
-if (cd "$DEST" && npx next --version) >/dev/null 2>&1; then
+if (cd "$DEST" && pnpm exec next --version) >/dev/null 2>&1; then
   check "symlink: next.js accessible" "PASS"
 else
   check "symlink: next.js accessible" "FAIL" "next not found"
@@ -98,7 +98,7 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Timing: symlink vs npm install (cache miss cost)
+# Timing: symlink vs pnpm install (cache miss cost)
 # ---------------------------------------------------------------------------
 echo "--- Timing ---"
 TIMING_DIR="$WORKDIR/timing"
@@ -109,9 +109,9 @@ echo -n "  symlink:     "
 SYMLINK_TIME=$( { time ln -s "$DEMOS_HN_JOBS/node_modules" "$WORKDIR/timing-symlink-nm" ; } 2>&1 | grep real | awk '{print $2}')
 echo "$SYMLINK_TIME"
 
-echo -n "  npm install: "
-NPM_TIME=$( { time (cd "$TIMING_DIR" && npm install --silent 2>/dev/null) ; } 2>&1 | grep real | awk '{print $2}')
-echo "$NPM_TIME (one-time cache miss cost)"
+echo -n "  pnpm install: "
+PNPM_TIME=$( { time (cd "$TIMING_DIR" && pnpm install --silent 2>/dev/null) ; } 2>&1 | grep real | awk '{print $2}')
+echo "$PNPM_TIME (one-time cache miss cost)"
 
 echo ""
 
@@ -148,4 +148,4 @@ echo "passed: $pass  failed: $fail"
 echo ""
 echo "The cache service uses the symlink strategy (instant, .bin works)."
 echo "APFS clone is shown for comparison — it breaks .bin symlinks."
-echo "Cache miss cost (npm install) is paid once per unique lockfile."
+echo "Cache miss cost (pnpm install) is paid once per unique lockfile."

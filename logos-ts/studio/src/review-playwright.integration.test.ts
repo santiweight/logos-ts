@@ -13,6 +13,7 @@ const STUDIO = resolve(STUDIO_SRC, "..")
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
 let projectRoot: string
+let runtimeDir: string
 let server: ChildProcess
 let baseUrl: string
 let browser: Browser
@@ -132,11 +133,12 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 describe("review UI", () => {
   beforeAll(async () => {
     projectRoot = createProject()
-    server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
+    runtimeDir = mkdtempSync(join(tmpdir(), "logos-review-runtime-"))
+    server = spawn("pnpm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, LOGOS_PROJECT: projectRoot },
+      env: { ...process.env, LOGOS_PROJECT: projectRoot, LOGOS_RUNTIME_DIR: runtimeDir },
     })
     baseUrl = await waitForServer(server)
     browser = await chromium.launch({ headless: true })
@@ -149,6 +151,7 @@ describe("review UI", () => {
     }
     server?.kill()
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (runtimeDir) rmSync(runtimeDir, { recursive: true, force: true })
   })
 
   it("shows captured snapshot diffs against the workspace base instance", async () => {
@@ -179,9 +182,16 @@ describe("review UI", () => {
     })
 
     try {
+      await page.addInitScript(() => {
+        window.localStorage.setItem("logos:selection:v1", JSON.stringify({
+          file: "frontend/src/JobRow.tsx",
+          component: "JobRow",
+          view: "code",
+        }))
+      })
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
-      await page.waitForFunction(() => document.body.innerText.includes("Review 1"))
-      await page.getByRole("button", { name: "Review 1" }).click()
+      await page.waitForFunction(() => document.body.innerText.includes("Changes 1"))
+      await page.getByRole("button", { name: "Changes 1" }).click()
       await page.waitForFunction(() => document.body.innerText.includes("JobRow / Default"))
 
       let bodyText = await page.locator("body").innerText()
@@ -241,9 +251,16 @@ describe("review UI", () => {
     })
 
     try {
+      await page.addInitScript(() => {
+        window.localStorage.setItem("logos:selection:v1", JSON.stringify({
+          file: "frontend/src/JobRow.tsx",
+          component: "JobRow",
+          view: "code",
+        }))
+      })
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
-      await page.waitForFunction(() => document.body.innerText.includes("Review 1"))
-      await page.getByRole("button", { name: "Review 1" }).click()
+      await page.waitForFunction(() => document.body.innerText.includes("Changes 1"))
+      await page.getByRole("button", { name: "Changes 1" }).click()
       await page.waitForSelector("iframe.capture-preview-frame")
 
       const frames = await page.locator("iframe.capture-preview-frame").evaluateAll((nodes) =>

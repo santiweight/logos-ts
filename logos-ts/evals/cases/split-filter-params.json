@@ -16,8 +16,8 @@
         "const fs=require('fs');const nf='backend/filter-params.ts';if(!fs.existsSync(nf)){console.error('missing '+nf);process.exit(1)};const s=fs.readFileSync(nf,'utf8');if(!/parseJobFilters/.test(s)){console.error('parseJobFilters not in '+nf);process.exit(1)};const old=fs.readFileSync('backend/job-filters.ts','utf8');if(/function parseJobFilters/.test(old)){console.error('parseJobFilters still in job-filters.ts');process.exit(1)};for(const fn of ['jobMatchesFilters','sortJobsForDirectory']){if(!new RegExp('function '+fn).test(old)){console.error(fn+' missing from job-filters.ts');process.exit(1)}}"
       ]
     },
-    "typecheck-backend": { "cwd": "frontend", "cmd": ["npx", "tsc", "-p", "../tsconfig.backend.json", "--noEmit"] },
-    "typecheck-frontend": { "cwd": "frontend", "cmd": ["npx", "tsc", "--noEmit"] },
+    "typecheck-backend": { "cwd": "frontend", "cmd": ["pnpm", "exec", "tsc", "-p", "../tsconfig.backend.json", "--noEmit"] },
+    "typecheck-frontend": { "cwd": "frontend", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
     "behavior": { "cwd": "", "cmd": ["node", "scripts/healthcheck.mjs"] }
   }
 }

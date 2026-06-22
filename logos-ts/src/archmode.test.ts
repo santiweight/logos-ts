@@ -84,6 +84,55 @@ describe("single-file roundtrip", () => {
     expect(restored).toContain("while (b !== 0)")
   })
 
+  it("default-exported function", () => {
+    const src = `import type { MetadataRoute } from "next"
+
+export default function robots(): MetadataRoute.Robots {
+  return {
+    rules: { userAgent: "*", allow: "/" },
+    sitemap: "https://example.com/sitemap.xml",
+  }
+}
+`
+    const { dir, recFile } = tracked(setupFixture({ "app/robots.ts": src }))
+
+    run("strip", dir, recFile)
+    const stripped = readFile(dir, "app/robots.ts")
+    expect(stripped).toContain("export default function robots(): MetadataRoute.Robots;")
+    expect(stripped).not.toContain("export default declare function")
+    expect(stripped).not.toContain("sitemap")
+
+    run("splice", dir, recFile)
+    const restored = readFile(dir, "app/robots.ts")
+    expect(restored).toContain("export default function robots(): MetadataRoute.Robots")
+    expect(restored).toContain("sitemap")
+    expect(restored).not.toContain("declare")
+  })
+
+  it("default-exported class", () => {
+    const src = `export default class Counter {
+  private count = 0
+
+  increment(): number {
+    this.count += 1
+    return this.count
+  }
+}
+`
+    const { dir, recFile } = tracked(setupFixture({ "Counter.ts": src }))
+
+    run("strip", dir, recFile)
+    const stripped = readFile(dir, "Counter.ts")
+    expect(stripped).toContain("export default class Counter")
+    expect(stripped).not.toContain("export default declare class")
+    expect(stripped).not.toContain("this.count += 1")
+
+    run("splice", dir, recFile)
+    const restored = readFile(dir, "Counter.ts")
+    expect(restored).toContain("this.count += 1")
+    expect(restored).not.toContain("declare")
+  })
+
   it("const arrow function", () => {
     const src = `export const add = (a: number, b: number): number => a + b
 `

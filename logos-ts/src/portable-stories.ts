@@ -1,5 +1,5 @@
 /* eslint-disable functional/no-loop-statements, functional/no-let, functional/immutable-data, no-restricted-syntax, @typescript-eslint/strict-boolean-expressions */
-import { existsSync, readdirSync, statSync } from "node:fs"
+import { existsSync, lstatSync, readdirSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import { loadProject } from "./project.js"
 import { indexStories, type StoryEntry } from "./stories.js"
@@ -44,15 +44,34 @@ function errorModule(storyId: string, message: string): string {
 }
 
 function storyFilesMtime(frontendDir: string): number {
-  const storyFiles = readdirSync(frontendDir, { recursive: true })
-    .filter((f): f is string => typeof f === "string" && /\.stories\.(t|j)sx?$/.test(f))
-  return storyFiles.reduce((max, file) => {
+  const skippedDirs = new Set(["node_modules", ".git", ".next", "dist", "storybook-static"])
+  let max = 0
+  const visit = (dir: string) => {
+    let entries: string[]
     try {
-      return Math.max(max, statSync(join(frontendDir, file)).mtimeMs)
+      entries = readdirSync(dir)
     } catch {
-      return max
+      return
     }
-  }, 0)
+    for (const entry of entries) {
+      if (skippedDirs.has(entry)) continue
+      const full = join(dir, entry)
+      let st
+      try {
+        st = lstatSync(full)
+      } catch {
+        continue
+      }
+      if (st.isSymbolicLink()) continue
+      if (st.isDirectory()) {
+        visit(full)
+      } else if (/\.stories\.(t|j)sx?$/.test(entry)) {
+        max = Math.max(max, st.mtimeMs)
+      }
+    }
+  }
+  visit(frontendDir)
+  return max
 }
 
 function previewFileForConfig(configDir: string): string {

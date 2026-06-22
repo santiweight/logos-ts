@@ -1,9 +1,9 @@
 // Eval harness: fork a subject codebase, build the same context the studio uses,
 // have an agent address the case comment, then run hidden checks.
 //
-//   npx tsx evals/run.ts
-//   npx tsx evals/run.ts rename-company-header
-//   npx tsx evals/run.ts --tier deterministic --repeat 5
+//   pnpm exec tsx evals/run.ts
+//   pnpm exec tsx evals/run.ts rename-company-header
+//   pnpm exec tsx evals/run.ts --tier deterministic --repeat 5
 //
 import { execFileSync } from "node:child_process"
 import {
@@ -35,7 +35,15 @@ interface Check {
 interface EvalCase {
   name: string
   codebase: string
-  comment: { target: string; text: string; label?: string; component?: string; storyId?: string; selector?: string }
+  comment: {
+    target: string
+    targets?: string[]
+    text: string
+    label?: string
+    component?: string
+    storyId?: string
+    selector?: string
+  }
   agent: "implementation" | "architecture" | "testing"
   tier?: "deterministic" | "capability"
   repeat?: number
@@ -148,7 +156,9 @@ function runCase(casePath: string, trial: number): TrialResult {
   }
 
   console.log(`[${c.name} t${trial}] building context...`)
-  const targets = [c.comment.component ? `component:${c.comment.component}` : c.comment.target]
+  const targets = c.comment.targets?.length
+    ? c.comment.targets
+    : [c.comment.component ? `component:${c.comment.component}` : c.comment.target]
   const context = buildContext(work, targets)
   console.log(`[${c.name} t${trial}] context: ${context.length} chars`)
 

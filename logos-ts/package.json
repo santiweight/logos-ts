@@ -2,13 +2,14 @@
   "name": "logos-ts",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.8.0",
   "type": "module",
   "description": "A Logos-style compiler for TypeScript: architecture, dependency, and story extraction.",
   "scripts": {
     "studio": "node studio/bin/logos-studio.mjs",
     "demo": "tsx src/demo.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "node -e \"console.log('Strict lint is optional. Run npm run lint:strict for a cleanup pass.')\"",
+    "lint": "node -e \"console.log('Strict lint is optional. Run pnpm run lint:strict for a cleanup pass.')\"",
     "lint:strict": "eslint src/",
     "test": "vitest run",
     "evals": "tsx evals/run.ts",
@@ -16,7 +17,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "ts-morph": "^24.0.0"
+    "ts-morph": "^24.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

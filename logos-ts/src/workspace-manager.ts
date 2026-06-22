@@ -13,7 +13,7 @@
 // to an arch workspace join its queue unless the caller explicitly asks to fork.
 // Each architecture workspace runs at most one architecture agent at a time.
 
-import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync, readFileSync } from "node:fs"
 import { resolve, relative, join, basename, sep } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
 import { promisify } from "node:util"
@@ -125,6 +125,15 @@ export interface PushWorkspaceBranchResult {
     url: string
     created: boolean
   }
+}
+
+function packageManagerFor(root: string): "pnpm" | "npm" {
+  if (existsSync(join(root, "pnpm-lock.yaml"))) return "pnpm"
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { packageManager?: string }
+    if (pkg.packageManager?.startsWith("pnpm@")) return "pnpm"
+  } catch { /* malformed or missing package.json */ }
+  return "npm"
 }
 
 export type AddGoalResult =
@@ -1209,7 +1218,14 @@ export class WorkspaceManager {
           cwd: this.logosTsRoot, encoding: "utf8",
         })
       } catch (e) {
-        recordAndEmit({ type: "stderr", goalId: goal.id, message: "strip failed: " + String(e) })
+        const message = "strip failed: " + String(e)
+        goal.status = "error"
+        setGoalLifecycle(goal, { stage: "impl", state: "impl_failed" })
+        this.save(ws)
+        recordAndEmit({ type: "error", goalId: goal.id, message })
+        rmSync(bodiesFile, { force: true })
+        this.maybeStartNextQueued(ws.id)
+        return
       }
     }
 
@@ -1383,7 +1399,9 @@ export class WorkspaceManager {
     ]) {
       if (existsSync(candidate)) return { command: candidate, args: [] }
     }
-    return { command: "npx", args: ["--yes", "vitest"] }
+    return packageManagerFor(cwd) === "pnpm"
+      ? { command: "pnpm", args: ["exec", "vitest"] }
+      : { command: "npx", args: ["--yes", "vitest"] }
   }
 
   private async runStorySnapshotAcceptance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
@@ -1399,7 +1417,7 @@ export class WorkspaceManager {
         output: [
           `Missing project devDependencies required for Logos story snapshots: ${missingDeps.join(", ")}`,
           `Install them in ${relative(inst.materializedRoot, generated.frontendDir) || "."} before initializing a workspace.`,
-          `Example: npm install --save-dev ${missingDeps.join(" ")}`,
+          `Example: pnpm add --save-dev ${missingDeps.join(" ")}`,
         ].join("\n"),
       }
     }

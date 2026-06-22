@@ -64,6 +64,8 @@ function detectStorybooks(root: string): StorybookCaps[] {
 }
 
 function detectTests(root: string): TestCaps | null {
+  const manager = packageManagerFor(root)
+
   // 1. Logos-style healthcheck script
   const healthcheck = join(root, "scripts", "healthcheck.mjs")
   if (existsSync(healthcheck)) {
@@ -77,7 +79,7 @@ function detectTests(root: string): TestCaps | null {
   for (const name of safeReaddir(root)) {
     if (/^vitest\.config\.\w+$/.test(name)) {
       return {
-        command: ["npx", "vitest", "run"],
+        command: execCommand(manager, "vitest", ["run"]),
         watchDirs: findSourceDirs(root),
       }
     }
@@ -87,7 +89,7 @@ function detectTests(root: string): TestCaps | null {
   for (const name of safeReaddir(root)) {
     if (/^jest\.config\.\w+$/.test(name)) {
       return {
-        command: ["npx", "jest", "--json"],
+        command: execCommand(manager, "jest", ["--json"]),
         watchDirs: findSourceDirs(root),
       }
     }
@@ -100,7 +102,7 @@ function detectTests(root: string): TestCaps | null {
       const pkg = JSON.parse(readFileSync(pkgPath, "utf8"))
       if (pkg.scripts?.test && pkg.scripts.test !== "echo \"Error: no test specified\" && exit 1") {
         return {
-          command: ["npm", "test"],
+          command: manager === "pnpm" ? ["pnpm", "test"] : ["npm", "test"],
           watchDirs: findSourceDirs(root),
         }
       }
@@ -138,15 +140,16 @@ function detectRuns(root: string): RunTargetCaps[] {
       existsSync(join(dir, "app")) ||
       existsSync(join(dir, "pages"))
     const env = runTargetEnv(pkg)
+    const manager = packageManagerFor(dir)
 
     if (hasNext && hasNextEntrypoint) {
       targets.push({
         id: `${idBase}-app`,
         label: targets.length === 0 ? "App" : `${labelBase} App`,
         cwd: dir,
-        command: devScript ? "npm" : "node_modules/.bin/next",
+        command: devScript ? manager : "node_modules/.bin/next",
         args: devScript
-          ? ["run", "dev", "--", "-H", "127.0.0.1", "-p", "${PORT}"]
+          ? runScriptArgs(manager, "dev", ["-H", "127.0.0.1", "-p", "${PORT}"])
           : ["dev", "-H", "127.0.0.1", "-p", "${PORT}"],
         framework: "next",
         ...(env ? { env } : {}),
@@ -159,8 +162,8 @@ function detectRuns(root: string): RunTargetCaps[] {
         id: `${idBase}-app`,
         label: targets.length === 0 ? "App" : `${labelBase} App`,
         cwd: dir,
-        command: "npm",
-        args: ["run", "dev", "--", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+        command: manager,
+        args: runScriptArgs(manager, "dev", ["--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"]),
         framework: "vite",
         ...(env ? { env } : {}),
       })
@@ -236,6 +239,27 @@ function findNodeModules(root: string): string[] {
     if (existsSync(sub)) results.push(sub)
   }
   return results
+}
+
+function packageManagerFor(root: string): "pnpm" | "npm" {
+  if (existsSync(join(root, "pnpm-lock.yaml"))) return "pnpm"
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { packageManager?: string }
+    if (pkg.packageManager?.startsWith("pnpm@")) return "pnpm"
+  } catch { /* malformed or missing package.json */ }
+  return "npm"
+}
+
+function execCommand(manager: "pnpm" | "npm", bin: string, args: string[]): string[] {
+  return manager === "pnpm"
+    ? ["pnpm", "exec", bin, ...args]
+    : ["npx", bin, ...args]
+}
+
+function runScriptArgs(manager: "pnpm" | "npm", script: string, args: string[]): string[] {
+  return manager === "pnpm"
+    ? ["run", script, ...args]
+    : ["run", script, "--", ...args]
 }
 
 function safeReaddir(dir: string): string[] {
