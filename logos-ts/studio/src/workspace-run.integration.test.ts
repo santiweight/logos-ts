@@ -9,7 +9,7 @@ import { resolve, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { chromium, type Browser } from "playwright"
+import { chromium, type Browser, type Page } from "playwright"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 
@@ -144,6 +144,16 @@ function isLiveProcess(pid: number | null): boolean {
   }
 }
 
+async function resetPageWorkspace(page: Page): Promise<string> {
+  await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
+  await page.evaluate(() => window.localStorage.clear())
+  const resetRes = await api("/api/reset", { method: "POST" })
+  expect(resetRes.ok).toBe(true)
+  const reset = await resetRes.json() as { workspace: { id: string } }
+  await page.reload({ waitUntil: "domcontentloaded" })
+  return reset.workspace.id
+}
+
 function cleanup() {
   if (agentRuns) {
     try { rmSync(agentRuns, { recursive: true, force: true }) } catch {}
@@ -232,16 +242,9 @@ describe("workspace + run integration", () => {
   }, 60_000)
 
   it("keeps the selected app run open across browser refresh", async () => {
-    const resetRes = await api("/api/reset", { method: "POST" })
-    expect(resetRes.ok).toBe(true)
-    const reset = await resetRes.json() as { workspace: { id: string } }
-    const wsId = reset.workspace.id
-
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     try {
-      await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
-      await page.evaluate(() => window.localStorage.clear())
-      await page.reload({ waitUntil: "domcontentloaded" })
+      const wsId = await resetPageWorkspace(page)
       await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).waitFor({ timeout: 45_000 })
 
       await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).click()
@@ -287,16 +290,9 @@ describe("workspace + run integration", () => {
   }, 90_000)
 
   it("lets users leave component comments inside the running app iframe", async () => {
-    const resetRes = await api("/api/reset", { method: "POST" })
-    expect(resetRes.ok).toBe(true)
-    const reset = await resetRes.json() as { workspace: { id: string } }
-    const wsId = reset.workspace.id
-
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     try {
-      await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
-      await page.evaluate(() => window.localStorage.clear())
-      await page.reload({ waitUntil: "domcontentloaded" })
+      const wsId = await resetPageWorkspace(page)
       await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).waitFor({ timeout: 45_000 })
       await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).click()
       await page.waitForFunction(
@@ -344,16 +340,9 @@ describe("workspace + run integration", () => {
   }, 90_000)
 
   it("records comments against the current app path after in-app navigation", async () => {
-    const resetRes = await api("/api/reset", { method: "POST" })
-    expect(resetRes.ok).toBe(true)
-    const reset = await resetRes.json() as { workspace: { id: string } }
-    const wsId = reset.workspace.id
-
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     try {
-      await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
-      await page.evaluate(() => window.localStorage.clear())
-      await page.reload({ waitUntil: "domcontentloaded" })
+      const wsId = await resetPageWorkspace(page)
       await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).waitFor({ timeout: 45_000 })
       await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).click()
       await page.waitForFunction(

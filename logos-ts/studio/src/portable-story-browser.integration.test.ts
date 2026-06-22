@@ -61,7 +61,24 @@ function createProject(): string {
     name: "portable-story-fixture",
     version: "1.0.0",
     private: true,
+    devDependencies: {
+      "@storybook/react": "^10.4.6",
+      playwright: "^1.60.0",
+      react: "^18.3.1",
+      "react-dom": "^18.3.1",
+      vite: "^7.2.7",
+      vitest: "^4.1.8",
+    },
   }))
+  writeFileSync(join(root, "pnpm-workspace.yaml"), [
+    "packages:",
+    "  - .",
+    "onlyBuiltDependencies:",
+    "  - esbuild",
+    "allowBuilds:",
+    "  esbuild: true",
+    "",
+  ].join("\n"))
   writeFileSync(join(root, ".storybook", "main.ts"), "export default {}\n")
   writeFileSync(join(root, ".storybook", "preview.ts"), "export default {}\n")
   writeFileSync(join(root, COMPONENT_REL), componentSource("Visible postings"))
