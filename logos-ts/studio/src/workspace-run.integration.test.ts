@@ -61,7 +61,7 @@ function createProject(): string {
     "    res.end('outside base')",
     "    return",
     "  }",
-    "  const html = `<!doctype html><title>fake run</title><main>fake run app</main><script>fetch('/api/env').then((res)=>res.json()).then((data)=>{document.body.dataset.apiRunBase=data.LOGOS_RUN_BASE||''}).catch(()=>{document.body.dataset.apiRunBase='failed'})</script>`",
+    "  const html = `<!doctype html><title>fake run</title><main>fake run app</main><a id=\"root-thread-link\" href=\"/threads\">Threads</a><script>fetch('/api/env').then((res)=>res.json()).then((data)=>{document.body.dataset.apiRunBase=data.LOGOS_RUN_BASE||''}).catch(()=>{document.body.dataset.apiRunBase='failed'})</script>`",
     "  const acceptsGzip = req.headers['accept-encoding'] && req.headers['accept-encoding'].includes('gzip')",
     "  if (acceptsGzip && req.headers['accept-encoding'] !== 'identity') {",
     "    res.writeHead(200, { 'content-type': 'text/html', 'content-encoding': 'gzip' })",
@@ -281,6 +281,19 @@ describe("workspace + run integration", () => {
       )
       expect(await frame!.evaluate(() => document.body.dataset["apiRunBase"]))
         .toBe(`/runs/${wsId}/root-app/`)
+      await frame!.locator("#root-thread-link").click()
+      await page.waitForFunction(
+        (expectedPath) => document
+          .querySelector<HTMLIFrameElement>("iframe.story-frame[title='App']")
+          ?.contentWindow?.location.pathname === expectedPath,
+        `/runs/${encodeURIComponent(wsId)}/root-app/threads`,
+        { timeout: 30_000 },
+      )
+      const threadedFrame = page.frame({
+        url: (url) => url.pathname === `/runs/${encodeURIComponent(wsId)}/root-app/threads`,
+      })
+      expect(threadedFrame).not.toBeNull()
+      expect(await threadedFrame!.locator("main").textContent()).toContain("fake run app")
       expect(await page.evaluate(() => window.localStorage.getItem("logos:selection:v1")))
         .toContain("\"view\":\"run\"")
     } finally {

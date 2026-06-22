@@ -114,6 +114,74 @@ function runScopedRedirect(target: ProxyTarget, reqUrl: string): string {
   return `${publicRunUrl(target.workspaceId, target.targetId)}${url.pathname.replace(/^\//, "")}${url.search}`
 }
 
+function runScopeScript(target: ProxyTarget): string {
+  const base = publicRunUrl(target.workspaceId, target.targetId)
+  return `
+(() => {
+  const base = ${JSON.stringify(base)};
+  const reserved = [/^\\/runs\\//, /^\\/storybooks\\//];
+  function scopedUrl(value) {
+    if (value == null || value === "") return value;
+    try {
+      const raw = String(value);
+      if (/^(?:[a-z][a-z0-9+.-]*:|\\/\\/)/i.test(raw) && !raw.startsWith(window.location.origin)) {
+        const external = new URL(raw, window.location.href);
+        if (external.origin !== window.location.origin) return value;
+      }
+      const url = new URL(raw, window.location.href);
+      if (url.origin !== window.location.origin) return value;
+      if (url.pathname.startsWith(base) || reserved.some((re) => re.test(url.pathname))) {
+        return url.pathname + url.search + url.hash;
+      }
+      return base + url.pathname.replace(/^\\/+/, "") + url.search + url.hash;
+    } catch {
+      return value;
+    }
+  }
+
+  const pushState = history.pushState;
+  history.pushState = function(state, title, url) {
+    return pushState.call(this, state, title, arguments.length >= 3 ? scopedUrl(url) : url);
+  };
+  const replaceState = history.replaceState;
+  history.replaceState = function(state, title, url) {
+    return replaceState.call(this, state, title, arguments.length >= 3 ? scopedUrl(url) : url);
+  };
+
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+    const anchor = event.target?.closest?.("a[href]");
+    if (!anchor) return;
+    const target = anchor.getAttribute("target");
+    if (target && target !== "_self") return;
+    const href = anchor.getAttribute("href");
+    if (!href || href.startsWith("#") || /^(?:mailto|tel|javascript):/i.test(href)) return;
+    const scoped = scopedUrl(href);
+    if (scoped !== href) {
+      event.preventDefault();
+      window.location.assign(scoped);
+    }
+  }, true);
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const action = form.getAttribute("action");
+    if (action == null || action === "") return;
+    form.setAttribute("action", scopedUrl(action));
+  }, true);
+})();
+`.trim()
+}
+
+function injectRunScopeScript(html: string, target: ProxyTarget): string {
+  if (html.includes("data-logos-run-scope")) return html
+  const script = `<script data-logos-run-scope>${runScopeScript(target)}</script>`
+  if (html.includes("</head>")) return html.replace("</head>", `${script}</head>`)
+  if (html.includes("</body>")) return html.replace("</body>", `${script}</body>`)
+  return `${script}${html}`
+}
+
 export function runProxyPlugin(manager: RunManager): Plugin {
   return {
     name: "logos-run-proxy",
@@ -203,7 +271,7 @@ export function runProxyPlugin(manager: RunManager): Plugin {
           const chunks: Buffer[] = []
           proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk))
           proxyRes.on("end", () => {
-            res.end(Buffer.concat(chunks).toString("utf8"))
+            res.end(injectRunScopeScript(Buffer.concat(chunks).toString("utf8"), target))
           })
         })
         proxyReq.on("error", (error) => {
