@@ -68,6 +68,7 @@ export function publicStorybookUrl(id: string): string {
 export function storybookProxyPlugin(manager: StorybookManager): Plugin {
   return {
     name: "logos-storybook-proxy",
+    enforce: "pre",
     configureServer(server) {
       server.httpServer?.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
         const target = proxyTarget(req, manager)

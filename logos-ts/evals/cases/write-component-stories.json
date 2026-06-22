@@ -13,8 +13,7 @@
     "typecheck": {
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec",
-        "tsc",
+        "pnpm", "exec", "tsc",
         "--noEmit"
       ]
     },
@@ -22,8 +21,7 @@
       "oracle": "../checks/write-component-stories.check.test.tsx",
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec",
-        "vitest",
+        "pnpm", "exec", "vitest",
         "run",
         "write-component-stories.check.test.tsx"
       ]

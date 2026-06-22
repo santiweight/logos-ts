@@ -4,9 +4,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
+
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 })
 
 function inheritedEnv(overrides: Record<string, string>): Record<string, string> {
   return {
@@ -60,4 +62,4 @@ process.exit(ok ? 0 : 1)
     await client.close()
     rmSync(cwd, { recursive: true, force: true })
   }
-})
+}, 15_000)

@@ -17,7 +17,6 @@ let server: ChildProcess
 let baseUrl: string
 let projectRoot: string
 let agentRuns: string
-let runtimeDir: string
 let sbPid: number | null = null
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
@@ -138,9 +137,6 @@ function cleanup() {
   if (agentRuns) {
     try { rmSync(agentRuns, { recursive: true, force: true }) } catch {}
   }
-  if (runtimeDir) {
-    try { rmSync(runtimeDir, { recursive: true, force: true }) } catch {}
-  }
   if (projectRoot) {
     try { rmSync(projectRoot, { recursive: true, force: true }) } catch {}
   }
@@ -149,15 +145,14 @@ function cleanup() {
 describe("workspace + storybook integration", () => {
   beforeAll(async () => {
     projectRoot = createProject()
-    runtimeDir = mkdtempSync(join(tmpdir(), "logos-storybook-runtime-"))
     agentRuns = mkdtempSync(join(tmpdir(), "logos-storybook-agent-runs-"))
     // detached → own process group, so teardown can kill the whole tree
-    // (pnpm → vite → storybooks) without touching unrelated dev servers.
-    server = spawn("pnpm", ["run", "dev"], {
+    // (pnpm -> vite -> storybooks) without touching unrelated dev servers.
+    server = spawn("pnpm", ["dev"], {
       cwd: resolve(STUDIO, ".."),
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, LOGOS_PROJECT: projectRoot, LOGOS_RUNTIME_DIR: runtimeDir, LOGOS_AGENT_RUNS_DIR: agentRuns },
+      env: { ...process.env, LOGOS_PROJECT: projectRoot, LOGOS_AGENT_RUNS_DIR: agentRuns },
     })
     baseUrl = await waitForServer(server)
   }, 60_000)

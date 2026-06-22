@@ -416,16 +416,10 @@ function runEnv(opts: {
     "SSH_AUTH_SOCK",
   ]) copyEnv(name, process.env, out)
 
-  for (const [name, value] of Object.entries(process.env)) {
-    if (value == null) continue
-    if (name.startsWith("npm_config_")) out[name] = value
-  }
-
   out["PORT"] = String(opts.port)
   out["HOST"] = "127.0.0.1"
   out["BROWSER"] = "none"
   out["CI"] = process.env["CI"] ?? "true"
-  out["npm_config_confirm_modules_purge"] = "false"
   out["LOGOS_SESSION"] = basename(opts.projectRoot)
   out["LOGOS_WS"] = opts.workspaceId
   out["LOGOS_RUN_TARGET"] = opts.targetId

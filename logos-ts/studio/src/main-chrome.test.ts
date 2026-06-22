@@ -20,7 +20,7 @@ const appTarget: RunTarget = {
   label: "App",
   cwd: "/project",
   command: "pnpm",
-  args: ["run", "dev"],
+  args: ["dev"],
 }
 
 describe("mainChromeState", () => {

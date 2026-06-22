@@ -14,30 +14,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Enable PNPM
-        run: |
-          corepack enable pnpm
-          corepack prepare pnpm@11.8.0 --activate
-
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: |
-            logos-ts/pnpm-lock.yaml
-            logos-ts/studio/pnpm-lock.yaml
-            investment-portfolio/frontend/pnpm-lock.yaml
-            vinyl-collection/frontend/pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable
 
       - name: Install dependencies
-        run: |
-          pnpm --dir logos-ts install --frozen-lockfile
-          pnpm --dir logos-ts/studio install --frozen-lockfile
-          pnpm --dir investment-portfolio/frontend install --frozen-lockfile
-          pnpm --dir vinyl-collection/frontend install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck Logos core
-        run: pnpm --dir logos-ts run typecheck
+        run: pnpm --dir logos-ts typecheck
 
       - name: Install Playwright browsers
         run: pnpm --dir logos-ts exec playwright install --with-deps chromium
@@ -46,14 +34,14 @@ jobs:
         run: pnpm --dir logos-ts test -- --run
 
       - name: Typecheck Studio
-        run: pnpm --dir logos-ts/studio run typecheck
+        run: pnpm --dir logos-ts/studio typecheck
 
       - name: Test Studio
         working-directory: logos-ts/studio
         run: |
-          pnpm exec vitest run ChangesRail.test.tsx
-          pnpm exec vitest run --config vitest.integration.config.ts workspace-api.integration.test.ts
-          pnpm exec vitest run --config vitest.integration.config.ts workspace-storybook.integration.test.ts
+          pnpm test -- ChangesRail.test.tsx
+          pnpm test:integration -- workspace-api.integration.test.ts
+          pnpm test:integration -- workspace-storybook.integration.test.ts
 
       - name: Run sample app healthchecks
         run: |
@@ -64,5 +52,5 @@ jobs:
 
       - name: Typecheck sample frontends
         run: |
-          pnpm --dir investment-portfolio/frontend run typecheck
-          pnpm --dir vinyl-collection/frontend run typecheck
+          pnpm --dir investment-portfolio/frontend typecheck
+          pnpm --dir vinyl-collection/frontend typecheck

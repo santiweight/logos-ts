@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { chromium, type Browser } from "playwright"
+import { chromium, type Browser, type Page } from "playwright"
 import type { FileEntry, StudioIndex, TestState, Workspace, WorkspaceMeta } from "./types"
 
 const STUDIO_SRC = dirname(fileURLToPath(import.meta.url))
@@ -13,7 +13,6 @@ const STUDIO = resolve(STUDIO_SRC, "..")
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
 let projectRoot: string
-let runtimeDir: string
 let server: ChildProcess
 let baseUrl: string
 let browser: Browser
@@ -121,6 +120,16 @@ function idleTests(): TestState {
   return { status: "idle", results: null, runningSince: null }
 }
 
+async function seedCodeSelection(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("logos:selection:v1", JSON.stringify({
+      file: "frontend/src/JobRow.tsx",
+      component: "JobRow",
+      view: "code",
+    }))
+  })
+}
+
 async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -133,12 +142,11 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 describe("review UI", () => {
   beforeAll(async () => {
     projectRoot = createProject()
-    runtimeDir = mkdtempSync(join(tmpdir(), "logos-review-runtime-"))
-    server = spawn("pnpm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
+    server = spawn("pnpm", ["dev", "--", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, LOGOS_PROJECT: projectRoot, LOGOS_RUNTIME_DIR: runtimeDir },
+      env: { ...process.env, LOGOS_PROJECT: projectRoot },
     })
     baseUrl = await waitForServer(server)
     browser = await chromium.launch({ headless: true })
@@ -151,8 +159,7 @@ describe("review UI", () => {
     }
     server?.kill()
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
-    if (runtimeDir) rmSync(runtimeDir, { recursive: true, force: true })
-  })
+  }, 60_000)
 
   it("shows captured snapshot diffs against the workspace base instance", async () => {
     const projectIndex = indexWithCapture(vitestSnapshot('<article class="job-row">Original index</article>'))
@@ -160,6 +167,7 @@ describe("review UI", () => {
     const activeIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><strong>Senior Engineer</strong></article>'))
     const workspace = createWorkspace(baseIndex, activeIndex)
     const page = await browser.newPage()
+    await seedCodeSelection(page)
 
     await page.route("**/api/**", async (route) => {
       const path = new URL(route.request().url()).pathname
@@ -182,13 +190,6 @@ describe("review UI", () => {
     })
 
     try {
-      await page.addInitScript(() => {
-        window.localStorage.setItem("logos:selection:v1", JSON.stringify({
-          file: "frontend/src/JobRow.tsx",
-          component: "JobRow",
-          view: "code",
-        }))
-      })
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.waitForFunction(() => document.body.innerText.includes("Changes 1"))
       await page.getByRole("button", { name: "Changes 1" }).click()
@@ -216,6 +217,7 @@ describe("review UI", () => {
     const activeIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><strong>Senior Engineer</strong></article>'))
     const workspace = createWorkspace(baseIndex, activeIndex)
     const page = await browser.newPage()
+    await seedCodeSelection(page)
     let storybookStarts = 0
 
     await page.route("**/api/**", async (route) => {
@@ -251,13 +253,6 @@ describe("review UI", () => {
     })
 
     try {
-      await page.addInitScript(() => {
-        window.localStorage.setItem("logos:selection:v1", JSON.stringify({
-          file: "frontend/src/JobRow.tsx",
-          component: "JobRow",
-          view: "code",
-        }))
-      })
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.waitForFunction(() => document.body.innerText.includes("Changes 1"))
       await page.getByRole("button", { name: "Changes 1" }).click()

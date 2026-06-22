@@ -10,7 +10,7 @@
   "agent": "implementation",
   "checks": {
     "typecheck": {
-      "cwd": "",
+      "cwd": "frontend",
       "cmd": [
         "pnpm",
         "exec",
@@ -19,8 +19,8 @@
       ]
     },
     "behavior": {
-      "oracle": "../checks/fuzzy-search.check.ts",
-      "cwd": "",
+      "oracle": "../checks/fuzzy-search.check.test.tsx",
+      "cwd": "frontend",
       "cmd": [
         "pnpm",
         "exec",

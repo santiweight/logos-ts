@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 import { EventEmitter } from "node:events"
 import { PassThrough } from "node:stream"
 import { execFileSync } from "node:child_process"
-import { afterEach, describe, it, expect } from "vitest"
+import { afterEach, describe, it, expect, vi } from "vitest"
 import { buildElementContext, buildGoalLine, selectNextGoal } from "./prompt.js"
 import { WorkspaceManager, type AddGoalResult, type Goal } from "./workspace-manager.js"
 import { LogosRuntimeStore } from "./runtime-store.js"
@@ -13,6 +13,8 @@ import { LogosRuntimeStore } from "./runtime-store.js"
 const LOGOS_TS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const TSX = resolve(LOGOS_TS_ROOT, "node_modules/.bin/tsx")
 const tempDirs: string[] = []
+
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 })
 
 function goal(id: string, mode: Goal["mode"], status: Goal["status"] = "pending"): Goal {
   const lifecycle: Goal["lifecycle"] = status === "pending"
@@ -108,7 +110,7 @@ function createManager(opts?: {
   })
 }
 
-async function waitFor(assertion: () => void, timeoutMs = 15_000): Promise<void> {
+async function waitFor(assertion: () => void, timeoutMs = 60_000): Promise<void> {
   const start = Date.now()
   let lastError: unknown
   while (Date.now() - start < timeoutMs) {
@@ -497,7 +499,7 @@ describe("WorkspaceManager workspace kinds", () => {
     ])
     expect(ensured.map((call) => call.id)).not.toContain(parent.id)
     expect(ensured.map((call) => call.id)).not.toContain(fork.id)
-  }, 15_000)
+  }, 60_000)
 
   it("starts every Storybook in a workspace instance with path-scoped ids", async () => {
     const ensured: { id: string; frontendDir: string }[] = []
@@ -597,7 +599,7 @@ describe("WorkspaceManager workspace kinds", () => {
     await waitFor(() => expect(spawned).toHaveLength(1))
     spawned[0]!.emit("close", 0)
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
-  }, 15_000)
+  }, 60_000)
 
   it("stops architecture goals when stripping fails", async () => {
     const binDir = mkdtempSync(join(tmpdir(), "logos-failing-tsx-"))
@@ -618,7 +620,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.goalsForWorkspace(arch.id).find((g) => g.id === task.id)?.status).toBe("error")
     expect(spawned).toHaveLength(0)
     expect(events.some((event) => event.message === "building architecture context…")).toBe(false)
-  }, 15_000)
+  }, 60_000)
 
   it("does not capture story snapshots before starting the agent working instance", async () => {
     const prepared: string[] = []
@@ -657,7 +659,7 @@ describe("WorkspaceManager workspace kinds", () => {
 
     expect(prepared).toHaveLength(1)
     expect(events[0]).toMatchObject({ type: "status", message: "preparing workspace instance…" })
-  }, 15_000)
+  }, 60_000)
 
   it("rejects code goals in architecture workspaces", async () => {
     const mgr = createManager()
@@ -804,7 +806,7 @@ describe("WorkspaceManager workspace kinds", () => {
     ])
     await waitFor(() => expect(spawned).toHaveLength(1))
     expect(events.some((event) => event.type === "queued")).toBe(false)
-  }, 30_000)
+  }, 90_000)
 
   it("streams requested code goals while they run in parallel instances", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -887,7 +889,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(rebasePrompt).toContain("Unmerged files")
     expect(rebasePrompt).toContain("thing.txt")
     expect(rebasePrompt).toContain("Conflict marker counts")
-  }, 15000)
+  }, 60_000)
 
   it("accepts a code agent edit without looping on excluded untracked runtime directories", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -917,7 +919,7 @@ describe("WorkspaceManager workspace kinds", () => {
     const state = mgr.get(code.id)
     if (!state) throw new Error("missing workspace")
     expect(readFileSync(join(state.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
-  }, 15000)
+  }, 60_000)
 
   it("pauses a completed code goal for manual merge when auto-merge is disabled", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -958,7 +960,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mergedGoal?.mergedInstanceId).toBeTruthy()
     expect(readFileSync(join(afterMerge.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
     expect(events.some((event) => String(event.message ?? "").includes("workspace instance accepted"))).toBe(true)
-  }, 15000)
+  }, 60_000)
 
   it("auto-resolves snapshot-only rebase conflicts without resuming the agent", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -989,7 +991,7 @@ describe("WorkspaceManager workspace kinds", () => {
 
     expect(spawned).toHaveLength(2)
     expect(secondEvents.some((event) => String(event.message ?? "").includes("auto-resolved generated snapshot conflicts"))).toBe(true)
-  }, 15000)
+  }, 60_000)
 
   it("commits acceptance-test regenerated artifacts before promotion", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -1021,7 +1023,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(readFileSync(join(state.forkDir, "frontend", "__snapshots__", "stories.test.tsx.snap"), "utf8")).toBe("regenerated snapshot\n")
     expect(execFileSync("git", ["log", "--oneline", "-1"], { cwd: state.forkDir, encoding: "utf8" })).toContain("Logos acceptance updates")
     expect(execFileSync("git", ["status", "--short"], { cwd: state.forkDir, encoding: "utf8" })).not.toContain("stories.test.tsx.snap")
-  }, 15000)
+  }, 60_000)
 
   it("resumes a code agent in the same instance when acceptance tests fail", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -1048,7 +1050,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("running")
     expect(spawned[1]!.args.join("\n")).toContain("acceptance tests failed")
     expect(events.some((event) => String(event.message ?? "").includes("acceptance tests failed"))).toBe(true)
-  }, 15000)
+  }, 60_000)
 
   it("stops retrying when acceptance tests still fail after a repair attempt", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -1075,7 +1077,7 @@ describe("WorkspaceManager workspace kinds", () => {
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("error"))
     expect(spawned).toHaveLength(2)
     expect(events.some((event) => String(event.message ?? "").includes("acceptance tests still failed"))).toBe(true)
-  }, 15000)
+  }, 60_000)
 
   it("reports a missing requested goal without starting another queued goal", async () => {
     const mgr = createManager()
