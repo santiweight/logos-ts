@@ -5,7 +5,7 @@
 //   pnpm exec tsx evals/run.ts rename-company-header
 //   pnpm exec tsx evals/run.ts --tier deterministic --repeat 5
 //
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import {
   copyFileSync,
   cpSync,
@@ -44,7 +44,7 @@ interface EvalCase {
     storyId?: string
     selector?: string
   }
-  agent: "implementation" | "architecture" | "testing"
+  agent: "implementation" | "architecture" | "testing" | "arch-impl"
   tier?: "deterministic" | "capability"
   repeat?: number
   timeoutMs?: number
@@ -110,12 +110,45 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
     ` This project has no automated test runner configured. Verify your changes manually.`
 }
 
-function agentArgs(c: EvalCase, prompt: string): string[] {
-  const args = ["-p", prompt, "--model", "sonnet", "--dangerously-skip-permissions"]
-  if (isStoryGenerationRequest(c.comment.text)) {
-    args.push("--append-system-prompt", buildStoryGenerationSystemPrompt())
+function runAgent(prompt: string, opts: { cwd: string; timeout: number; extraArgs?: string[] }): void {
+  const args = ["-p", "-", "--model", "sonnet", "--dangerously-skip-permissions", ...(opts.extraArgs ?? [])]
+  const result = spawnSync("claude", args, {
+    cwd: opts.cwd,
+    input: prompt,
+    stdio: ["pipe", "inherit", "inherit"],
+    timeout: opts.timeout,
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) throw new Error(`claude exited with code ${result.status}`)
+}
+
+function computeDiff(original: string, modified: string): string {
+  try {
+    return execFileSync("diff", ["-ruN", "--exclude=node_modules", "--exclude=.next", "--exclude=.logos", "--exclude=.storybook", original, modified], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 })
+  } catch (e: any) {
+    const raw: string = e.stdout ?? ""
+    const lines = raw.split("\n")
+    return lines.length > 500 ? lines.slice(0, 500).join("\n") + "\n[diff truncated]" : raw
   }
-  return args
+}
+
+function buildImplPrompt(
+  context: string,
+  work: string,
+  goalLine: string,
+  archDiff: string,
+  archSummary: string,
+): string {
+  const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
+
+  return `${context}\n\n` +
+    `# ARCHITECTURE CHANGE — what the architect decided\n\n` +
+    `${archSummary}\n\n` +
+    `## Architecture diff:\n\`\`\`diff\n${archDiff}\n\`\`\`\n\n` +
+    `${sandbox}` +
+    `You are an implementation agent. The codebase has been partially updated by an architecture agent — it contains \`declare\` stubs where you must write the actual function bodies, and test stubs with \`throw new Error("not implemented")\` where you must write the actual test logic.\n\n` +
+    `Address these change requests:\n${goalLine}\n\n` +
+    `Fill in all \`declare\` function bodies and test stubs. Wire the new helpers into the existing code as the architecture indicates. Make sure existing tests still pass.`
 }
 
 function copyOracles(caseDir: string, check: Check, checkCwd: string): void {
@@ -140,14 +173,19 @@ function runCase(casePath: string, trial: number): TrialResult {
     recursive: true,
     filter: (s) => !/node_modules|\.workspaces|\.logos_cache|dist|__snapshots__/.test(s),
   })
-  for (const rel of ["node_modules", "frontend/node_modules"]) {
-    const src = join(codebase, rel)
-    if (existsSync(src) && !existsSync(join(work, rel))) symlinkSync(src, join(work, rel))
-  }
 
-  const archMode = c.agent === "architecture" || c.agent === "testing"
+  const pm = existsSync(join(work, "pnpm-lock.yaml")) ? "pnpm" : "npm"
+  console.log(`[${c.name} t${trial}] installing dependencies (${pm})...`)
+  execFileSync(pm, ["install"], { cwd: work, stdio: "inherit" })
+
+  const archMode = c.agent === "architecture" || c.agent === "testing" || c.agent === "arch-impl"
   const bodiesFile = resolve(runDir, "bodies.json")
+  const originalSnapshot = resolve(runDir, "original")
   if (archMode) {
+    cpSync(work, originalSnapshot, {
+      recursive: true,
+      filter: (s) => !/node_modules/.test(s),
+    })
     console.log(`[${c.name} t${trial}] stripping to architecture view...`)
     execFileSync(tsx, [resolve(logosTsRoot, "src/archmode.ts"), "strip", work, bodiesFile], {
       cwd: logosTsRoot,
@@ -163,12 +201,15 @@ function runCase(casePath: string, trial: number): TrialResult {
   console.log(`[${c.name} t${trial}] context: ${context.length} chars`)
 
   const prompt = buildPrompt(c, work, context)
+  const storyArgs = isStoryGenerationRequest(c.comment.text)
+    ? ["--append-system-prompt", buildStoryGenerationSystemPrompt()]
+    : []
   console.log(`[${c.name} t${trial}] running agent (${c.agent} mode)...`)
   try {
-    execFileSync("claude", agentArgs(c, prompt), {
+    runAgent(prompt, {
       cwd: work,
-      stdio: "inherit",
       timeout: c.timeoutMs ?? (archMode ? 600_000 : 300_000),
+      extraArgs: storyArgs,
     })
   } catch (e: any) {
     console.error(`[${c.name} t${trial}] agent failed:`, e.message)
@@ -180,6 +221,29 @@ function runCase(casePath: string, trial: number): TrialResult {
       cwd: logosTsRoot,
       encoding: "utf8",
     })
+  }
+
+  if (c.agent === "arch-impl") {
+    const archDiff = computeDiff(originalSnapshot, work)
+    console.log(`[${c.name} t${trial}] arch diff: ${archDiff.length} chars`)
+
+    console.log(`[${c.name} t${trial}] rebuilding context for impl agent...`)
+    const implContext = buildContext(work, targets)
+    console.log(`[${c.name} t${trial}] impl context: ${implContext.length} chars`)
+
+    const goalLine = buildGoalLine({
+      label: c.comment.label ?? c.comment.target,
+      text: c.comment.text,
+      ...(c.comment.component ? { component: c.comment.component } : {}),
+    })
+
+    const implPrompt = buildImplPrompt(implContext, work, goalLine, archDiff, c.comment.text)
+    console.log(`[${c.name} t${trial}] running impl agent...`)
+    try {
+      runAgent(implPrompt, { cwd: work, timeout: c.timeoutMs ?? 300_000 })
+    } catch (e: any) {
+      console.error(`[${c.name} t${trial}] impl agent failed:`, e.message)
+    }
   }
 
   console.log(`[${c.name} t${trial}] running checks...`)

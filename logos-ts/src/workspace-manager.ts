@@ -22,7 +22,7 @@ const execFileAsync = promisify(execFile)
 import type { StorybookManager } from "./storybook-manager.js"
 import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
-import { buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
+import { buildArchImplPrompt, buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
 import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
 import type {
   StoredGoalLifecycle,
@@ -1211,7 +1211,12 @@ export class WorkspaceManager {
     // Architecture mode: strip bodies for this single architecture agent.
     const mode = goal.mode
     const bodiesFile = resolve(this.runsDir, `${goal.id}.bodies.json`)
+    const archOriginalSnapshot = resolve(this.runsDir, `${goal.id}.original`)
     if (mode === "arch") {
+      cpSync(dir, archOriginalSnapshot, {
+        recursive: true,
+        filter: (s) => !/node_modules/.test(s),
+      })
       recordAndEmit({ type: "status", goalId: goal.id, message: "stripping to architecture view…" })
       try {
         await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "strip", dir, bodiesFile], {
@@ -1272,14 +1277,15 @@ export class WorkspaceManager {
 
     const child = this.spawnAgent(
       "claude",
-      ["-p", prompt, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
+      ["-p", "-", "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
       {
         cwd: dir,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
         env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
+    child.stdin?.end(prompt)
     this.runningAgents.set(goal.id, child)
     setGoalLifecycle(goal, { stage: "impl", state: "agent_running" })
     this.save(ws)
@@ -1298,8 +1304,9 @@ export class WorkspaceManager {
     child.stderr?.on("data", (d) => recordAndEmit({ type: "stderr", message: d.toString() }))
     child.on("error", (e) => recordAndEmit({ type: "error", message: String(e) }))
     child.on("close", async (code) => {
-      this.runningAgents.delete(goal.id)
+      if (mode !== "arch") this.runningAgents.delete(goal.id)
       if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) {
+        this.runningAgents.delete(goal.id)
         rmSync(mcpConfigPath, { force: true })
         return
       }
@@ -1327,18 +1334,123 @@ export class WorkspaceManager {
       }
 
       if (mode === "arch") {
-        await this.reindexInstance(ws, workingInst)
-        goal.status = "done"
-        setGoalLifecycle(goal, { stage: "merged", state: "complete" })
-        ws.activeInstanceId = workingInst.id
-        goal.mergedInstanceId = workingInst.id
-        goal.workingInstanceId = null
-        this.goalWorkingInstances.delete(goal.id)
-        this.restartWorkspaceServices(ws, workingInst)
-        this.appendAgentSummary(goal, collectedEvents)
+        // Check if there are declare stubs or unimplemented tests to fill in
+        const needsImpl = (() => {
+          try {
+            const out = execFileSync("grep", ["-rl", "--include=*.ts", "--include=*.tsx", "-E", "\\bdeclare (function|class|const|let|var)\\b|throw new Error\\(\"not implemented\"\\)", dir], { encoding: "utf8" })
+            return out.trim().length > 0
+          } catch { return false }
+        })()
+
+        if (!needsImpl) {
+          rmSync(archOriginalSnapshot, { recursive: true, force: true })
+          recordAndEmit({ type: "status", message: "no declare stubs remaining — skipping implementation agent" })
+          this.runningAgents.delete(goal.id)
+          await this.reindexInstance(ws, workingInst)
+          goal.status = "done"
+          setGoalLifecycle(goal, { stage: "merged", state: "complete" })
+          ws.activeInstanceId = workingInst.id
+          goal.mergedInstanceId = workingInst.id
+          goal.workingInstanceId = null
+          this.goalWorkingInstances.delete(goal.id)
+          this.restartWorkspaceServices(ws, workingInst)
+          this.appendAgentSummary(goal, collectedEvents)
+          this.save(ws)
+          recordAndEmit({ type: "done", code })
+          this.maybeStartNextQueued(ws.id)
+          return
+        }
+
+        // Compute arch diff, rebuild context, and spawn impl agent
+        recordAndEmit({ type: "status", message: "computing architecture diff…" })
+        let archDiff = ""
+        try {
+          const { stdout } = await execFileAsync("diff", ["-ruN", "--exclude=node_modules", "--exclude=.next", "--exclude=.logos", "--exclude=.storybook", archOriginalSnapshot, dir], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 }).catch((e: any) => ({ stdout: e.stdout ?? "" }))
+          const lines = stdout.split("\n")
+          const maxLines = 500
+          archDiff = lines.length > maxLines ? lines.slice(0, maxLines).join("\n") + "\n[diff truncated]" : stdout
+        } catch { /* diff exits 1 when files differ */ }
+        rmSync(archOriginalSnapshot, { recursive: true, force: true })
+
+        recordAndEmit({ type: "status", message: "rebuilding context for implementation agent…" })
+        let implContext = ""
+        try {
+          const { stdout } = await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/context.ts"), dir, "20000", ...targets], {
+            cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+          })
+          implContext = stdout
+        } catch (e) {
+          recordAndEmit({ type: "stderr", message: "impl context build failed: " + String(e) })
+        }
+
+        const implGoalLine = buildGoalLine(goal)
+        const implSandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
+        const implPrompt = buildArchImplPrompt(implContext, implSandbox, implGoalLine, archDiff, buildVerifyNote(!!this.caps.tests))
+
+        recordAndEmit({ type: "status", message: "starting implementation agent…" })
+        setGoalLifecycle(goal, { stage: "impl", state: "agent_running" })
         this.save(ws)
-        recordAndEmit({ type: "done", code })
-        this.maybeStartNextQueued(ws.id)
+
+        const implMcpConfigPath = resolve(this.runsDir, `${goal.id}.impl.mcp.json`)
+        const implMcpConfig: { mcpServers: Record<string, unknown> } = { mcpServers: {} }
+        if (this.caps.tests) {
+          const testRunnerConfig = JSON.stringify({
+            cwd: dir,
+            command: this.caps.tests.command,
+            watch: this.caps.tests.watchDirs,
+            filePattern: "\\.(tsx?|jsx?)$",
+          })
+          implMcpConfig.mcpServers["test-runner"] = {
+            command: this.tsx,
+            args: [resolve(this.logosTsRoot, "src/test-runner-mcp.ts"), testRunnerConfig],
+          }
+        }
+        writeFileSync(implMcpConfigPath, JSON.stringify(implMcpConfig))
+
+        const implChild = this.spawnAgent(
+          "claude",
+          ["-p", "-", "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", implMcpConfigPath],
+          {
+            cwd: dir,
+            stdio: ["pipe", "pipe", "pipe"],
+            env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+          },
+        )
+        implChild.stdin?.end(implPrompt)
+        this.runningAgents.set(goal.id, implChild)
+
+        let implBuf = ""
+        implChild.stdout?.on("data", (d: Buffer) => {
+          implBuf += d.toString()
+          let i
+          while ((i = implBuf.indexOf("\n")) >= 0) {
+            const line = implBuf.slice(0, i)
+            implBuf = implBuf.slice(i + 1)
+            if (!line.trim()) continue
+            try { recordAndEmit({ type: "event", event: JSON.parse(line) }) } catch { recordAndEmit({ type: "raw", line }) }
+          }
+        })
+        implChild.stderr?.on("data", (d: Buffer) => recordAndEmit({ type: "stderr", message: d.toString() }))
+        implChild.on("error", (e) => recordAndEmit({ type: "error", message: String(e) }))
+        implChild.on("close", async (implCode) => {
+          this.runningAgents.delete(goal.id)
+          rmSync(implMcpConfigPath, { force: true })
+
+          if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) return
+
+          await this.reindexInstance(ws, workingInst)
+          goal.status = implCode === 0 ? "done" : "error"
+          setGoalLifecycle(goal, implCode === 0 ? { stage: "merged", state: "complete" } : { stage: "impl", state: "impl_failed" })
+          ws.activeInstanceId = workingInst.id
+          goal.mergedInstanceId = workingInst.id
+          goal.workingInstanceId = null
+          this.goalWorkingInstances.delete(goal.id)
+          this.restartWorkspaceServices(ws, workingInst)
+          this.appendAgentSummary(goal, collectedEvents)
+          this.save(ws)
+          recordAndEmit({ type: "done", code: implCode })
+          this.maybeStartNextQueued(ws.id)
+        })
         return
       }
 

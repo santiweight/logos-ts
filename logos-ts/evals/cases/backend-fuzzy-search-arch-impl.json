@@ -1,0 +1,24 @@
+{
+  "name": "backend-fuzzy-search-arch-impl",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "file:lib/job-filters.ts",
+    "text": "Make the search bar into a fuzzy search by building out new backend helpers in lib/job-filters.ts for ranked fuzzy matching. Add an edit-distance function, a token matcher, and a top-level query matcher that wires into jobMatchesFilters replacing the current substring check. Add tests reasonably."
+  },
+  "agent": "arch-impl",
+  "tier": "capability",
+  "checks": {
+    "behavior": {
+      "oracle": [
+        "../checks/backend-fuzzy-search.check.test.ts",
+        "../checks/full-fixtures.ts"
+      ],
+      "cwd": "",
+      "cmd": ["npx", "tsx", "--test", "backend-fuzzy-search.check.test.ts"]
+    },
+    "existing-tests": {
+      "cwd": "",
+      "cmd": ["npx", "tsx", "--test", "tests/job-filters.test.ts"]
+    }
+  }
+}

@@ -51,6 +51,24 @@ export function buildVerifyNote(hasTests: boolean): string {
       : ` This project has no automated test runner configured. Verify your changes manually.`)
 }
 
+export function buildArchImplPrompt(
+  context: string,
+  sandbox: string,
+  goalLine: string,
+  archDiff: string,
+  verifyNote: string,
+): string {
+  return `${context}\n\n` +
+    `# ARCHITECTURE CHANGE\n\n` +
+    `An architecture agent restructured the codebase for this change. The codebase now contains \`declare\` stubs where you must write function bodies, and test stubs with \`throw new Error("not implemented")\` where you must write real assertions.\n\n` +
+    `## Architecture diff:\n\`\`\`diff\n${archDiff}\n\`\`\`\n\n` +
+    `${sandbox}` +
+    `You are an implementation agent finishing work started by an architecture agent. Fill in all \`declare\` function bodies and test stubs. Wire the new helpers into the existing code as the architecture indicates. Make sure existing tests still pass.\n\n` +
+    `Change requests:\n${goalLine}\n\n` +
+    `${verifyNote}\n\n` +
+    `When you are finished, end with a brief summary of what you implemented. Keep it under 5 sentences.`
+}
+
 export function isStoryGenerationRequest(text: string): boolean {
   return /\bStorybook stories\b|\bstories for (?:this )?React component\b|\bcomponent stories\b/i.test(text)
 }
