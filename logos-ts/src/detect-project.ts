@@ -146,7 +146,7 @@ function detectRuns(root: string): RunTargetCaps[] {
         cwd: dir,
         command: devScript ? "pnpm" : "node_modules/.bin/next",
         args: devScript
-          ? ["dev", "--", "-H", "127.0.0.1", "-p", "${PORT}"]
+          ? ["dev", "-H", "127.0.0.1", "-p", "${PORT}"]
           : ["dev", "-H", "127.0.0.1", "-p", "${PORT}"],
         framework: "next",
         ...(env ? { env } : {}),
@@ -160,7 +160,7 @@ function detectRuns(root: string): RunTargetCaps[] {
         label: targets.length === 0 ? "App" : `${labelBase} App`,
         cwd: dir,
         command: "pnpm",
-        args: ["dev", "--", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+        args: ["dev", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
         framework: "vite",
         ...(env ? { env } : {}),
       })

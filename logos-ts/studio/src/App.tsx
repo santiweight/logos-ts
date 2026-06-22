@@ -31,6 +31,7 @@ import seedData from "./studio-index.json"
 
 const seed = seedData as unknown as StudioIndex
 const SELECTION_STORAGE_KEY = "logos:selection:v1"
+type MobilePanel = "changes" | "thread" | "files" | "main"
 
 export function reviewChangeCount(base: StudioIndex, workspace: StudioIndex): number {
   const sourceChanged = Object.keys(diffIndex(base, workspace)).length > 0
@@ -186,6 +187,7 @@ export function App() {
   const [demos, setDemos] = useState<DemoOption[]>([])
   const [activeDemoId, setActiveDemoId] = useState<string>("")
   const [demoSwitching, setDemoSwitching] = useState<string | null>(null)
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("main")
 
   // ---- workspaces (forks) ----
   const [railOpen, setRailOpen] = useState(true)
@@ -761,7 +763,10 @@ export function App() {
     try { await createWorkspace(activeWorkspaceId, activeWs?.kind ?? "code") } finally { setBusy(null) }
   }, [createWorkspace, activeWorkspaceId, activeWs?.kind])
 
-  const onSelect = useCallback((sel: Selection) => setSelection(sel), [])
+  const onSelect = useCallback((sel: Selection) => {
+    setSelection(sel)
+    setMobilePanel("main")
+  }, [])
 
   const openComment = useCallback(
     (target: string, label: string, x: number, y: number) => {
@@ -1098,7 +1103,7 @@ export function App() {
   }
 
   return (
-    <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`} style={studioStyle}>
+    <div className={`studio ${railOpen ? "rail-open" : "rail-closed"} mobile-${mobilePanel}`} style={studioStyle}>
       <header className="topbar">
         <div className="topbar-menu">
           <button
@@ -1125,6 +1130,40 @@ export function App() {
             </div>
           )}
         </div>
+        <nav className="mobile-panel-switcher" aria-label="Workspace panels">
+          <button
+            type="button"
+            className={mobilePanel === "changes" ? "active" : ""}
+            aria-pressed={mobilePanel === "changes"}
+            onClick={() => setMobilePanel("changes")}
+          >
+            Changes
+          </button>
+          <button
+            type="button"
+            className={mobilePanel === "thread" ? "active" : ""}
+            aria-pressed={mobilePanel === "thread"}
+            onClick={() => setMobilePanel("thread")}
+          >
+            Thread
+          </button>
+          <button
+            type="button"
+            className={mobilePanel === "files" ? "active" : ""}
+            aria-pressed={mobilePanel === "files"}
+            onClick={() => setMobilePanel("files")}
+          >
+            Files
+          </button>
+          <button
+            type="button"
+            className={mobilePanel === "main" ? "active" : ""}
+            aria-pressed={mobilePanel === "main"}
+            onClick={() => setMobilePanel("main")}
+          >
+            Main
+          </button>
+        </nav>
       </header>
       <ChangesRail
         open={railOpen}
@@ -1164,6 +1203,7 @@ export function App() {
             className={`sidebar-filter fn ${sidebarFilters.functions ? "active" : ""}`}
             type="button"
             aria-pressed={sidebarFilters.functions}
+            aria-label={sidebarFilters.functions ? "Hide functions" : "Show functions"}
             title={sidebarFilters.functions ? "Hide functions" : "Show functions"}
             onClick={() => setSidebarFilters((filters) => ({ ...filters, functions: !filters.functions }))}
           >
@@ -1173,6 +1213,7 @@ export function App() {
             className={`sidebar-filter cls ${sidebarFilters.classes ? "active" : ""}`}
             type="button"
             aria-pressed={sidebarFilters.classes}
+            aria-label={sidebarFilters.classes ? "Hide classes" : "Show classes"}
             title={sidebarFilters.classes ? "Hide classes" : "Show classes"}
             onClick={() => setSidebarFilters((filters) => ({ ...filters, classes: !filters.classes }))}
           >
@@ -1182,6 +1223,7 @@ export function App() {
             className={`sidebar-filter comp ${sidebarFilters.components ? "active" : ""}`}
             type="button"
             aria-pressed={sidebarFilters.components}
+            aria-label={sidebarFilters.components ? "Hide React components" : "Show React components"}
             title={sidebarFilters.components ? "Hide React components" : "Show React components"}
             onClick={() => setSidebarFilters((filters) => ({ ...filters, components: !filters.components }))}
           >
@@ -1191,6 +1233,7 @@ export function App() {
             className={`sidebar-filter type ${sidebarFilters.types ? "active" : ""}`}
             type="button"
             aria-pressed={sidebarFilters.types}
+            aria-label={sidebarFilters.types ? "Hide types" : "Show types"}
             title={sidebarFilters.types ? "Hide types" : "Show types"}
             onClick={() => setSidebarFilters((filters) => ({ ...filters, types: !filters.types }))}
           >
@@ -1226,11 +1269,23 @@ export function App() {
             <span className="main-title">{mainChrome.title}</span>
           </div>
           {mainChrome.showModeTabs && (
-            <div className="main-tabs">
-              <button className={!mainChrome.changesOpen ? "active" : ""} onClick={() => setReviewOpen(false)}>
+            <div className="main-tabs" role="tablist" aria-label="Main view">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!mainChrome.changesOpen}
+                className={!mainChrome.changesOpen ? "active" : ""}
+                onClick={() => setReviewOpen(false)}
+              >
                 Live
               </button>
-              <button className={mainChrome.changesOpen ? "active" : ""} onClick={() => setReviewOpen(true)}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mainChrome.changesOpen}
+                className={mainChrome.changesOpen ? "active" : ""}
+                onClick={() => setReviewOpen(true)}
+              >
                 {mainChrome.changesLabel}
               </button>
             </div>
