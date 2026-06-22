@@ -36,12 +36,13 @@ jobs:
       - name: Typecheck Studio
         run: pnpm --dir logos-ts/studio typecheck
 
-      - name: Test Studio
+      - name: Test Studio (unit)
         working-directory: logos-ts/studio
-        run: |
-          pnpm test -- ChangesRail.test.tsx
-          pnpm test:integration -- workspace-api.integration.test.ts
-          pnpm test:integration -- workspace-storybook.integration.test.ts
+        run: pnpm test
+
+      - name: Test Studio (integration)
+        working-directory: logos-ts/studio
+        run: pnpm exec vitest run --config vitest.integration.config.ts workspace-api.integration.test.ts workspace-storybook.integration.test.ts
 
       - name: Run sample app healthchecks
         run: |

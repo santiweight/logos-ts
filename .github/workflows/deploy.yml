@@ -18,8 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          submodules: true
+      - name: Stub private submodules for pnpm workspace
+        run: |
+          if [ ! -f logos-ts/demos/hn-jobs/package.json ]; then
+            mkdir -p logos-ts/demos/hn-jobs
+            echo '{"name":"hn-jobs","version":"0.0.0","private":true}' > logos-ts/demos/hn-jobs/package.json
+          fi
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
       - name: Validate deployment configuration
         env:
