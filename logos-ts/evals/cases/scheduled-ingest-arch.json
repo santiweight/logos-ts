@@ -2,29 +2,26 @@
   "name": "scheduled-ingest-arch",
   "codebase": "../../demos/hn-jobs",
   "comment": {
-    "target": "file:backend/store.ts",
-    "text": "Add scheduled ingestion of new job postings. Create backend/ingest.ts exporting: (1) an IngestDeps interface with findThreads(): Promise<HiringThread[]>, fetchComments(hnId: string): Promise<RawComment[]>, and store: JobStore, so tests can inject fakes; (2) async function ingestOnce(deps: IngestDeps): Promise<void> that discovers hiring threads, upserts each thread into the store, fetches its comments, parses each comment with parseJob, and upserts the resulting jobs keyed by hnCommentId; re-running it must not duplicate jobs; (3) function startIngestSchedule(deps: IngestDeps, intervalMs: number): () => void that runs ingestOnce immediately, then every intervalMs via setInterval, and returns a stop function that cancels the schedule. Wire the real findHiringThreads/fetchThreadComments as the default deps."
+    "target": "file:lib/hn/scheduler.ts",
+    "text": "Make scheduled HN ingestion testable and runnable outside the Fly cron endpoint. In lib/hn/scheduler.ts, introduce an exported ScheduledIngestDeps interface with findHiringThreads(count?: number): Promise<HiringThread[]>, findNewestStoredThread(): Promise<{ hnId: string; month: string; postedAt: Date; lastIngestedAt: Date | null } | null>, and ingestThread(thread: HiringThread): Promise<IngestResult>. Keep runScheduledIngest(now?: Date) working with real Prisma/HN defaults, but also allow runScheduledIngest(now, deps) so tests can inject fakes without network or DB access. Add export function startIngestSchedule(deps: ScheduledIngestDeps, intervalMs: number, timers?: { setInterval: typeof setInterval; clearInterval: typeof clearInterval }): () => void. It should run one ingest immediately, continue every intervalMs, and return a stop function that clears the interval. Preserve the existing adaptive skip/ingest behavior."
   },
   "agent": "architecture",
   "tier": "capability",
   "checks": {
     "typecheck": {
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
         "pnpm", "exec", "tsc",
         "--noEmit"
       ]
     },
     "behavior": {
-      "oracle": [
-        "../checks/scheduled-ingest.check.test.tsx",
-        "../checks/fixtures.ts"
-      ],
-      "cwd": "frontend",
+      "oracle": "../checks/scheduled-ingest.check.test.ts",
+      "cwd": "",
       "cmd": [
-        "pnpm", "exec", "vitest",
-        "run",
-        "scheduled-ingest.check.test.tsx"
+        "pnpm", "exec", "tsx",
+        "--test",
+        "scheduled-ingest.check.test.ts"
       ]
     }
   }

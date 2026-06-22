@@ -9,7 +9,9 @@ import type { StoryEntry } from "./stories.js"
 
 const tempDirs: string[] = []
 const LOGOS_TS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const STUDIO_NODE_MODULES = resolve(LOGOS_TS_ROOT, "studio", "node_modules")
+const FIXTURE_NODE_MODULES = existsSync(resolve(LOGOS_TS_ROOT, "studio", "node_modules"))
+  ? resolve(LOGOS_TS_ROOT, "studio", "node_modules")
+  : resolve(LOGOS_TS_ROOT, "demos", "hn-jobs", "node_modules")
 const VITEST = resolve(LOGOS_TS_ROOT, "node_modules", ".bin", "vitest")
 
 afterEach(() => {
@@ -51,7 +53,7 @@ function writeHarness(root: string): StorySnapshotTestResult {
 function linkProjectDependency(root: string, name: string): void {
   const target = join(root, "node_modules", name)
   mkdirSync(dirname(target), { recursive: true })
-  symlinkSync(join(STUDIO_NODE_MODULES, name), target, "dir")
+  symlinkSync(join(FIXTURE_NODE_MODULES, name), target, "dir")
 }
 
 function runGeneratedSnapshots(root: string, generated: StorySnapshotTestResult): void {
@@ -145,7 +147,7 @@ describe("story snapshot virtual storage", () => {
 
   it("captures browser snapshots when Storybook preview imports the Logos comment bridge", () => {
     const root = createProject()
-    symlinkSync(STUDIO_NODE_MODULES, join(root, "node_modules"), "dir")
+    symlinkSync(FIXTURE_NODE_MODULES, join(root, "node_modules"), "dir")
     mkdirSync(join(root, ".storybook", ".logos"), { recursive: true })
     writeFileSync(join(root, ".storybook", "preview.ts"), [
       "import { withLogosComments } from './.logos/CommentLayer'",

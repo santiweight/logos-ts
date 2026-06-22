@@ -222,11 +222,13 @@ function collectTests(
     if (claimed.has(claimKey)) continue
     claimed.add(claimKey)
     const exprText = bodyAnalysis.get(claimKey)
+    if (exprText == null) continue
     const line = exprText
       ? `test(${JSON.stringify(ref.name)}, () => ${exprText})`
       : `test(${JSON.stringify(ref.name)})`
     injections[declKey].push({ name: ref.name, line, file: ref.file })
   }
+  if (injections[declKey]?.length === 0) delete injections[declKey]
 }
 
 function isTestCall(stmt: Statement): boolean {
@@ -329,7 +331,7 @@ function strip(dir: string, recFile: string) {
     for (const fd of sf.getFunctions()) {
       if (!uniq(fd.getName()) || !fd.hasBody() || rendersJsx(fd)) continue
       normalizeExistingCallableTypes(fd, dir)
-      const originalText = fd.getText()
+      const originalText = normalizeTypeImportPaths(fd.getText(), dir, sf.getFilePath())
       ensureCallableTypes(fd, dir)
       recs.push({ name: fd.getName()!, text: originalText })
       fd.removeBody()
@@ -341,7 +343,7 @@ function strip(dir: string, recFile: string) {
       if (decls.length !== 1 || !decls[0] || !Node.isIdentifier(decls[0].getNameNode())) continue
       if (!uniq(name) || !decls[0].getInitializer() || rendersJsx(vs)) continue
       normalizeExistingVariableType(decls[0], dir)
-      const originalText = vs.getText()
+      const originalText = normalizeTypeImportPaths(vs.getText(), dir, sf.getFilePath())
       const init = decls[0].getInitializer()
       if (init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init))) ensureVariableType(decls[0], dir)
       recs.push({ name: name!, text: originalText })
@@ -351,7 +353,7 @@ function strip(dir: string, recFile: string) {
     for (const cd of sf.getClasses()) {
       if (!uniq(cd.getName()) || rendersJsx(cd)) continue
       for (const m of cd.getMethods()) normalizeExistingCallableTypes(m, dir)
-      const originalText = cd.getText()
+      const originalText = normalizeTypeImportPaths(cd.getText(), dir, sf.getFilePath())
       for (const m of cd.getMethods()) ensureCallableTypes(m, dir)
       recs.push({ name: cd.getName()!, text: originalText })
       for (const m of cd.getMethods()) if (m.hasBody()) m.removeBody()
@@ -559,9 +561,10 @@ function splice(dir: string, recFile: string) {
       sf.addStatements(code)
   }
 
-  // Fix imports on all files and save
+  // Add missing imports if architecture edits introduced new references. Avoid
+  // organizeImports here; doing it globally causes unrelated diff churn.
   for (const sf of allSources(project)) {
-    try { sf.fixMissingImports(); sf.organizeImports() } catch {}
+    try { sf.fixMissingImports() } catch {}
   }
   project.saveSync()
   console.log(`spliced ${n} declarations; updated ${ops.size} test files`)

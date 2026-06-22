@@ -48,6 +48,15 @@ LOGOS_CODEX_SANDBOX=danger-full-access pnpm exec tsx evals/run.ts fuzzy-search -
 LOGOS_CODEX_JSON=1 pnpm exec tsx evals/run.ts fuzzy-search --backend codex-cli
 ```
 
+The default `claude-cli` backend and studio agents use a lean Claude CLI launch:
+`sonnet`, `--effort low`, `--bare`, and explicit MCP config only. For slower
+capability probes, override with environment variables:
+
+```bash
+LOGOS_CLAUDE_EFFORT=default pnpm exec tsx evals/run.ts fuzzy-search-arch
+LOGOS_CLAUDE_MODEL=opus LOGOS_CLAUDE_BARE=0 pnpm exec tsx evals/run.ts scheduled-ingest-arch
+```
+
 Materialization can also be switched from per-trial `cpSync` to a reusable in-memory source snapshot:
 
 ```bash
@@ -56,7 +65,6 @@ LOGOS_EVAL_MATERIALIZER=memory pnpm exec tsx evals/run.ts fuzzy-search --repeat 
 ```
 
 This still writes a real workspace before the agent/checks run, but it avoids rereading and rescanning the source fixture for every trial.
-
 ## Tiers
 
 - **deterministic** — small, unambiguous tweaks (rename a header, change the

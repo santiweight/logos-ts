@@ -28,7 +28,9 @@ import {
   buildStoryGenerationContext,
   buildStoryGenerationSystemPrompt,
   isStoryGenerationRequest,
+  SEARCH_RANKING_GUIDANCE,
 } from "../src/prompt.js"
+import { buildClaudePrintArgs } from "../src/claude-cli.js"
 
 interface Check {
   cwd: string
@@ -228,6 +230,7 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
     `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change.\n\n` +
     `Address these change requests:\n${goalLine}\n\n` +
     `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck.` +
+    ` ${SEARCH_RANKING_GUIDANCE}` +
     ` For TypeScript node:test suites, prefer \`node --import tsx --test <test-file>\`; if \`pnpm test\` or \`pnpm exec tsx --test\` fails with \`listen EPERM\`, rerun the same tests with \`node --import tsx --test\`.` +
     ` This project has no automated test runner configured. Verify your changes manually.`
 }
@@ -255,17 +258,24 @@ function runClaudeCli(
   opts: { cwd: string; timeout: number; extraArgs?: string[] },
   modeArgs: string[] = [],
 ): Promise<void> {
-  const args = [
-    ...modeArgs,
-    "-p",
-    "-",
-    "--model",
-    evalAgentModel,
-    "--permission-mode",
-    "bypassPermissions",
-    "--dangerously-skip-permissions",
-    ...(opts.extraArgs ?? []),
-  ]
+  const args = modeArgs.length === 0
+    ? buildClaudePrintArgs({
+      promptArg: "-",
+      model: evalAgentModel,
+      noSessionPersistence: true,
+      ...(opts.extraArgs ? { extraArgs: opts.extraArgs } : {}),
+    })
+    : [
+      ...modeArgs,
+      "-p",
+      "-",
+      "--model",
+      evalAgentModel,
+      "--permission-mode",
+      "bypassPermissions",
+      "--dangerously-skip-permissions",
+      ...(opts.extraArgs ?? []),
+    ]
   return spawnAgentCommand("claude", args, {
     cwd: opts.cwd,
     input: prompt,

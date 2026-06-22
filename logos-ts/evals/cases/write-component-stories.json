@@ -11,7 +11,7 @@
   "tier": "capability",
   "checks": {
     "typecheck": {
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
         "pnpm", "exec", "tsc",
         "--noEmit"
@@ -19,9 +19,9 @@
     },
     "behavior": {
       "oracle": "../checks/write-component-stories.check.test.tsx",
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
-        "pnpm", "exec", "tsx",
+        "node", "--import", "tsx",
         "--test",
         "write-component-stories.check.test.tsx"
       ]
