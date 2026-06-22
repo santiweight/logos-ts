@@ -4,7 +4,7 @@ import { execFile, execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, watch } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve, join, relative, sep } from "node:path"
-import type { StudioIndex } from "../src/build-index"
+import type { StudioIndex } from "./src/types"
 import { authPlugin } from "./server/auth"
 import { createArchApi } from "./server/arch-api"
 import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
@@ -84,6 +84,10 @@ function persistDemo(id: DemoId): void {
   writeFileSync(DEMO_STATE_FILE, JSON.stringify({ id }, null, 2))
 }
 
+function importRuntimeModule<T>(specifier: string): Promise<T> {
+  return import(specifier) as Promise<T>
+}
+
 async function createStudioRuntime(): Promise<StudioRuntime> {
   const [
     { detectProject },
@@ -95,14 +99,14 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     { createPortableStoryResolver },
     { createSessionProject },
   ] = await Promise.all([
-    import("../src/detect-project"),
-    import("../src/storybook-manager"),
-    import("../src/run-manager"),
-    import("../src/workspace-manager"),
-    import("../src/claude-session-manager"),
-    import("../src/runtime-store"),
-    import("../src/portable-stories"),
-    import("../src/session-project"),
+    importRuntimeModule<typeof import("../src/detect-project")>("../src/detect-project"),
+    importRuntimeModule<typeof import("../src/storybook-manager")>("../src/storybook-manager"),
+    importRuntimeModule<typeof import("../src/run-manager")>("../src/run-manager"),
+    importRuntimeModule<typeof import("../src/workspace-manager")>("../src/workspace-manager"),
+    importRuntimeModule<typeof import("../src/claude-session-manager")>("../src/claude-session-manager"),
+    importRuntimeModule<typeof import("../src/runtime-store")>("../src/runtime-store"),
+    importRuntimeModule<typeof import("../src/portable-stories")>("../src/portable-stories"),
+    importRuntimeModule<typeof import("../src/session-project")>("../src/session-project"),
   ])
 
   const { demoId, sourceProject } = sourceProjectForStartup()
@@ -876,9 +880,16 @@ function autoStorybook(runtime: StudioRuntime): Plugin {
 
 function shouldCreateStudioRuntime(command: string): boolean {
   if (command !== "serve") return false
-  if (process.env.LOGOS_STORYBOOK_BASE) return false
-  if (process.env.PNPM_SCRIPT_NAME === "storybook") return false
+  if (isStorybookProcess()) return false
   return true
+}
+
+function isStorybookProcess(): boolean {
+  if (process.env.LOGOS_STORYBOOK_BASE) return true
+  if (process.env.PNPM_SCRIPT_NAME === "storybook") return true
+  if (process.env.npm_lifecycle_event === "storybook") return true
+  if (process.env.STORYBOOK === "true") return true
+  return /\bstorybook\b/.test(process.argv.join(" "))
 }
 
 export default defineConfig(async ({ command }) => {

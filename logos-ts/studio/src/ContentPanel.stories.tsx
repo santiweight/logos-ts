@@ -2,6 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 import { ContentPanel } from "./ContentPanel"
 import type { FileEntry } from "./types"
 
+const previewStoryId = "changesrail--workspace-selected"
+const sameOriginStorybookUrl = typeof window === "undefined" ? "" : window.location.origin
+
 const file: FileEntry = {
   file: "src/components/JobCard.tsx",
   code: `export const JobCard: FC<JobCardProps> = ({ title, company, remote, tags, postedAt }) => {
@@ -37,7 +40,7 @@ const file: FileEntry = {
       { name: "postedAt", type: "number" },
     ],
     stories: [
-      { id: "jobcard--default", exportName: "Default", snapshot: '<article class="job-card"><header><h3>Senior Engineer</h3></header></article>' },
+      { id: previewStoryId, exportName: "Default", snapshot: '<article class="job-card"><header><h3>Senior Engineer</h3></header></article>' },
       { id: "jobcard--remote", exportName: "Remote", snapshot: null },
     ],
   },
@@ -75,14 +78,16 @@ export const CodeView: Story = {}
 
 export const StoryView: Story = {
   args: {
-    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: "jobcard--default" },
-    storybookUrl: "http://localhost:6006",
+    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: previewStoryId },
+    storyRenderer: "storybook",
+    storybookUrl: sameOriginStorybookUrl,
   },
 }
 
 export const StoryViewStarting: Story = {
   args: {
-    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: "jobcard--default" },
+    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: previewStoryId },
+    storyRenderer: "storybook",
     storybookUrl: "",
     storybookState: {
       status: "starting",
@@ -100,7 +105,8 @@ export const StoryViewStarting: Story = {
 
 export const StoryViewFailed: Story = {
   args: {
-    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: "jobcard--default" },
+    selection: { file: "src/components/JobCard.tsx", view: "story", storyId: previewStoryId },
+    storyRenderer: "storybook",
     storybookUrl: "",
     storybookState: {
       status: "failed",
