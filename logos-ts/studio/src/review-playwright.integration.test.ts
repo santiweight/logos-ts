@@ -192,7 +192,7 @@ describe("review UI", () => {
     try {
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.waitForFunction(() => document.body.innerText.includes("Changes 1"))
-      await page.getByRole("button", { name: "Changes 1" }).click()
+      await page.getByRole("tab", { name: "Changes 1" }).click()
       await page.waitForFunction(() => document.body.innerText.includes("JobRow / Default"))
 
       let bodyText = await page.locator("body").innerText()
@@ -255,7 +255,7 @@ describe("review UI", () => {
     try {
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.waitForFunction(() => document.body.innerText.includes("Changes 1"))
-      await page.getByRole("button", { name: "Changes 1" }).click()
+      await page.getByRole("tab", { name: "Changes 1" }).click()
       await page.waitForSelector("iframe.capture-preview-frame")
 
       const frames = await page.locator("iframe.capture-preview-frame").evaluateAll((nodes) =>

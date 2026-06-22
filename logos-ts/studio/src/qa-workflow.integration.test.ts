@@ -588,7 +588,7 @@ describe("Studio QA workflow", () => {
         },
       })
 
-      await page.getByRole("button", { name: /Changes 2/ }).click()
+      await page.getByRole("tab", { name: /Changes 2/ }).click()
       await page.getByRole("button", { name: "Snapshot diff" }).click()
       const reviewText = await page.locator(".review-panel").innerText()
       expect(reviewText).toContain("JobCard / Default")
@@ -651,9 +651,9 @@ describe("Studio QA workflow", () => {
     try {
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" })
       await page.locator(".rail-row.ws", { hasText: "Main workspace" }).waitFor({ timeout: 45_000 })
-      await page.getByRole("button", { name: "Open menu" }).click()
+      await page.getByRole("button", { name: "Open project menu" }).click()
       const demoMenu = await page.locator(".demo-menu").innerText()
-      expect(demoMenu).toContain("OPEN DEMO")
+      expect(demoMenu).toContain("OPEN PROJECT")
       expect(demoMenu).toContain("Vinyl Collection")
 
       await page.locator(".demo-menu-item", { hasText: "Vinyl Collection" }).click()
