@@ -584,7 +584,7 @@ const FittedIframe = forwardRef<HTMLIFrameElement, IframeHTMLAttributes<HTMLIFra
       const viewportRect = viewport.getBoundingClientRect()
       const nextFrameSize = measureIframeContent(iframe)
       setFrameSize(nextFrameSize)
-      setScale(fitScale(viewportRect.width, viewportRect.height, nextFrameSize.width, nextFrameSize.height))
+      setScale(fitScale(viewportRect.width, nextFrameSize.width))
       if (options.focusIframe) iframe.focus()
     }, [])
 
@@ -688,7 +688,9 @@ function measureIframeContent(iframe: HTMLIFrameElement): FrameSize {
   }
 }
 
-function fitScale(viewportWidth: number, viewportHeight: number, frameWidth: number, frameHeight: number): number {
-  if (viewportWidth <= 0 || viewportHeight <= 0 || frameWidth <= 0 || frameHeight <= 0) return 1
-  return Math.min(1, viewportWidth / frameWidth, viewportHeight / frameHeight)
+function fitScale(viewportWidth: number, frameWidth: number): number {
+  if (viewportWidth <= 0 || frameWidth <= 0) return 1
+  // Fit previews to the available width only. Tall pages should stay readable
+  // and scroll vertically instead of shrinking into a full-page thumbnail.
+  return Math.min(1, viewportWidth / frameWidth)
 }
