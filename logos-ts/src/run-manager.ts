@@ -6,6 +6,8 @@ import { basename, isAbsolute, relative, resolve } from "node:path"
 import type { LogosRuntimeStore } from "./runtime-store.js"
 import type { RunTargetCaps } from "./detect-project.js"
 
+const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
+
 export interface RunEntry {
   id: string
   workspaceId: string
@@ -302,7 +304,7 @@ export class RunManager {
 
       const bufferLines = (d: Buffer) => {
         for (const line of d.toString().split("\n")) {
-          const trimmed = line.trim()
+          const trimmed = line.replace(ANSI_RE, "").trim()
           if (!trimmed) continue
           this.pushLog(id, trimmed)
           if (isReadyLog(target, trimmed)) markReady()
