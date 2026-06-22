@@ -19,7 +19,7 @@
       ]
     },
     "behavior": {
-      "oracle": "../checks/fuzzy-search.check.test.tsx",
+      "oracle": "../checks/fuzzy-search.check.ts",
       "cwd": "frontend",
       "cmd": [
         "pnpm",
