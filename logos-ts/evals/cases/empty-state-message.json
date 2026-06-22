@@ -2,9 +2,12 @@
   "name": "empty-state-message",
   "codebase": "../../demos/hn-jobs",
   "comment": {
-    "target": "component:JobTable",
+    "target": "component:DirectoryPage",
     "text": "Change the empty-state message to exactly: No jobs found — try removing some filters.",
-    "component": "JobTable",
+    "component": "DirectoryPage",
+    "storyId": "run:root-app:/",
+    "runTargetId": "root-app",
+    "appPath": "/",
     "label": "td · No postings match"
   },
   "agent": "implementation",
@@ -21,12 +24,12 @@
     "behavior": {
       "oracle": [
         "../checks/empty-state-message.check.test.tsx",
-        "../checks/fixtures.ts"
+        "../checks/source-text.ts"
       ],
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec", "vitest",
-        "run",
+        "pnpm", "exec", "tsx",
+        "--test",
         "empty-state-message.check.test.tsx"
       ]
     }

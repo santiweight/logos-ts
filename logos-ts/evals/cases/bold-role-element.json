@@ -2,12 +2,14 @@
   "name": "bold-role-element",
   "codebase": "../../demos/hn-jobs",
   "comment": {
-    "target": "component:JobRow",
-    "text": "Make this text bold",
-    "component": "JobRow",
-    "storyId": "components-jobtable--default",
-    "selector": ":scope > table > tbody > tr:nth-of-type(1) > td:nth-of-type(2) > div > div:nth-of-type(1)",
-    "label": "div · Senior Engineer"
+    "target": "component:DirectoryPage",
+    "text": "Make each role line in the Role column render as bold text.",
+    "component": "DirectoryPage",
+    "storyId": "run:root-app:/",
+    "runTargetId": "root-app",
+    "appPath": "/",
+    "selector": "table.data tbody tr:first-child td:nth-child(2)",
+    "label": "role text"
   },
   "agent": "implementation",
   "checks": {
@@ -19,11 +21,14 @@
       ]
     },
     "behavior": {
-      "oracle": "../checks/bold-role-element.check.test.tsx",
+      "oracle": [
+        "../checks/bold-role-element.check.test.tsx",
+        "../checks/source-text.ts"
+      ],
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec", "vitest",
-        "run",
+        "pnpm", "exec", "tsx",
+        "--test",
         "bold-role-element.check.test.tsx"
       ]
     }

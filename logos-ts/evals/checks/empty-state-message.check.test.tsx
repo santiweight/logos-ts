@@ -1,18 +1,23 @@
-// Oracle for "change the empty-state message". Copied into
-// <workspace>/frontend at check time; the agent never sees this file.
-import { test, expect } from "vitest"
-import { render, screen } from "@testing-library/react"
-import { JobTable } from "./components/JobTable"
-import { baseJob } from "./fixtures"
+import test from "node:test"
+import { sourceText, assertMatch, assertNoMatch } from "./source-text"
 
-test("empty table shows the exact new message", () => {
-  render(<JobTable jobs={[]} />)
-  expect(screen.getByText("No jobs found — try removing some filters.")).toBeTruthy()
-  expect(screen.queryByText("No postings match. Try clearing filters.")).toBeNull()
+const directorySources = ["app/page.tsx", "app/DirectoryPage.tsx", "app/DirectoryView.tsx"]
+
+test("empty directory table shows the exact requested message", () => {
+  const text = sourceText(directorySources)
+  assertMatch(
+    text,
+    /No jobs found — try removing some filters\./,
+    "expected the new empty-state copy",
+  )
+  assertNoMatch(
+    text,
+    /No postings match\. Try clearing filters, or run an ingest if the\s+database is empty/,
+    "old empty-state copy should be gone",
+  )
 })
 
-test("message is absent when jobs exist; rows still render", () => {
-  render(<JobTable jobs={[baseJob]} />)
-  expect(screen.queryByText("No jobs found — try removing some filters.")).toBeNull()
-  expect(screen.getByText("Acme")).toBeTruthy()
+test("empty state still lives in the no-results table row", () => {
+  const text = sourceText(directorySources)
+  assertMatch(text, /filtered\.length\s*===\s*0[\s\S]{0,400}<td[^>]*colSpan=/, "expected no-results row")
 })

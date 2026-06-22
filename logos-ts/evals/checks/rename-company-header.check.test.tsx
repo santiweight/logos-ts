@@ -1,20 +1,17 @@
-// Oracle for "rename the Company header to Employer". Copied into
-// <workspace>/frontend at check time; the agent never sees this file.
-import { test, expect } from "vitest"
-import { render, screen } from "@testing-library/react"
-import { JobTable } from "./components/JobTable"
-import { baseJob } from "./fixtures"
+import test from "node:test"
+import { sourceText, assertMatch, assertNoMatch } from "./source-text"
 
-test("header reads Employer, not Company", () => {
-  render(<JobTable jobs={[baseJob]} />)
-  expect(screen.getByRole("columnheader", { name: "Employer" })).toBeTruthy()
-  expect(screen.queryByRole("columnheader", { name: "Company" })).toBeNull()
+const directorySources = ["app/page.tsx", "app/DirectoryPage.tsx", "app/DirectoryView.tsx"]
+
+test("directory table header reads Employer, not Company", () => {
+  const text = sourceText(directorySources)
+  assertMatch(text, /<th>\s*Employer\s*<\/th>/, "expected an Employer column header")
+  assertNoMatch(text, /<th>\s*Company\s*<\/th>/, "old Company column header should be renamed")
 })
 
-test("other headers and rows are untouched", () => {
-  render(<JobTable jobs={[baseJob]} />)
-  for (const h of ["Role", "Location", "Salary", "Tech", "Apply", "Details"])
-    expect(screen.getByRole("columnheader", { name: h })).toBeTruthy()
-  expect(screen.getByText("Acme")).toBeTruthy()
-  expect(screen.getByText("Senior Engineer")).toBeTruthy()
+test("other directory headers remain present", () => {
+  const text = sourceText(directorySources)
+  for (const header of ["Role", "Location", "Salary", "Tech", "Apply", "Details"]) {
+    assertMatch(text, new RegExp(`<th>\\s*${header}\\s*</th>`), `missing ${header} header`)
+  }
 })

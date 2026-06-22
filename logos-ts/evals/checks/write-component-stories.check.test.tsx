@@ -1,28 +1,27 @@
-// Eval oracle for the generic "write component stories" goal. Copied into
-// <workspace>/frontend at check time so the agent never sees this file.
+import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { describe, expect, it } from "vitest"
+import test from "node:test"
 
-describe("ValueOrDash stories", () => {
-  const storyFile = () => readFileSync(resolve(process.cwd(), "components/ValueOrDash.stories.tsx"), "utf8")
+function storyText(): string {
+  return readFileSync(resolve(process.cwd(), "components/SearchableFilter.stories.tsx"), "utf8")
+}
 
-  it("uses typed Storybook exports for the target component", () => {
-    const text = storyFile()
+test("uses typed Storybook exports for the target component", () => {
+  const text = storyText()
+  assert.match(text, /Meta/)
+  assert.match(text, /StoryObj/)
+  assert.match(text, /component:\s*SearchableFilter/)
+})
 
-    expect(text).toContain("Meta")
-    expect(text).toContain("StoryObj")
-    expect(text).toContain("component: ValueOrDash")
-  })
+test("covers interactive filter states without production data", () => {
+  const text = storyText()
+  const storyExports = [...text.matchAll(/export const \w+\s*:/g)].map((match) => match[0])
 
-  it("covers filled and empty value states without production data", () => {
-    const text = storyFile()
-    const storyExports = [...text.matchAll(/export const \w+\s*:/g)].map((match) => match[0])
-
-    expect(storyExports.length).toBeGreaterThanOrEqual(4)
-    expect(text).toMatch(/value:\s*["'`][^"'`]+["'`]/)
-    expect(text).toMatch(/value:\s*null/)
-    expect(text).toMatch(/value:\s*undefined/)
-    expect(text).toMatch(/value:\s*["'`]["'`]/)
-  })
+  assert.ok(storyExports.length >= 4, "expected at least four story variants")
+  assert.match(text, /items:\s*\[/, "expected deterministic item fixtures")
+  assert.match(text, /searchable:\s*true/, "expected searchable state coverage")
+  assert.match(text, /active:\s*true/, "expected active item state coverage")
+  assert.match(text, /clearHref:/, "expected clear link state coverage")
+  assert.match(text, /items:\s*\[\s*\]/, "expected empty item state coverage")
 })

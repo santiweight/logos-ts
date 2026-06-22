@@ -2,9 +2,12 @@
   "name": "posted-date-column",
   "codebase": "../../demos/hn-jobs",
   "comment": {
-    "target": "component:JobTable",
-    "text": "Add a 'Posted' column as the last column (after Details) showing the job's postedAt date formatted as YYYY-MM-DD.",
-    "component": "JobTable",
+    "target": "component:DirectoryPage",
+    "text": "Add a 'Posted' column as the last column (after Details) showing the job's postedAt date formatted as YYYY-MM-DD. Do not use the existing human-readable formatDate helper for this column; render an ISO date such as j.postedAt.toISOString().slice(0, 10).",
+    "component": "DirectoryPage",
+    "storyId": "run:root-app:/",
+    "runTargetId": "root-app",
+    "appPath": "/",
     "label": "table · job columns"
   },
   "agent": "implementation",
@@ -21,12 +24,12 @@
     "behavior": {
       "oracle": [
         "../checks/posted-date-column.check.test.tsx",
-        "../checks/fixtures.ts"
+        "../checks/source-text.ts"
       ],
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec", "vitest",
-        "run",
+        "pnpm", "exec", "tsx",
+        "--test",
         "posted-date-column.check.test.tsx"
       ]
     }

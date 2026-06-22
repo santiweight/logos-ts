@@ -2,9 +2,12 @@
   "name": "rename-company-header",
   "codebase": "../../demos/hn-jobs",
   "comment": {
-    "target": "component:JobTable",
+    "target": "component:DirectoryPage",
     "text": "Rename the 'Company' column header to 'Employer'.",
-    "component": "JobTable",
+    "component": "DirectoryPage",
+    "storyId": "run:root-app:/",
+    "runTargetId": "root-app",
+    "appPath": "/",
     "label": "th · Company"
   },
   "agent": "implementation",
@@ -21,12 +24,12 @@
     "behavior": {
       "oracle": [
         "../checks/rename-company-header.check.test.tsx",
-        "../checks/fixtures.ts"
+        "../checks/source-text.ts"
       ],
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec", "vitest",
-        "run",
+        "pnpm", "exec", "tsx",
+        "--test",
         "rename-company-header.check.test.tsx"
       ]
     }
