@@ -530,8 +530,9 @@ function studioApi(runtime: StudioRuntime): Plugin {
         // POST /api/workspaces/:id/reindex — rebuild workspace index from disk
         if (req.method === "POST" && sub.endsWith("/reindex")) {
           const wsId = sub.replace(/\/reindex$/, "")
+          const goalId = new URL(req.url || "", "http://x").searchParams.get("goal")
           try {
-            const ws = wsMgr.reindex(wsId)
+            const ws = await wsMgr.reindex(wsId, { goalId })
             if (!ws) { res.statusCode = 404; res.end(JSON.stringify({ error: "workspace not found" })); return }
             res.end(JSON.stringify(ws))
           } catch (e) {

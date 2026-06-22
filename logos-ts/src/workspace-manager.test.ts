@@ -945,6 +945,7 @@ describe("WorkspaceManager workspace kinds", () => {
       },
     })
     const code = await mgr.create({ kind: "code" })
+    const baseInstanceId = code.activeInstanceId
     const task = expectGoal(await mgr.addGoal(code.id, goal("edit", "code"), { autoMerge: false })).goal
 
     expect(mgr.processById(code.id, task.id, () => undefined)).toBe(task.id)
@@ -960,6 +961,7 @@ describe("WorkspaceManager workspace kinds", () => {
     if (!beforeMerge) throw new Error("missing workspace")
     const pausedGoal = beforeMerge.goals.find((g) => g.id === task.id)
     expect(pausedGoal?.status).toBe("done")
+    expect(pausedGoal?.baseInstanceId).toBe(baseInstanceId)
     expect(pausedGoal?.workingInstanceId).toBeTruthy()
     expect(readFileSync(join(beforeMerge.forkDir, "thing.txt"), "utf8")).toBe("base\n")
 
@@ -976,6 +978,45 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(readFileSync(join(afterMerge.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
     expect(events.some((event) => String(event.message ?? "").includes("workspace instance accepted"))).toBe(true)
   }, 60_000)
+
+  it("auto-merges child workspace code goals into the parent and refreshes siblings", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "thing.txt"), "base\n")
+      },
+    })
+    const parent = await mgr.create({ kind: "code" })
+    const childB = await mgr.create({ fromWorkspaceId: parent.id, kind: "code" })
+    const childC = await mgr.create({ fromWorkspaceId: parent.id, kind: "code" })
+    const childCBefore = mgr.get(childC.id)
+    if (!childCBefore) throw new Error("missing child workspace")
+    writeFileSync(join(childCBefore.forkDir, "c-only.txt"), "from c\n")
+
+    const task = expectGoal(await mgr.addGoal(childB.id, goal("edit", "code"))).goal
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+
+    expect(mgr.processById(childB.id, task.id, (event) => events.push(event))).toBe(task.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "from b\n")
+
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => {
+      expect(mgr.goalsForWorkspace(childB.id).find((g) => g.id === task.id)?.lifecycle).toEqual({ stage: "merged", state: "complete" })
+    })
+    const parentAfter = mgr.get(parent.id)
+    const childBAfter = mgr.get(childB.id)
+    const childCAfter = mgr.get(childC.id)
+    if (!parentAfter || !childBAfter || !childCAfter) throw new Error("missing workspace")
+
+    expect(readFileSync(join(parentAfter.forkDir, "thing.txt"), "utf8")).toBe("from b\n")
+    expect(readFileSync(join(childBAfter.forkDir, "thing.txt"), "utf8")).toBe("from b\n")
+    expect(readFileSync(join(childCAfter.forkDir, "thing.txt"), "utf8")).toBe("from b\n")
+    expect(readFileSync(join(childCAfter.forkDir, "c-only.txt"), "utf8")).toBe("from c\n")
+    expect(events.some((event) => String(event.message ?? "").includes("accepted into parent"))).toBe(true)
+  }, 15000)
 
   it("auto-resolves snapshot-only rebase conflicts without resuming the agent", async () => {
     const spawned: FakeAgentProcess[] = []

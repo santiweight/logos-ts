@@ -57,6 +57,7 @@ export interface Goal {
   status: "pending" | "running" | "done" | "error"
   lifecycle: StoredGoalLifecycle
   mergePolicy: StoredGoalMergePolicy
+  baseInstanceId?: string | null
   workingInstanceId?: string | null
   mergedInstanceId?: string | null
   sessionId?: string | null
@@ -498,18 +499,24 @@ export class WorkspaceManager {
     this.store.addPolicyEvent(event)
   }
 
-  reindex(id: string): WorkspaceState | undefined {
+  async reindex(id: string, opts?: { goalId?: string | null }): Promise<WorkspaceState | undefined> {
     const ws = this.workspaces.get(id)
     if (!ws) return undefined
-    const inst = this.activeInstance(ws)
-    const args = [resolve(this.logosTsRoot, "src/build-index.ts"), inst.materializedRoot, "-"]
-    const wsSbUrl = this.sbManager.get(inst.id)
-    if (wsSbUrl) args.push(wsSbUrl)
-    inst.index = JSON.parse(
-      execFileSync(this.tsx, args, { cwd: this.logosTsRoot, encoding: "utf8", maxBuffer: INDEX_MAX_BUFFER })
-    )
+    const review = this.reviewInstanceForGoal(ws, opts?.goalId)
+    const inst = review?.instance ?? this.activeInstance(ws)
+    if (review && isGoalReadyToMerge(review.goal)) await this.captureReviewSnapshots(ws, review.goal, inst, () => undefined)
+    await this.reindexInstance(ws, inst)
     this.save(ws)
     return this.toState(ws)
+  }
+
+  private reviewInstanceForGoal(ws: WorkspaceRecord, goalId?: string | null): { goal: Goal; instance: WorkspaceInstance } | null {
+    if (!goalId) return null
+    const goal = ws.goals.find((candidate) => candidate.id === goalId)
+    if (!goal) return null
+    const instanceId = goal.workingInstanceId ?? goal.mergedInstanceId
+    const instance = instanceId ? ws.instances[instanceId] ?? null : null
+    return instance ? { goal, instance } : null
   }
 
   pushAsBranch(id: string, branchName: string, opts?: {
@@ -926,6 +933,7 @@ export class WorkspaceManager {
       status: "pending",
       lifecycle: { stage: "initializing", state: "creating_goal" },
       mergePolicy: { autoMerge: opts?.autoMerge ?? DEFAULT_MERGE_POLICY.autoMerge },
+      baseInstanceId: null,
       workingInstanceId: null,
       mergedInstanceId: null,
     }
@@ -1188,6 +1196,7 @@ export class WorkspaceManager {
       workingInst = await this.createInstance(ws.id, baseInst.materializedRoot, baseInst.index)
       ws.instances[workingInst.id] = workingInst
       this.goalWorkingInstances.set(goal.id, workingInst.id)
+      goal.baseInstanceId = baseInst.id
       goal.workingInstanceId = workingInst.id
       this.save(ws)
     } catch (error) {
@@ -1346,6 +1355,7 @@ export class WorkspaceManager {
       setGoalLifecycle(goal, { stage: "impl", state: "agent_finished" })
       this.save(ws)
       if (!goal.mergePolicy.autoMerge) {
+        await this.captureReviewSnapshots(ws, goal, workingInst, recordAndEmit)
         goal.status = "done"
         setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
         this.appendAgentSummary(goal, collectedEvents)
@@ -1380,6 +1390,24 @@ export class WorkspaceManager {
     } catch (e) {
       console.error(`[logos] re-index failed for ${ws.id}:`, e)
     }
+  }
+
+  private async captureReviewSnapshots(
+    ws: WorkspaceRecord,
+    goal: Goal,
+    inst: WorkspaceInstance,
+    onEvent: AgentEventCallback,
+  ): Promise<void> {
+    onEvent({ type: "status", goalId: goal.id, message: "capturing review snapshots…" })
+    const storySnapshots = await this.runStorySnapshotAcceptance(inst)
+    if (!storySnapshots.ok) {
+      onEvent({
+        type: "status",
+        goalId: goal.id,
+        message: `review snapshot capture failed; source diff will still be available\n\n${storySnapshots.output}`,
+      })
+    }
+    await this.reindexInstance(ws, inst)
   }
 
   private async buildArchitectureImplementationPrompt(dir: string, goal: Goal): Promise<string> {
@@ -1540,16 +1568,23 @@ export class WorkspaceManager {
     onEvent: AgentEventCallback,
     opts?: { externalOnEvent?: AgentEventCallback },
   ): Promise<boolean> {
-    return this.codeService.withWorkspaceLock(ws.id, async () => {
+    const targetWs = ws.parentId ? this.workspaces.get(ws.parentId) ?? ws : ws
+    return this.codeService.withWorkspaceLock(targetWs.id, async () => {
       const resumeOnEvent = opts?.externalOnEvent ?? onEvent
-      const activeInst = this.activeInstance(ws)
+      const activeInst = this.activeInstance(targetWs)
       setGoalLifecycle(goal, { stage: "merging", state: "rebasing" })
       this.save(ws)
-      onEvent({ type: "status", goalId: goal.id, message: "rebasing workspace instance…" })
+      onEvent({
+        type: "status",
+        goalId: goal.id,
+        message: targetWs.id === ws.id
+          ? "rebasing workspace instance…"
+          : "rebasing workspace instance onto parent…",
+      })
       let rebase: RebaseInstanceResult
       try {
         rebase = await this.codeService.rebaseInstance({
-          workspaceId: ws.id,
+          workspaceId: targetWs.id,
           instance: workingInst,
           onto: activeInst,
         })
@@ -1660,18 +1695,62 @@ export class WorkspaceManager {
       await this.reindexInstance(ws, workingInst)
       setGoalLifecycle(goal, { stage: "merging", state: "promoting_instance" })
       this.save(ws)
-      goal.status = "done"
-      setGoalLifecycle(goal, { stage: "merged", state: "complete" })
       ws.activeInstanceId = workingInst.id
-      this.goalWorkingInstances.delete(goal.id)
-      this.acceptanceRepairAttempts.delete(goal.id)
       goal.mergedInstanceId = workingInst.id
       goal.workingInstanceId = null
       this.restartWorkspaceServices(ws, workingInst)
       this.save(ws)
-      onEvent({ type: "status", goalId: goal.id, message: "workspace instance accepted" })
+      if (targetWs.id !== ws.id) {
+        const promotedInst = await this.createInstance(targetWs.id, workingInst.materializedRoot, workingInst.index)
+        targetWs.instances[promotedInst.id] = promotedInst
+        await this.reindexInstance(targetWs, promotedInst)
+        targetWs.activeInstanceId = promotedInst.id
+        this.restartWorkspaceServices(targetWs, promotedInst)
+        this.save(targetWs)
+        await this.refreshChildWorkspaces(targetWs, ws.id)
+      } else {
+        await this.refreshChildWorkspaces(ws, null)
+      }
+      goal.status = "done"
+      setGoalLifecycle(goal, { stage: "merged", state: "complete" })
+      this.goalWorkingInstances.delete(goal.id)
+      this.acceptanceRepairAttempts.delete(goal.id)
+      this.save(ws)
+      onEvent({
+        type: "status",
+        goalId: goal.id,
+        message: targetWs.id === ws.id
+          ? "workspace instance accepted"
+          : "workspace instance accepted into parent",
+      })
       return true
     })
+  }
+
+  private async refreshChildWorkspaces(
+    parentWs: WorkspaceRecord,
+    skipChildId: string | null,
+  ): Promise<void> {
+    for (const child of this.workspaces.values()) {
+      if (child.parentId !== parentWs.id || child.id === skipChildId) continue
+      const activeInst = this.activeInstance(child)
+      const candidate = await this.createInstance(child.id, activeInst.materializedRoot, activeInst.index)
+      child.instances[candidate.id] = candidate
+      const rebase = await this.codeService.rebaseInstance({
+        workspaceId: child.id,
+        instance: candidate,
+        onto: this.activeInstance(parentWs),
+      })
+      if (rebase.status !== "clean") {
+        delete child.instances[candidate.id]
+        this.save(child)
+        continue
+      }
+      await this.reindexInstance(child, candidate)
+      child.activeInstanceId = candidate.id
+      this.restartWorkspaceServices(child, candidate)
+      this.save(child)
+    }
   }
 
   private writeMcpConfig(goalId: string, dir: string, suffix: string): string {
@@ -1711,6 +1790,7 @@ export class WorkspaceManager {
     goal.status = "running"
     setGoalLifecycle(goal, opts?.lifecycleOnStart ?? { stage: "impl", state: "agent_running" })
     this.goalWorkingInstances.set(goal.id, inst.id)
+    goal.baseInstanceId ??= this.activeInstance(ws).id
     goal.workingInstanceId = inst.id
     this.save(ws)
 

@@ -84,6 +84,7 @@ describe("LogosRuntimeStore", () => {
       status: "done",
       lifecycle: { stage: "impl", state: "ready_to_merge" },
       mergePolicy: { autoMerge: false },
+      baseInstanceId: "inst-1",
       workingInstanceId: "inst-review",
       mergedInstanceId: null,
     }
@@ -94,6 +95,7 @@ describe("LogosRuntimeStore", () => {
       status: "done",
       lifecycle: { stage: "impl", state: "ready_to_merge" },
       mergePolicy: { autoMerge: false },
+      baseInstanceId: "inst-1",
       workingInstanceId: "inst-review",
       mergedInstanceId: null,
     })

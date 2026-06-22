@@ -3,8 +3,10 @@ import {
   snapshotChanges,
   extractSnapshotHtml,
   formatSnapshot,
+  selectGoalReviewBaseIndex,
   selectReviewBaseIndex,
   selectWorkspaceReviewBaseIndex,
+  selectWorkspaceReviewIndex,
 } from "./review"
 import type { FileEntry, StudioIndex, Workspace } from "./types"
 
@@ -75,7 +77,27 @@ describe("selectReviewBaseIndex", () => {
 })
 
 describe("selectWorkspaceReviewBaseIndex", () => {
-  it("uses the workspace base instance as the review baseline", () => {
+  it("uses the active workspace index as the review baseline for root workspaces", () => {
+    const project = indexWithCapture("<div>project</div>")
+    const active = indexWithCapture("<div>active</div>")
+    const workspace: Workspace = {
+      id: "ws-1",
+      name: "workspace",
+      kind: "code",
+      parentId: null,
+      createdAt: 1,
+      baseInstanceId: "inst-base",
+      activeInstanceId: "inst-active",
+      goals: [],
+      forkDir: "/tmp/ws-1",
+      index: active,
+      instances: {},
+    }
+
+    expect(selectWorkspaceReviewBaseIndex(project, workspace)).toBe(active)
+  })
+
+  it("uses the workspace base instance as the review baseline for child workspaces", () => {
     const project = indexWithCapture("<div>project</div>")
     const base = indexWithCapture("<div>Senior Engineer</div>")
     const active = indexWithCapture("<div><strong>Senior Engineer</strong></div>")
@@ -83,7 +105,7 @@ describe("selectWorkspaceReviewBaseIndex", () => {
       id: "ws-1",
       name: "workspace",
       kind: "code",
-      parentId: null,
+      parentId: "parent",
       createdAt: 1,
       baseInstanceId: "inst-base",
       activeInstanceId: "inst-active",
@@ -131,7 +153,7 @@ describe("selectWorkspaceReviewBaseIndex", () => {
       id: "ws-1",
       name: "workspace",
       kind: "code",
-      parentId: null,
+      parentId: "parent",
       createdAt: 1,
       baseInstanceId: "missing",
       activeInstanceId: "inst-active",
@@ -142,6 +164,153 @@ describe("selectWorkspaceReviewBaseIndex", () => {
     }
 
     expect(selectWorkspaceReviewBaseIndex(project, workspace)).toBe(project)
+  })
+})
+
+describe("selectWorkspaceReviewIndex", () => {
+  it("uses the active workspace index when there is no pending manual merge", () => {
+    const active = indexWithCapture("<div>active</div>")
+    const workspace: Workspace = {
+      id: "ws-1",
+      name: "workspace",
+      kind: "code",
+      parentId: null,
+      createdAt: 1,
+      baseInstanceId: "inst-base",
+      activeInstanceId: "inst-active",
+      goals: [],
+      forkDir: "/tmp/ws-1",
+      index: active,
+      instances: {},
+    }
+
+    expect(selectWorkspaceReviewIndex(workspace)).toBe(active)
+  })
+
+  it("uses the working instance for ready-to-merge manual goals", () => {
+    const active = indexWithCapture("<div>active</div>")
+    const base = indexWithCapture("<div>base</div>")
+    const working = indexWithCapture("<div>Indexed threads</div>")
+    const workspace: Workspace = {
+      id: "ws-1",
+      name: "workspace",
+      kind: "code",
+      parentId: null,
+      createdAt: 1,
+      baseInstanceId: "inst-base",
+      activeInstanceId: "inst-active",
+      goals: [{
+        id: "goal-1",
+        target: "components/JobRow.tsx",
+        label: "JobRow",
+        text: "rename to Indexed threads",
+        mode: "code",
+        createdAt: 1,
+        status: "done",
+        lifecycle: { stage: "impl", state: "ready_to_merge" },
+        mergePolicy: { autoMerge: false },
+        baseInstanceId: "inst-base",
+        workingInstanceId: "inst-working",
+        mergedInstanceId: null,
+      }],
+      forkDir: "/tmp/ws-1",
+      index: active,
+      instances: {
+        "inst-base": {
+          id: "inst-base",
+          workspaceId: "ws-1",
+          materializedRoot: "/tmp/ws-1/base",
+          mutability: "writable",
+          createdAt: 1,
+          index: base,
+        },
+        "inst-working": {
+          id: "inst-working",
+          workspaceId: "ws-1",
+          materializedRoot: "/tmp/ws-1/working",
+          mutability: "writable",
+          createdAt: 2,
+          index: working,
+        },
+      },
+    }
+
+    expect(selectGoalReviewBaseIndex(workspace, "goal-1")).toBe(base)
+    expect(selectWorkspaceReviewIndex(workspace)).toBe(working)
+    expect(snapshotChanges(selectGoalReviewBaseIndex(workspace, "goal-1")!, selectWorkspaceReviewIndex(workspace)!)).toEqual([
+      expect.objectContaining({
+        status: "changed",
+        beforeSnapshot: "<div>base</div>",
+        afterSnapshot: "<div>Indexed threads</div>",
+      }),
+    ])
+  })
+
+  it("uses the explicitly selected goal when multiple manual merges are pending", () => {
+    const active = indexWithCapture("<div>active</div>")
+    const first = indexWithCapture("<div>First pending</div>")
+    const selected = indexWithCapture("<div>Hidden</div>")
+    const workspace: Workspace = {
+      id: "ws-1",
+      name: "workspace",
+      kind: "code",
+      parentId: null,
+      createdAt: 1,
+      baseInstanceId: "inst-base",
+      activeInstanceId: "inst-active",
+      goals: [
+        {
+          id: "goal-1",
+          target: "component:AdminDashboard",
+          label: "First",
+          text: "first change",
+          mode: "code",
+          createdAt: 1,
+          status: "done",
+          lifecycle: { stage: "impl", state: "ready_to_merge" },
+          mergePolicy: { autoMerge: false },
+          baseInstanceId: "inst-base",
+          workingInstanceId: "inst-first",
+          mergedInstanceId: null,
+        },
+        {
+          id: "goal-2",
+          target: "component:AdminDashboard",
+          label: "Rename Hidden",
+          text: "rename to Hidden",
+          mode: "code",
+          createdAt: 2,
+          status: "done",
+          lifecycle: { stage: "impl", state: "ready_to_merge" },
+          mergePolicy: { autoMerge: false },
+          baseInstanceId: "inst-base",
+          workingInstanceId: "inst-selected",
+          mergedInstanceId: null,
+        },
+      ],
+      forkDir: "/tmp/ws-1",
+      index: active,
+      instances: {
+        "inst-first": {
+          id: "inst-first",
+          workspaceId: "ws-1",
+          materializedRoot: "/tmp/ws-1/first",
+          mutability: "writable",
+          createdAt: 2,
+          index: first,
+        },
+        "inst-selected": {
+          id: "inst-selected",
+          workspaceId: "ws-1",
+          materializedRoot: "/tmp/ws-1/selected",
+          mutability: "writable",
+          createdAt: 3,
+          index: selected,
+        },
+      },
+    }
+
+    expect(selectWorkspaceReviewIndex(workspace, "goal-2")).toBe(selected)
   })
 })
 

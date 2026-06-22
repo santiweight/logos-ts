@@ -11,7 +11,7 @@ import { ReviewPanel } from "./ReviewPanel"
 import { mainChromeState } from "./main-chrome"
 import { GotoCtx } from "./highlight"
 import { architectureDiffIndex, diffIndex } from "./diff"
-import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, snapshotChanges } from "./review"
+import { selectGoalReviewBaseIndex, selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, selectWorkspaceReviewIndex, snapshotChanges } from "./review"
 import { buildStoryWritingPrompt } from "./story-goals"
 import type {
   FileEntry,
@@ -281,11 +281,14 @@ export function App() {
   const openWorkspaceAbortRef = useRef<AbortController | null>(null)
   const [openingWorkspaceId, setOpeningWorkspaceId] = useState<string | null>(null)
   const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
+  const [workspaceReviewIndex, setWorkspaceReviewIndex] = useState<StudioIndex | null>(null)
   const [workspaceBaselineIndex, setWorkspaceBaselineIndex] = useState<StudioIndex | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
 
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
+  const selectedGoalId = selected?.type === "goal" ? selected.id : null
   const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
+  const reviewWorkspaceIndex = workspaceReviewIndex ?? workspaceIndex
 
   const [navHistory, setNavHistory] = useState<Selection[]>([])
   const onGoto = useCallback((sym: { file: string; line: number }, name: string) => {
@@ -403,11 +406,11 @@ export function App() {
   }, [activeWorkspaceId, refreshRuns])
 
   const diff = useMemo(() => {
-    if (!activeWorkspaceId || !workspaceIndex) return {}
+    if (!activeWorkspaceId || !reviewWorkspaceIndex) return {}
     return activeWs?.kind === "arch"
-      ? architectureDiffIndex(reviewBaseIndex, workspaceIndex)
-      : diffIndex(reviewBaseIndex, workspaceIndex)
-  }, [activeWorkspaceId, activeWs?.kind, workspaceIndex, reviewBaseIndex])
+      ? architectureDiffIndex(reviewBaseIndex, reviewWorkspaceIndex)
+      : diffIndex(reviewBaseIndex, reviewWorkspaceIndex)
+  }, [activeWorkspaceId, activeWs?.kind, reviewWorkspaceIndex, reviewBaseIndex])
 
   const activeGoals = activeWs?.goals ?? []
   const activeStorybookRenderKey = buildStorybookRenderKey(activeWs, activeStorybookState)
@@ -450,7 +453,18 @@ export function App() {
     } catch {}
   }, [])
 
-  const openWorkspace = useCallback(async (id: string, opts?: { resetView?: boolean }) => {
+  const loadWorkspaceReviewBase = useCallback(async (ws: Workspace, goalId?: string | null): Promise<StudioIndex> => {
+    const goalBase = selectGoalReviewBaseIndex(ws, goalId)
+    if (goalBase) return goalBase
+    if (!ws.parentId) return selectWorkspaceReviewBaseIndex(index, ws)
+    try {
+      const res = await fetch(`/api/workspaces/${ws.parentId}`)
+      if (res.ok) return ((await res.json()) as Workspace).index
+    } catch {}
+    return selectWorkspaceReviewBaseIndex(index, ws)
+  }, [index])
+
+  const openWorkspace = useCallback(async (id: string, opts?: { resetView?: boolean; goalId?: string | null }) => {
     openWorkspaceAbortRef.current?.abort()
     const controller = new AbortController()
     openWorkspaceAbortRef.current = controller
@@ -461,6 +475,7 @@ export function App() {
     setActiveWorkspaceId(id)
     if (resetView) {
       setWorkspaceIndex(null)
+      setWorkspaceReviewIndex(null)
       setWorkspaceBaselineIndex(null)
     }
     try {
@@ -477,7 +492,8 @@ export function App() {
         ))
         if (workspaceReadyForDisplay(ws)) {
           setWorkspaceIndex(ws.index)
-          setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
+          setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws, opts?.goalId))
+          setWorkspaceBaselineIndex(await loadWorkspaceReviewBase(ws, opts?.goalId))
         }
       }
     } catch (e) {
@@ -488,20 +504,23 @@ export function App() {
         if (openWorkspaceAbortRef.current === controller) openWorkspaceAbortRef.current = null
       }
     }
-  }, [index])
+  }, [loadWorkspaceReviewBase])
 
-  const reindexWorkspace = useCallback(async (id?: string | null) => {
+  const reindexWorkspace = useCallback(async (id?: string | null, goalId?: string | null) => {
     const wsId = id ?? activeWorkspaceId
     if (!wsId) return
     try {
-      const res = await fetch(`/api/workspaces/${wsId}/reindex`, { method: "POST" })
+      const query = goalId ? `?goal=${encodeURIComponent(goalId)}` : ""
+      const res = await fetch(`/api/workspaces/${wsId}/reindex${query}`, { method: "POST" })
       if (res.ok) {
         const ws = (await res.json()) as Workspace
         setWorkspaceIndex(ws.index)
+        setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws, goalId))
+        setWorkspaceBaselineIndex(await loadWorkspaceReviewBase(ws, goalId))
         await refreshWorkspaces()
       }
     } catch {}
-  }, [activeWorkspaceId, refreshWorkspaces])
+  }, [activeWorkspaceId, loadWorkspaceReviewBase, refreshWorkspaces])
 
   const createWorkspace = useCallback(
     async (fromWorkspaceId?: string | null, kind: WorkspaceKind = "code"): Promise<string | null> => {
@@ -731,7 +750,7 @@ export function App() {
             esRefs.current.delete(goalId)
             setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
             Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => {
-              if (activeWorkspaceIdRef.current === wsId) openWorkspace(wsId, { resetView: false })
+              if (activeWorkspaceIdRef.current === wsId) openWorkspace(wsId, { resetView: false, goalId })
             })
           }
         }
@@ -758,7 +777,7 @@ export function App() {
           }))
           setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
           Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => {
-            if (activeWorkspaceIdRef.current === wsId) openWorkspace(wsId, { resetView: false })
+            if (activeWorkspaceIdRef.current === wsId) openWorkspace(wsId, { resetView: false, goalId })
           })
         }
       }
@@ -801,7 +820,7 @@ export function App() {
           esRefs.current.delete(goalId)
           setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
           Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => {
-            if (activeWorkspaceIdRef.current === activeWorkspaceId) openWorkspace(activeWorkspaceId, { resetView: false })
+            if (activeWorkspaceIdRef.current === activeWorkspaceId) openWorkspace(activeWorkspaceId, { resetView: false, goalId })
           })
         }
       }
@@ -815,7 +834,7 @@ export function App() {
         }))
         setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
         Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => {
-          if (activeWorkspaceIdRef.current === activeWorkspaceId) openWorkspace(activeWorkspaceId, { resetView: false })
+          if (activeWorkspaceIdRef.current === activeWorkspaceId) openWorkspace(activeWorkspaceId, { resetView: false, goalId })
         })
       }
     },
@@ -835,6 +854,7 @@ export function App() {
     setSelected(null)
     setReviewOpen(false)
     setWorkspaceIndex(null)
+    setWorkspaceReviewIndex(null)
     setWorkspaceBaselineIndex(null)
     setActiveWorkspaceId(null)
 
@@ -856,9 +876,12 @@ export function App() {
   useEffect(() => {
     if (!agentRunning || !activeWorkspaceId) return
     if (openingWorkspaceId === activeWorkspaceId) return
-    const iv = setInterval(() => openWorkspace(activeWorkspaceId, { resetView: false }), 3_000)
+    const iv = setInterval(() => {
+      if (selectedGoalId) reindexWorkspace(activeWorkspaceId, selectedGoalId)
+      else openWorkspace(activeWorkspaceId, { resetView: false })
+    }, 3_000)
     return () => clearInterval(iv)
-  }, [agentRunning, activeWorkspaceId, openingWorkspaceId, openWorkspace])
+  }, [agentRunning, activeWorkspaceId, openingWorkspaceId, selectedGoalId, reindexWorkspace, openWorkspace])
 
   const workspaceInitializing = workspaces.some((workspace) => workspace.initialization?.status === "initializing")
   useEffect(() => {
@@ -920,7 +943,7 @@ export function App() {
       const goalWsId = goal.workspaceId ?? wsId
       await refreshWorkspaces()
       setSelected({ type: "goal", id: goal.id })
-      if (goalWsId !== activeWorkspaceId) await openWorkspace(goalWsId)
+      if (goalWsId !== activeWorkspaceId) await openWorkspace(goalWsId, { goalId: goal.id })
 
       // 3. Trigger agent to process the queue
       runAgent(goalWsId, goal.id)
@@ -954,7 +977,7 @@ export function App() {
             if (done || closed) {
               setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
               Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks()]).then(() => {
-                if (activeWorkspaceId) openWorkspace(activeWorkspaceId)
+                if (activeWorkspaceId) openWorkspace(activeWorkspaceId, { goalId })
               })
               return
             }
@@ -971,7 +994,7 @@ export function App() {
                   closed = true
                   setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
                   Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks()]).then(() => {
-                    if (activeWorkspaceId) openWorkspace(activeWorkspaceId)
+                    if (activeWorkspaceId) openWorkspace(activeWorkspaceId, { goalId })
                   })
                   return
                 }
@@ -1143,7 +1166,6 @@ export function App() {
     }
   }, [view.files])
 
-  const selectedGoalId = selected?.type === "goal" ? selected.id : null
   const selectedGoal = selectedGoalId != null
     ? activeGoals.find((goal) => goal.id === selectedGoalId) ?? null
     : null
@@ -1153,16 +1175,27 @@ export function App() {
     setSelected({ type: "goal", id })
     const goal = activeGoals.find((candidate) => candidate.id === id)
     if (goal) navigateToGoal(goal)
+    if (activeWorkspaceId) {
+      try {
+        const res = await fetch(`/api/workspaces/${activeWorkspaceId}/reindex?goal=${encodeURIComponent(id)}`, { method: "POST" })
+        if (res.ok) {
+          const ws = (await res.json()) as Workspace
+          setWorkspaceIndex(ws.index)
+          setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws, id))
+          setWorkspaceBaselineIndex(await loadWorkspaceReviewBase(ws, id))
+        }
+      } catch {}
+    }
     const existing = goalEventsRef.current[id]
     if (!existing || existing.length === 0) {
       const history = await loadGoalSessionEvents(id)
       if (history.length > 0) setGoalEvents((prev) => ({ ...prev, [id]: history }))
     }
-  }, [activeGoals, navigateToGoal, loadGoalSessionEvents])
+  }, [activeGoals, activeWorkspaceId, navigateToGoal, loadWorkspaceReviewBase, loadGoalSessionEvents])
 
   const nComps = view.files.reduce((n, f) => n + (f.components?.length ?? (f.component ? 1 : 0)), 0)
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
-  const reviewCount = workspaceIndex ? reviewChangeCount(reviewBaseIndex, workspaceIndex) : 0
+  const reviewCount = reviewWorkspaceIndex ? reviewChangeCount(reviewBaseIndex, reviewWorkspaceIndex) : 0
   const mainChrome = mainChromeState({ selection, currentFile, runTarget, reviewOpen, reviewCount })
   const activeProject = demos.find((d) => d.id === activeDemoId)
   const projectLabel = demoSwitching
@@ -1439,7 +1472,7 @@ export function App() {
           {mainChrome.changesOpen ? (
             <ReviewPanel
               base={reviewBaseIndex}
-              workspace={workspaceIndex}
+              workspace={(reviewWorkspaceIndex ?? workspaceIndex)!}
               showHeaderTitle={false}
             />
           ) : selection.view === "run" ? (
@@ -1479,7 +1512,7 @@ export function App() {
         <span>
           {svgIcon("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", 11)}{" "}
           {activeWs?.name ?? "workspace"}{" "}
-          <a className="refresh-btn" onClick={() => reindexWorkspace()} title="Re-index workspace from disk">↻</a>
+          <a className="refresh-btn" onClick={() => reindexWorkspace(undefined, selectedGoalId)} title="Re-index workspace from disk">↻</a>
         </span>
         <span>
           <span className="agent-toggle" onClick={() => setAgentOpen((o) => !o)}>

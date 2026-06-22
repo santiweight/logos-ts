@@ -124,6 +124,7 @@ export interface Goal {
   status: "pending" | "running" | "done" | "error"
   lifecycle?: GoalLifecycle
   mergePolicy?: GoalMergePolicy
+  baseInstanceId?: string | null
   workingInstanceId?: string | null
   mergedInstanceId?: string | null
   sessionId?: string | null

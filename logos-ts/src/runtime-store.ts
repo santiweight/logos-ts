@@ -44,6 +44,7 @@ export interface StoredGoal {
   status: "pending" | "running" | "done" | "error"
   lifecycle: StoredGoalLifecycle
   mergePolicy: StoredGoalMergePolicy
+  baseInstanceId?: string | null
   workingInstanceId?: string | null
   mergedInstanceId?: string | null
   sessionId?: string | null
@@ -303,6 +304,7 @@ export class LogosRuntimeStore {
     this.addColumnIfMissing("workspaces", "initialization_json", "TEXT")
     this.addColumnIfMissing("goals", "lifecycle_json", "TEXT")
     this.addColumnIfMissing("goals", "auto_merge", "INTEGER NOT NULL DEFAULT 1")
+    this.addColumnIfMissing("goals", "base_instance_id", "TEXT")
     this.addColumnIfMissing("goals", "working_instance_id", "TEXT")
     this.addColumnIfMissing("goals", "merged_instance_id", "TEXT")
     this.addColumnIfMissing("goals", "app_path", "TEXT")
@@ -432,9 +434,9 @@ export class LogosRuntimeStore {
           INSERT INTO goals (
             id, workspace_id, position_index, text, label, target, mode, created_at,
             story_id, selector, component, app_path, run_target_id, status, lifecycle_json, auto_merge,
-            working_instance_id, merged_instance_id, session_id
+            base_instance_id, working_instance_id, merged_instance_id, session_id
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           goal.id,
           ws.id,
@@ -452,6 +454,7 @@ export class LogosRuntimeStore {
           goal.status,
           JSON.stringify(goal.lifecycle),
           goal.mergePolicy.autoMerge ? 1 : 0,
+          goal.baseInstanceId ?? null,
           goal.workingInstanceId ?? null,
           goal.mergedInstanceId ?? null,
           goal.sessionId ?? null,
@@ -798,6 +801,7 @@ function mapGoal(row: Record<string, unknown>): StoredGoal {
     status,
     lifecycle: parseGoalLifecycle(row["lifecycle_json"], status),
     mergePolicy: { autoMerge: row["auto_merge"] !== 0 },
+    baseInstanceId: nullableString(row["base_instance_id"]),
     workingInstanceId: nullableString(row["working_instance_id"]),
     mergedInstanceId: nullableString(row["merged_instance_id"]),
     sessionId: nullableString(row["session_id"]),

@@ -28,7 +28,32 @@ export function selectReviewBaseIndex(projectIndex: StudioIndex, parentWorkspace
 
 export function selectWorkspaceReviewBaseIndex(projectIndex: StudioIndex, workspace: Workspace | null): StudioIndex {
   if (!workspace) return projectIndex
+  if (!workspace.parentId) return workspace.index
   return workspace.instances[workspace.baseInstanceId]?.index ?? projectIndex
+}
+
+export function selectGoalReviewBaseIndex(workspace: Workspace | null, goalId?: string | null): StudioIndex | null {
+  if (!workspace || !goalId) return null
+  const goal = workspace.goals.find((candidate) => candidate.id === goalId)
+  if (!goal?.baseInstanceId) return null
+  return workspace.instances[goal.baseInstanceId]?.index ?? null
+}
+
+export function selectWorkspaceReviewIndex(workspace: Workspace | null, goalId?: string | null): StudioIndex | null {
+  if (!workspace) return null
+  const selectedGoal = goalId ? workspace.goals.find((goal) => goal.id === goalId) : null
+  const pendingMerge = selectedGoal ?? workspace.goals.find((goal) =>
+    goal.lifecycle?.stage === "impl" &&
+    goal.lifecycle.state === "ready_to_merge" &&
+    goal.workingInstanceId
+  )
+  if (pendingMerge?.workingInstanceId) {
+    return workspace.instances[pendingMerge.workingInstanceId]?.index ?? workspace.index
+  }
+  if (pendingMerge?.mergedInstanceId) {
+    return workspace.instances[pendingMerge.mergedInstanceId]?.index ?? workspace.index
+  }
+  return workspace.index
 }
 
 function snapshotMap(index: StudioIndex): Map<string, IndexedSnapshot> {
