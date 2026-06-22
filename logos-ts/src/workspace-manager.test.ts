@@ -1027,8 +1027,10 @@ describe("WorkspaceManager workspace kinds", () => {
 
   it("resumes a code agent in the same instance when acceptance tests fail", async () => {
     const spawned: FakeAgentProcess[] = []
+    const sessions = createSessions()
     const mgr = createManager({
       spawned,
+      sessions,
       setupProject: (projectRoot) => {
         writeFileSync(join(projectRoot, "thing.txt"), "base\n")
         writeFileSync(join(projectRoot, "fail-test.js"), "console.error('expected failure'); process.exit(1)\n")
@@ -1050,6 +1052,15 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("running")
     expect(spawned[1]!.args.join("\n")).toContain("acceptance tests failed")
     expect(events.some((event) => String(event.message ?? "").includes("acceptance tests failed"))).toBe(true)
+
+    spawned[1]!.stdout.write(`${JSON.stringify({ type: "assistant", message: { id: "repair-msg" } })}\n`)
+    await waitFor(() => {
+      const repairEvents = sessions.events.filter((event) =>
+        event.type === "event"
+        && (event.payload as { event?: { message?: { id?: string } } }).event?.message?.id === "repair-msg",
+      )
+      expect(repairEvents).toHaveLength(1)
+    })
   }, 60_000)
 
   it("stops retrying when acceptance tests still fail after a repair attempt", async () => {

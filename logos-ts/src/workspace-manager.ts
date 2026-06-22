@@ -1326,7 +1326,7 @@ export class WorkspaceManager {
         await this.reindexInstance(ws, workingInst)
         recordAndEmit({ type: "status", goalId: goal.id, message: "architecture complete; starting implementation…" })
         const implPrompt = await this.buildArchitectureImplementationPrompt(dir, goal)
-        if (!this.resumeGoalInInstance(ws, goal, implPrompt, workingInst, recordAndEmit, {
+        if (!this.resumeGoalInInstance(ws, goal, implPrompt, workingInst, onEvent, {
           recordUserReply: false,
           lifecycleOnStart: { stage: "impl", state: "agent_running" },
           treatAsImplementation: true,
@@ -1352,7 +1352,7 @@ export class WorkspaceManager {
         return
       }
 
-      const accepted = await this.acceptCodeGoalResult(ws, goal, workingInst, recordAndEmit)
+      const accepted = await this.acceptCodeGoalResult(ws, goal, workingInst, recordAndEmit, { externalOnEvent: onEvent })
       if (accepted) {
         this.appendAgentSummary(goal, collectedEvents)
         recordAndEmit({ type: "done", code })
@@ -1536,8 +1536,10 @@ export class WorkspaceManager {
     goal: Goal,
     workingInst: WorkspaceInstance,
     onEvent: AgentEventCallback,
+    opts?: { externalOnEvent?: AgentEventCallback },
   ): Promise<boolean> {
     return this.codeService.withWorkspaceLock(ws.id, async () => {
+      const resumeOnEvent = opts?.externalOnEvent ?? onEvent
       const activeInst = this.activeInstance(ws)
       setGoalLifecycle(goal, { stage: "merging", state: "rebasing" })
       this.save(ws)
@@ -1562,7 +1564,7 @@ export class WorkspaceManager {
         setGoalLifecycle(goal, { stage: "merging", state: "merge_blocked" })
         this.save(ws)
         onEvent({ type: "status", goalId: goal.id, message: "rebase conflicts; asking agent to resolve…" })
-        if (!this.resumeGoalInInstance(ws, goal, this.buildRebasePrompt(rebase), workingInst, onEvent, {
+        if (!this.resumeGoalInInstance(ws, goal, this.buildRebasePrompt(rebase), workingInst, resumeOnEvent, {
           recordUserReply: false,
           lifecycleOnStart: { stage: "merging", state: "resolving_conflicts" },
           continueMergeOnClose: true,
@@ -1607,7 +1609,7 @@ export class WorkspaceManager {
         }
         this.acceptanceRepairAttempts.set(goal.id, attempts + 1)
         onEvent({ type: "status", goalId: goal.id, message: "story snapshot acceptance failed; asking agent to fix…" })
-        if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(storySnapshots.output), workingInst, onEvent)) {
+        if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(storySnapshots.output), workingInst, resumeOnEvent)) {
           goal.status = "error"
           this.save(ws)
           onEvent({ type: "error", message: "failed to resume agent after story snapshot failure" })
@@ -1637,7 +1639,7 @@ export class WorkspaceManager {
         setGoalLifecycle(goal, { stage: "merging", state: "repairing_tests" })
         this.save(ws)
         onEvent({ type: "status", goalId: goal.id, message: "acceptance tests failed; asking agent to fix…" })
-        if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(tests.output), workingInst, onEvent, {
+        if (!this.resumeGoalInInstance(ws, goal, this.buildTestFailurePrompt(tests.output), workingInst, resumeOnEvent, {
           recordUserReply: false,
           lifecycleOnStart: { stage: "merging", state: "repairing_tests" },
           continueMergeOnClose: true,
@@ -1798,7 +1800,7 @@ export class WorkspaceManager {
         return
       }
 
-      const accepted = await this.acceptCodeGoalResult(ws, goal, inst, recordAndEmit)
+      const accepted = await this.acceptCodeGoalResult(ws, goal, inst, recordAndEmit, { externalOnEvent: onEvent })
       if (accepted) {
         this.appendAgentSummary(goal, collectedEvents)
         recordAndEmit({ type: "done", code })
