@@ -62,7 +62,7 @@ export function ChangesRail({
   if (!open) {
     return (
       <div className="rail collapsed">
-        <button className="rail-toggle" onClick={onToggle} title="Workspaces">
+        <button className="rail-toggle" onClick={onToggle} title="Workspaces" aria-label="Open workspaces">
           {listIcon}
         </button>
         {workspaces.length > 0 && <div className="rail-count">{workspaces.length}</div>}
@@ -76,13 +76,13 @@ export function ChangesRail({
       <div className="rail-head">
         <span>CHANGES</span>
         <span>
-          <button className="rail-toggle" onClick={onNewWorkspace} title="New workspace">
+          <button className="rail-toggle" onClick={onNewWorkspace} title="New workspace" aria-label="New workspace">
             {plusIcon}
           </button>
-          <button className="rail-toggle" onClick={onResetWorkspaces} title="Reset all workspaces">
+          <button className="rail-toggle" onClick={onResetWorkspaces} title="Reset all workspaces" aria-label="Reset all workspaces">
             {resetIcon}
           </button>
-          <button className="rail-toggle" onClick={onToggle} title="Collapse">
+          <button className="rail-toggle" onClick={onToggle} title="Collapse" aria-label="Collapse workspaces">
             {collapseIcon}
           </button>
         </span>
@@ -133,6 +133,7 @@ export function ChangesRail({
                     <button
                       className="rail-merge"
                       title="Make pull request"
+                      aria-label={`Make pull request for ${w.name}`}
                       onClick={(e) => {
                         e.stopPropagation()
                         onCreatePullRequest(w.id)
@@ -145,6 +146,7 @@ export function ChangesRail({
                     <button
                       className="rail-fork"
                       title="Fork workspace"
+                      aria-label={`Fork ${w.name}`}
                       onClick={(e) => {
                         e.stopPropagation()
                         onFork()
@@ -156,6 +158,7 @@ export function ChangesRail({
                   <button
                     className="rail-del"
                     title="Delete workspace (⌘⌫)"
+                    aria-label={`Delete ${w.name}`}
                     onClick={(e) => {
                       e.stopPropagation()
                       onDeleteWorkspace(w.id)
@@ -201,6 +204,7 @@ export function ChangesRail({
                     <button
                       className="rail-push-updates"
                       title="Push updates to pull request"
+                      aria-label={`Push updates for ${w.name}`}
                       onClick={(e) => {
                         e.stopPropagation()
                         onCreatePullRequest(w.id)
@@ -209,7 +213,7 @@ export function ChangesRail({
                       {pushIcon}
                     </button>
                   ) : (
-                    <button className="rail-push-updates disabled" title="Pull request is up to date" disabled>
+                    <button className="rail-push-updates disabled" title="Pull request is up to date" aria-label={`${w.name} pull request is up to date`} disabled>
                       {pushIcon}
                     </button>
                   )}
