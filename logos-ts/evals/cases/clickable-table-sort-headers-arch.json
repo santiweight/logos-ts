@@ -14,8 +14,8 @@
     "behavior": {
       "oracle": "../checks/clickable-table-sort-headers.check.test.ts",
       "cwd": "",
-      "cmd": ["pnpm", "exec", "tsx", "--test", "clickable-table-sort-headers.check.test.ts"]
+      "cmd": ["node", "--import", "tsx", "--test", "clickable-table-sort-headers.check.test.ts"]
     },
-    "job-filter-regression": { "cwd": "", "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"] }
+    "job-filter-regression": { "cwd": "", "cmd": ["node", "--import", "tsx", "--test", "tests/job-filters.test.ts"] }
   }
 }

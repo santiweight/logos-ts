@@ -228,6 +228,7 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
     `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change.\n\n` +
     `Address these change requests:\n${goalLine}\n\n` +
     `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck.` +
+    ` For TypeScript node:test suites, prefer \`node --import tsx --test <test-file>\`; if \`pnpm test\` or \`pnpm exec tsx --test\` fails with \`listen EPERM\`, rerun the same tests with \`node --import tsx --test\`.` +
     ` This project has no automated test runner configured. Verify your changes manually.`
 }
 
@@ -430,7 +431,7 @@ function buildArchImplPrompt(c: EvalCase, work: string, context: string): string
     context,
     sandbox,
     goalLine,
-    "This eval harness has no live test-runner MCP. Run the relevant project test/typecheck commands yourself and iterate until they pass.",
+    "This eval harness has no live test-runner MCP. Run the relevant project test/typecheck commands yourself and iterate until they pass. For TypeScript node:test suites, prefer `node --import tsx --test <test-file>`; if `pnpm test` or `pnpm exec tsx --test` fails with `listen EPERM`, rerun the same tests with `node --import tsx --test`.",
   )
 }
 

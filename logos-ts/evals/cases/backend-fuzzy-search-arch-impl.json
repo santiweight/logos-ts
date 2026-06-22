@@ -14,11 +14,11 @@
         "../checks/full-fixtures.ts"
       ],
       "cwd": "",
-      "cmd": ["pnpm", "exec", "tsx", "--test", "backend-fuzzy-search.check.test.ts"]
+      "cmd": ["node", "--import", "tsx", "--test", "backend-fuzzy-search.check.test.ts"]
     },
     "existing-tests": {
       "cwd": "",
-      "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"]
+      "cmd": ["node", "--import", "tsx", "--test", "tests/job-filters.test.ts"]
     }
   }
 }

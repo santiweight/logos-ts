@@ -14,8 +14,8 @@
     "behavior": {
       "oracle": "../checks/work-mode-filter.check.test.ts",
       "cwd": "",
-      "cmd": ["pnpm", "exec", "tsx", "--test", "work-mode-filter.check.test.ts"]
+      "cmd": ["node", "--import", "tsx", "--test", "work-mode-filter.check.test.ts"]
     },
-    "job-filter-regression": { "cwd": "", "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"] }
+    "job-filter-regression": { "cwd": "", "cmd": ["node", "--import", "tsx", "--test", "tests/job-filters.test.ts"] }
   }
 }

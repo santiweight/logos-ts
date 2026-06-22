@@ -22,8 +22,8 @@
       "oracle": "../checks/fuzzy-search.check.ts",
       "cwd": "frontend",
       "cmd": [
-        "pnpm",
-        "exec",
+        "node",
+        "--import",
         "tsx",
         "--test",
         "fuzzy-search.check.ts"
@@ -33,8 +33,8 @@
       "oracle": "../checks/fuzzy-search.check.test.ts",
       "cwd": "",
       "cmd": [
-        "pnpm",
-        "exec",
+        "node",
+        "--import",
         "tsx",
         "--test",
         "fuzzy-search.check.test.ts"

@@ -14,12 +14,12 @@
     "behavior": {
       "oracle": "../checks/fuzzy-search.check.ts",
       "cwd": "",
-      "cmd": ["pnpm", "exec", "tsx", "--test", "fuzzy-search.check.ts"]
+      "cmd": ["node", "--import", "tsx", "--test", "fuzzy-search.check.ts"]
     },
     "rank-api": {
       "oracle": "../checks/fuzzy-search.check.test.ts",
       "cwd": "",
-      "cmd": ["pnpm", "exec", "tsx", "--test", "fuzzy-search.check.test.ts"]
+      "cmd": ["node", "--import", "tsx", "--test", "fuzzy-search.check.test.ts"]
     },
     "project-tests": { "cwd": "", "cmd": ["pnpm", "test"] }
   }
