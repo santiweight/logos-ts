@@ -4,18 +4,18 @@
   "comment": {
     "target": "file:package.json",
     "label": "Storybook onboarding",
-    "text": "Set up Storybook for this React/Next codebase so it can be used for component iteration. Add real Storybook dependencies, package scripts, .storybook config, global CSS preview setup, and one deterministic starter story for an existing client component. Do not add fake @storybook/react declaration stubs. Keep the app typechecking and make pnpm run build-storybook pass."
+    "text": "Set up Storybook for this React/Next codebase so it can be used for component iteration. Add real Storybook dependencies, package scripts, .storybook config, global CSS preview setup, and one deterministic starter story for an existing client component. Do not add fake @storybook/react declaration stubs. Keep the app typechecking and make pnpm build-storybook pass."
   },
   "agent": "implementation",
   "tier": "capability",
   "checks": {
     "typecheck": {
       "cwd": ".",
-      "cmd": ["pnpm", "run", "typecheck"]
+      "cmd": ["pnpm", "typecheck"]
     },
     "storybook": {
       "cwd": ".",
-      "cmd": ["pnpm", "run", "build-storybook"]
+      "cmd": ["pnpm", "build-storybook"]
     },
     "setup": {
       "oracle": "../checks/onboard-storybook.check.ts",

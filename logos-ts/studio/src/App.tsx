@@ -12,7 +12,6 @@ import { mainChromeState } from "./main-chrome"
 import { GotoCtx } from "./highlight"
 import { diffIndex } from "./diff"
 import { selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, snapshotChanges } from "./review"
-import { indexToArchText } from "./arch-text"
 import { buildStoryWritingPrompt } from "./story-goals"
 import type {
   FileEntry,
@@ -34,8 +33,8 @@ const seed = seedData as unknown as StudioIndex
 const SELECTION_STORAGE_KEY = "logos:selection:v1"
 
 export function reviewChangeCount(base: StudioIndex, workspace: StudioIndex): number {
-  const architectureChanged = indexToArchText(base) !== indexToArchText(workspace)
-  return (architectureChanged ? 1 : 0) + snapshotChanges(base, workspace).length
+  const sourceChanged = Object.keys(diffIndex(base, workspace)).length > 0
+  return (sourceChanged ? 1 : 0) + snapshotChanges(base, workspace).length
 }
 
 interface DemoOption {

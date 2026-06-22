@@ -2,10 +2,12 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execFileSync } from "node:child_process"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { WorkspaceCodeService } from "./workspace-code-service.js"
 
 const tempDirs: string[] = []
+
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 })
 
 function createService(opts?: { nodeModulesDirs?: string[] }) {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-code-service-"))

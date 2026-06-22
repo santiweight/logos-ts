@@ -2,11 +2,10 @@
   "name": "vinyl-collection-frontend",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@11.8.0",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "node -e \"console.log('Strict lint is optional. Run pnpm run lint:strict for a cleanup pass.')\"",
+    "lint": "node -e \"console.log('Strict lint is optional. Run lint:strict for a cleanup pass.')\"",
     "lint:strict": "eslint .",
     "storybook": "storybook dev --ci",
     "build-storybook": "storybook build",

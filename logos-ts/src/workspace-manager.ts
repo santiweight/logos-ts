@@ -13,7 +13,7 @@
 // to an arch workspace join its queue unless the caller explicitly asks to fork.
 // Each architecture workspace runs at most one architecture agent at a time.
 
-import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync } from "node:fs"
 import { resolve, relative, join, basename, sep } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
 import { promisify } from "node:util"
@@ -125,15 +125,6 @@ export interface PushWorkspaceBranchResult {
     url: string
     created: boolean
   }
-}
-
-function packageManagerFor(root: string): "pnpm" | "npm" {
-  if (existsSync(join(root, "pnpm-lock.yaml"))) return "pnpm"
-  try {
-    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { packageManager?: string }
-    if (pkg.packageManager?.startsWith("pnpm@")) return "pnpm"
-  } catch { /* malformed or missing package.json */ }
-  return "npm"
 }
 
 export type AddGoalResult =
@@ -1223,14 +1214,11 @@ export class WorkspaceManager {
           cwd: this.logosTsRoot, encoding: "utf8",
         })
       } catch (e) {
-        const message = "strip failed: " + String(e)
+        rmSync(archOriginalSnapshot, { recursive: true, force: true })
         goal.status = "error"
-        setGoalLifecycle(goal, { stage: "impl", state: "impl_failed" })
-        goal.workingInstanceId = null
-        this.goalWorkingInstances.delete(goal.id)
+        goal.lifecycle = { stage: "impl", state: "impl_failed" }
         this.save(ws)
-        recordAndEmit({ type: "error", goalId: goal.id, message })
-        rmSync(bodiesFile, { force: true })
+        recordAndEmit({ type: "error", goalId: goal.id, message: "strip failed: " + String(e) })
         this.maybeStartNextQueued(ws.id)
         return
       }
@@ -1279,15 +1267,14 @@ export class WorkspaceManager {
 
     const child = this.spawnAgent(
       "claude",
-      ["-p", "-", "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
+      ["-p", prompt, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
       {
         cwd: dir,
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
         // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
         env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
-    child.stdin?.end(prompt)
     this.runningAgents.set(goal.id, child)
     setGoalLifecycle(goal, { stage: "impl", state: "agent_running" })
     this.save(ws)
@@ -1308,7 +1295,6 @@ export class WorkspaceManager {
     child.on("close", async (code) => {
       this.runningAgents.delete(goal.id)
       if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) {
-        this.runningAgents.delete(goal.id)
         rmSync(mcpConfigPath, { force: true })
         return
       }
@@ -1429,9 +1415,7 @@ export class WorkspaceManager {
     ]) {
       if (existsSync(candidate)) return { command: candidate, args: [] }
     }
-    return packageManagerFor(cwd) === "pnpm"
-      ? { command: "pnpm", args: ["exec", "vitest"] }
-      : { command: "npx", args: ["--yes", "vitest"] }
+    return { command: "pnpm", args: ["exec", "vitest"] }
   }
 
   private async runStorySnapshotAcceptance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
@@ -1447,7 +1431,7 @@ export class WorkspaceManager {
         output: [
           `Missing project devDependencies required for Logos story snapshots: ${missingDeps.join(", ")}`,
           `Install them in ${relative(inst.materializedRoot, generated.frontendDir) || "."} before initializing a workspace.`,
-          `Example: pnpm add --save-dev ${missingDeps.join(" ")}`,
+          `Example: pnpm add -D ${missingDeps.join(" ")}`,
         ].join("\n"),
       }
     }

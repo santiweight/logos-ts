@@ -25,8 +25,7 @@ if (!hasTsFiles) {
 console.log(`\nLogos Studio`)
 console.log(`  Project: ${projectRoot}\n`)
 
-const vite = resolve(STUDIO, "node_modules/.bin/vite")
-const child = spawn(vite, ["dev"], {
+const child = spawn(resolve(STUDIO, "node_modules/.bin/vite"), ["dev"], {
   cwd: STUDIO,
   env: { ...process.env, LOGOS_PROJECT: projectRoot },
   stdio: "inherit",

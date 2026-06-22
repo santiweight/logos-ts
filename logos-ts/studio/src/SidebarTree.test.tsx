@@ -305,7 +305,7 @@ describe("SidebarTree", () => {
           label: "App",
           cwd: "/tmp/app",
           command: "pnpm",
-          args: ["run", "dev"],
+          args: ["dev"],
           framework: "vite",
         }]}
         onRun={onRun}
@@ -336,7 +336,7 @@ describe("SidebarTree", () => {
           label: "App",
           cwd: "/tmp/app",
           command: "pnpm",
-          args: ["run", "dev"],
+          args: ["dev"],
           framework: "vite",
         }]}
         runStates={{

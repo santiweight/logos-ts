@@ -8,12 +8,12 @@
     "logos-studio": "./bin/logos-studio.mjs"
   },
   "scripts": {
-    "index": "tsx ../src/build-index.ts ${LOGOS_PROJECT:-../demos/hn-jobs} src/studio-index.json",
+    "index": "pnpm --dir .. exec tsx src/build-index.ts ${LOGOS_PROJECT:-demos/hn-jobs} studio/src/studio-index.json",
     "dev": "vite",
     "start": "node bin/serve.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "node -e \"console.log('Strict lint is optional. Run pnpm run lint:strict for a cleanup pass.')\"",
+    "lint": "node -e \"console.log('Strict lint is optional. Run lint:strict for a cleanup pass.')\"",
     "lint:strict": "eslint src/",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",

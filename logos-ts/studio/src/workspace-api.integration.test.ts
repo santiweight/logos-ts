@@ -11,7 +11,6 @@ const STUDIO = resolve(STUDIO_SRC, "..")
 let projectRoot: string
 let binDir: string
 let agentRuns: string
-let runtimeDir: string
 let server: ChildProcess
 let baseUrl: string
 let signalFile: string
@@ -86,8 +85,24 @@ function fakeClaudeSignals(): string {
   return signalFile && existsSync(signalFile) ? readFileSync(signalFile, "utf8") : ""
 }
 
-function removeTempDir(path: string): void {
-  rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+async function stopServer(): Promise<void> {
+  if (!server?.pid) return
+  const exited = new Promise<void>((resolve) => server.once("close", () => resolve()))
+  try { process.kill(-server.pid, "SIGTERM") } catch {}
+  server.kill()
+  await Promise.race([exited, sleep(5_000)])
+}
+
+async function removeTempDir(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+      return
+    } catch (error) {
+      if (attempt === 19) throw error
+      await sleep(100)
+    }
+  }
 }
 
 function jsonPost(path: string, body: unknown): Promise<Response> {
@@ -190,31 +205,18 @@ async function readSseEvent(res: Response): Promise<Record<string, unknown>> {
   }
 }
 
-async function readSseEventUntil(
-  res: Response,
-  predicate: (event: Record<string, unknown>) => boolean,
-): Promise<Record<string, unknown>> {
-  for (let i = 0; i < 20; i++) {
-    const event = await readSseEvent(res)
-    if (predicate(event)) return event
-  }
-  throw new Error("timed out waiting for matching SSE event")
-}
-
 describe("workspace API mode isolation", () => {
   beforeAll(async () => {
     projectRoot = createProject()
     binDir = createFakeClaude()
-    runtimeDir = mkdtempSync(join(tmpdir(), "logos-api-runtime-"))
     agentRuns = mkdtempSync(join(tmpdir(), "logos-api-agent-runs-"))
-    server = spawn("pnpm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", "0"], {
+    server = spawn("pnpm", ["dev", "--", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
       env: {
         ...process.env,
         LOGOS_PROJECT: projectRoot,
-        LOGOS_RUNTIME_DIR: runtimeDir,
         LOGOS_AGENT_RUNS_DIR: agentRuns,
         FAKE_CLAUDE_SIGNALS: signalFile,
         PATH: `${binDir}:${process.env["PATH"] ?? ""}`,
@@ -223,16 +225,12 @@ describe("workspace API mode isolation", () => {
     baseUrl = await waitForServer(server, 90_000)
   }, 120_000)
 
-  afterAll(() => {
-    if (server?.pid) {
-      try { process.kill(-server.pid, "SIGTERM") } catch {}
-    }
-    server?.kill()
-    if (projectRoot) removeTempDir(projectRoot)
-    if (binDir) removeTempDir(binDir)
-    if (runtimeDir) removeTempDir(runtimeDir)
-    if (agentRuns) removeTempDir(agentRuns)
-  })
+  afterAll(async () => {
+    await stopServer()
+    if (projectRoot) await removeTempDir(projectRoot)
+    if (binDir) await removeTempDir(binDir)
+    if (agentRuns) await removeTempDir(agentRuns)
+  }, 20_000)
 
   it("creates code workspaces by default and arch workspaces explicitly", async () => {
     const code = await createWorkspace()
@@ -345,7 +343,6 @@ describe("workspace API mode isolation", () => {
     const firstRun = fetch(`${baseUrl}/api/agent/run?workspace=${arch.id}`, { signal: controller.signal })
     const firstRes = await firstRun
     expect(firstRes.ok).toBe(true)
-    await readSseEventUntil(firstRes, (event) => event["type"] === "raw")
 
     const secondRes = await fetch(`${baseUrl}/api/agent/run?workspace=${arch.id}`)
     const secondText = await secondRes.text()
@@ -384,7 +381,7 @@ describe("workspace API mode isolation", () => {
     })
     expect(runRes.ok).toBe(true)
 
-    const firstEvent = await readSseEventUntil(runRes, (event) => event["type"] === "status")
+    const firstEvent = await readSseEvent(runRes)
     expect(firstEvent).toMatchObject({
       type: "status",
       goalId: goal.id,
@@ -398,9 +395,8 @@ describe("workspace API mode isolation", () => {
       events: { type: string; payload: string }[]
     }
     expect(sessionBody.session).toMatchObject({ goalId: goal.id, workspaceId: code.id })
-    const firstStatusEvent = sessionBody.events.find((event) => event.type === "status")
-    expect(firstStatusEvent).toBeDefined()
-    expect(JSON.parse(firstStatusEvent!.payload)).toMatchObject({
+    expect(sessionBody.events[0]).toMatchObject({ type: "status" })
+    expect(JSON.parse(sessionBody.events[0]!.payload)).toMatchObject({
       type: "status",
       goalId: goal.id,
       message: "preparing workspace instance…",

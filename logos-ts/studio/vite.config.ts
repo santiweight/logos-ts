@@ -859,7 +859,7 @@ function autoStorybook(runtime: StudioRuntime): Plugin {
 function shouldCreateStudioRuntime(command: string): boolean {
   if (command !== "serve") return false
   if (process.env.LOGOS_STORYBOOK_BASE) return false
-  if (process.env.npm_lifecycle_event === "storybook") return false
+  if (process.env.PNPM_SCRIPT_NAME === "storybook") return false
   return true
 }
 
@@ -871,6 +871,7 @@ export default defineConfig(async ({ command }) => {
     plugins: runtime
       ? [authPlugin(), workspaceAliasPlugin(runtime), portableStoriesPlugin(runtime), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), runProxyPlugin(runtime.runManager), autoStorybook(runtime)]
       : [react()],
+    define: { "process.env": "{}" },
     server: {
       // Bind a concrete address: the default "localhost" can end up IPv6-only,
       // and the page hangs whenever the browser resolves localhost to 127.0.0.1.
@@ -890,9 +891,6 @@ export default defineConfig(async ({ command }) => {
     },
     optimizeDeps: {
       exclude: ["next/link"],
-    },
-    define: {
-      "process.env": {},
     },
   }
 })

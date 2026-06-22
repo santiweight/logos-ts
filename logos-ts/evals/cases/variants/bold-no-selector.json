@@ -12,8 +12,7 @@
     "typecheck": {
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec",
-        "tsc",
+        "pnpm", "exec", "tsc",
         "--noEmit"
       ]
     },
@@ -21,8 +20,7 @@
       "oracle": "../../checks/bold-role-element.check.test.tsx",
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec",
-        "vitest",
+        "pnpm", "exec", "vitest",
         "run",
         "bold-role-element.check.test.tsx"
       ]

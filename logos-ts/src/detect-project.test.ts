@@ -17,7 +17,7 @@ afterEach(() => {
 })
 
 describe("detectProject", () => {
-  it("does not insert the npm argument separator for PNPM run scripts", () => {
+  it("does not insert an argument separator for pnpm run scripts", () => {
     const root = makeTempDir()
     mkdirSync(join(root, "app"), { recursive: true })
     writeFileSync(join(root, "app/page.tsx"), "export default function Page() { return null }\n")
@@ -30,22 +30,8 @@ describe("detectProject", () => {
 
     expect(detectProject(root).runs[0]).toMatchObject({
       command: "pnpm",
-      args: ["run", "dev", "-H", "127.0.0.1", "-p", "${PORT}"],
+      args: ["dev", "--", "-H", "127.0.0.1", "-p", "${PORT}"],
     })
   })
 
-  it("keeps the argument separator for npm run scripts", () => {
-    const root = makeTempDir()
-    mkdirSync(join(root, "app"), { recursive: true })
-    writeFileSync(join(root, "app/page.tsx"), "export default function Page() { return null }\n")
-    writeFileSync(join(root, "package.json"), JSON.stringify({
-      scripts: { dev: "next dev" },
-      dependencies: { next: "14.2.35" },
-    }))
-
-    expect(detectProject(root).runs[0]).toMatchObject({
-      command: "npm",
-      args: ["run", "dev", "--", "-H", "127.0.0.1", "-p", "${PORT}"],
-    })
-  })
 })

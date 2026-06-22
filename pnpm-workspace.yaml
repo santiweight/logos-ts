@@ -1,0 +1,18 @@
+packages:
+  - "logos-ts"
+  - "logos-ts/studio"
+  - "logos-ts/demos/hn-jobs"
+  - "investment-portfolio"
+  - "investment-portfolio/frontend"
+  - "vinyl-collection"
+  - "vinyl-collection/frontend"
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - "esbuild"
+  - "prisma"
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true

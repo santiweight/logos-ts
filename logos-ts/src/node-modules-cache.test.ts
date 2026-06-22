@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join, relative, resolve } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { NodeModulesCache, findPackageDirs } from "./node-modules-cache.js"
 import { createSessionProject } from "./session-project.js"
@@ -19,14 +19,19 @@ function makeProject(root: string, opts?: { lockfile?: boolean; seed?: string })
   mkdirSync(root, { recursive: true })
   const seed = opts?.seed ?? "default"
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: `test-${seed}`, version: "1.0.0" }))
-  if (opts?.lockfile !== false) {
-    writeFileSync(join(root, "package-lock.json"), JSON.stringify({
-      name: `test-${seed}`,
-      version: "1.0.0",
-      lockfileVersion: 3,
-      requires: true,
-      packages: { "": { name: `test-${seed}`, version: "1.0.0" } },
-    }))
+  if (opts?.lockfile === true) {
+    writeFileSync(join(root, "pnpm-lock.yaml"), [
+      "lockfileVersion: '9.0'",
+      "",
+      "settings:",
+      "  autoInstallPeers: true",
+      "  excludeLinksFromLockfile: false",
+      "",
+      "importers:",
+      "",
+      "  .: {}",
+      "",
+    ].join("\n"))
   }
   return root
 }
@@ -59,10 +64,9 @@ function makeProjectWithDep(root: string): string {
     version: "1.0.0",
     dependencies: { "is-odd": "3.0.1" },
   }))
-  execFileSync("npm", ["install"], { cwd: root, stdio: "ignore" })
-  const lockContent = readFileSync(join(root, "package-lock.json"), "utf8")
+  execFileSync("pnpm", ["install"], { cwd: root, stdio: "ignore" })
   rmSync(join(root, "node_modules"), { recursive: true, force: true })
-  writeFileSync(join(root, "package-lock.json"), lockContent)
+  rmSync(join(root, "pnpm-lock.yaml"), { force: true })
   return root
 }
 
@@ -88,10 +92,9 @@ function makeProjectWithCliDep(root: string, packageRoot: string): string {
     version: "1.0.0",
     dependencies: { "asset-cli": `file:${packageRoot}` },
   }))
-  execFileSync("npm", ["install"], { cwd: root, stdio: "ignore" })
-  const lockContent = readFileSync(join(root, "package-lock.json"), "utf8")
+  execFileSync("pnpm", ["install"], { cwd: root, stdio: "ignore" })
   rmSync(join(root, "node_modules"), { recursive: true, force: true })
-  writeFileSync(join(root, "package-lock.json"), lockContent)
+  rmSync(join(root, "pnpm-lock.yaml"), { force: true })
   return root
 }
 
@@ -112,11 +115,15 @@ function makePnpmProjectWithCliDep(root: string, packageRoot: string): string {
   ].join("\n"))
 
   mkdirSync(root, { recursive: true })
+  const packageRel = relative(root, packageRoot).split("\\").join("/")
+  const packageSpec = packageRel && packageRel !== ".." && !packageRel.startsWith("../")
+    ? `file:./${packageRel}`
+    : `file:${packageRoot}`
   writeFileSync(join(root, "package.json"), JSON.stringify({
     name: "pnpm-test-with-cli-dep",
     version: "1.0.0",
     packageManager: "pnpm@11.8.0",
-    dependencies: { "asset-cli": `file:${packageRoot}` },
+    dependencies: { "asset-cli": packageSpec },
   }))
   execFileSync("pnpm", ["install"], { cwd: root, stdio: "ignore" })
   const lockContent = readFileSync(join(root, "pnpm-lock.yaml"), "utf8")
@@ -172,7 +179,7 @@ describe("NodeModulesCache", () => {
     expect(result.cacheKey).toBeTruthy()
   })
 
-  it("produces different cache keys for different lockfiles", () => {
+  it("produces different cache keys for different manifests", () => {
     const tmp = makeTempDir()
     const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
 
@@ -182,7 +189,7 @@ describe("NodeModulesCache", () => {
     expect(r1.cacheKey).not.toBe(r2.cacheKey)
   })
 
-  it("falls back to package.json hash when no lockfile exists", () => {
+  it("uses package.json hash when no lockfile exists", () => {
     const tmp = makeTempDir()
     const project = makeProject(join(tmp, "project"), { lockfile: false })
     const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
@@ -206,9 +213,12 @@ describe("NodeModulesCache", () => {
 
     expect(result.hit).toBe(false)
     expect(existsSync(result.nodeModulesPath)).toBe(true)
-    expect(existsSync(join(nested, "package-lock.json"))).toBe(false)
     expect(result.nodeModulesPath).toBe(join(nested, "node_modules"))
     expect(result.cacheKey).toBe("")
+
+    const hit = cache.ensureFor(nested)
+    expect(hit.hit).toBe(true)
+    expect(hit.nodeModulesPath).toBe(result.nodeModulesPath)
   })
 
   it("evicts oldest entries when cache exceeds max", () => {
@@ -236,7 +246,7 @@ describe("NodeModulesCache", () => {
     expect(existsSync(cacheDir)).toBe(false)
   })
 
-  it("invalidates cache when lockfile content changes", () => {
+  it("invalidates cache when package metadata changes", () => {
     const tmp = makeTempDir()
     const project = join(tmp, "project")
     const cacheDir = join(tmp, "cache")
@@ -245,13 +255,6 @@ describe("NodeModulesCache", () => {
     makeProject(project, { seed: "v1" })
     const r1 = cache.ensureFor(project)
 
-    writeFileSync(join(project, "package-lock.json"), JSON.stringify({
-      name: "test-v2",
-      version: "2.0.0",
-      lockfileVersion: 3,
-      requires: true,
-      packages: { "": { name: "test-v2", version: "2.0.0" } },
-    }))
     writeFileSync(join(project, "package.json"), JSON.stringify({ name: "test-v2", version: "2.0.0" }))
     const r2 = cache.ensureFor(project)
 
@@ -297,7 +300,8 @@ describe("NodeModulesCache", () => {
 
   it("installs PNPM projects in place instead of linking shared cached node_modules", () => {
     const tmp = makeTempDir()
-    const project = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const projectRoot = join(tmp, "project")
+    const project = makePnpmProjectWithCliDep(projectRoot, join(projectRoot, ".fixtures", "asset-cli"))
     const cacheDir = join(tmp, "cache")
     const cache = new NodeModulesCache({ cacheDir })
 
@@ -315,7 +319,8 @@ describe("NodeModulesCache", () => {
 
   it("replaces stale node_modules symlinks when installing PNPM projects in place", () => {
     const tmp = makeTempDir()
-    const project = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const projectRoot = join(tmp, "project")
+    const project = makePnpmProjectWithCliDep(projectRoot, join(projectRoot, ".fixtures", "asset-cli"))
     const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
     const stale = join(tmp, "stale-node-modules")
     mkdirSync(stale, { recursive: true })
@@ -330,7 +335,8 @@ describe("NodeModulesCache", () => {
 
   it("recovers from self-referential PNPM node_modules symlinks", () => {
     const tmp = makeTempDir()
-    const project = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const projectRoot = join(tmp, "project")
+    const project = makePnpmProjectWithCliDep(projectRoot, join(projectRoot, ".fixtures", "asset-cli"))
     const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
     const target = join(project, "node_modules")
     symlinkSync(target, target)
@@ -345,8 +351,10 @@ describe("NodeModulesCache", () => {
 
   it("replaces valid-looking PNPM node_modules symlinks with workspace-local installs", () => {
     const tmp = makeTempDir()
-    const source = makePnpmProjectWithCliDep(join(tmp, "source"), join(tmp, "asset-cli"))
-    const project = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const sourceRoot = join(tmp, "source")
+    const projectRoot = join(tmp, "project")
+    const source = makePnpmProjectWithCliDep(sourceRoot, join(sourceRoot, ".fixtures", "asset-cli"))
+    const project = makePnpmProjectWithCliDep(projectRoot, join(projectRoot, ".fixtures", "asset-cli"))
     execFileSync("pnpm", ["install", "--frozen-lockfile"], { cwd: source, stdio: "ignore" })
     symlinkSync(join(source, "node_modules"), join(project, "node_modules"))
     const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
@@ -541,7 +549,8 @@ describe("workspace code service integration", () => {
 
   it("keeps PNPM workspace instance node_modules local when dependency ensure runs again", () => {
     const tmp = makeTempDir()
-    const projectRoot = makePnpmProjectWithCliDep(join(tmp, "project"), join(tmp, "asset-cli"))
+    const sourceRoot = join(tmp, "project")
+    const projectRoot = makePnpmProjectWithCliDep(sourceRoot, join(sourceRoot, ".fixtures", "asset-cli"))
     const runsDir = join(tmp, "runs")
     const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [] })
 

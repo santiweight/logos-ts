@@ -14,8 +14,7 @@
     "typecheck": {
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec",
-        "tsc",
+        "pnpm", "exec", "tsc",
         "--noEmit"
       ]
     },
@@ -26,8 +25,7 @@
       ],
       "cwd": "frontend",
       "cmd": [
-        "pnpm", "exec",
-        "vitest",
+        "pnpm", "exec", "vitest",
         "run",
         "posted-date-column.check.test.tsx"
       ]

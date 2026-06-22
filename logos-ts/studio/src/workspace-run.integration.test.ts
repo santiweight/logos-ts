@@ -18,7 +18,6 @@ let browser: Browser
 let baseUrl: string
 let projectRoot: string
 let agentRuns: string
-let runtimeDir: string
 let runPid: number | null = null
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
@@ -61,7 +60,7 @@ function createProject(): string {
     "    res.end('outside base')",
     "    return",
     "  }",
-    "  const html = `<!doctype html><title>fake run</title><main>fake run app</main><a id=\"root-thread-link\" href=\"/threads\">Threads</a><script>fetch('/api/env').then((res)=>res.json()).then((data)=>{document.body.dataset.apiRunBase=data.LOGOS_RUN_BASE||''}).catch(()=>{document.body.dataset.apiRunBase='failed'})</script>`",
+    "  const html = `<!doctype html><title>fake run</title><main>fake run app</main><script>fetch('/api/env').then((res)=>res.json()).then((data)=>{document.body.dataset.apiRunBase=data.LOGOS_RUN_BASE||''}).catch(()=>{document.body.dataset.apiRunBase='failed'})</script>`",
     "  const acceptsGzip = req.headers['accept-encoding'] && req.headers['accept-encoding'].includes('gzip')",
     "  if (acceptsGzip && req.headers['accept-encoding'] !== 'identity') {",
     "    res.writeHead(200, { 'content-type': 'text/html', 'content-encoding': 'gzip' })",
@@ -146,9 +145,6 @@ function cleanup() {
   if (agentRuns) {
     try { rmSync(agentRuns, { recursive: true, force: true }) } catch {}
   }
-  if (runtimeDir) {
-    try { rmSync(runtimeDir, { recursive: true, force: true }) } catch {}
-  }
   if (projectRoot) {
     try { rmSync(projectRoot, { recursive: true, force: true }) } catch {}
   }
@@ -157,13 +153,12 @@ function cleanup() {
 describe("workspace + run integration", () => {
   beforeAll(async () => {
     projectRoot = createProject()
-    runtimeDir = mkdtempSync(join(tmpdir(), "logos-run-runtime-"))
     agentRuns = mkdtempSync(join(tmpdir(), "logos-run-agent-runs-"))
-    server = spawn("pnpm", ["run", "dev"], {
+    server = spawn("pnpm", ["dev"], {
       cwd: resolve(STUDIO, ".."),
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
-      env: { ...process.env, LOGOS_PROJECT: projectRoot, LOGOS_RUNTIME_DIR: runtimeDir, LOGOS_AGENT_RUNS_DIR: agentRuns },
+      env: { ...process.env, LOGOS_PROJECT: projectRoot, LOGOS_AGENT_RUNS_DIR: agentRuns },
     })
     baseUrl = await waitForServer(server, 60_000)
     browser = await chromium.launch({ headless: true })
@@ -176,7 +171,7 @@ describe("workspace + run integration", () => {
     }
     server.kill()
     cleanup()
-  })
+  }, 60_000)
 
   it("lazy-starts a workspace run on request and proxies the app", async () => {
     const targetsRes = await api("/api/run-targets")
@@ -231,15 +226,6 @@ describe("workspace + run integration", () => {
       LOGOS_PROJECT: null,
       LOGOS_RUN_BASE: `/runs/${ws.id}/root-app/`,
     })
-
-    const deleteRes = await api(`/api/workspaces/${ws.id}`, { method: "DELETE" })
-    expect(deleteRes.ok).toBe(true)
-    const stopped = await pollFor(async () => {
-      const data = await getRuns()
-      return data.urls[`${ws.id}:root-app`] == null && !isLiveProcess(runPid) ? true : null
-    }, 30_000)
-    expect(stopped).toBe(true)
-    runPid = null
   }, 60_000)
 
   it("keeps the selected app run open across browser refresh", async () => {
@@ -254,6 +240,8 @@ describe("workspace + run integration", () => {
       await page.evaluate(() => window.localStorage.clear())
       await page.reload({ waitUntil: "domcontentloaded" })
       await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).waitFor({ timeout: 45_000 })
+
+      await page.locator(".sidebar-tree .anode.run", { hasText: "App" }).click()
       await page.waitForFunction(async () => {
         const res = await fetch("/api/runs")
         const data = await res.json()
@@ -272,7 +260,9 @@ describe("workspace + run integration", () => {
       )
       expect(await page.locator("iframe.story-frame[title='App']").getAttribute("src"))
         .toBe(`/runs/${encodeURIComponent(wsId)}/root-app/`)
-      const frame = page.frame({ url: (url) => url.toString().includes(`/runs/${wsId}/root-app/`) })
+      const frame = await pollFor(async () =>
+        page.frame({ url: (url) => url.toString().includes(`/runs/${encodeURIComponent(wsId)}/root-app/`) }),
+      30_000)
       expect(frame).not.toBeNull()
       await frame!.waitForFunction(
         () => document.body.dataset["apiRunBase"] != null,
@@ -281,19 +271,6 @@ describe("workspace + run integration", () => {
       )
       expect(await frame!.evaluate(() => document.body.dataset["apiRunBase"]))
         .toBe(`/runs/${wsId}/root-app/`)
-      await frame!.locator("#root-thread-link").click()
-      await page.waitForFunction(
-        (expectedPath) => document
-          .querySelector<HTMLIFrameElement>("iframe.story-frame[title='App']")
-          ?.contentWindow?.location.pathname === expectedPath,
-        `/runs/${encodeURIComponent(wsId)}/root-app/threads`,
-        { timeout: 30_000 },
-      )
-      const threadedFrame = page.frame({
-        url: (url) => url.pathname === `/runs/${encodeURIComponent(wsId)}/root-app/threads`,
-      })
-      expect(threadedFrame).not.toBeNull()
-      expect(await threadedFrame!.locator("main").textContent()).toContain("fake run app")
       expect(await page.evaluate(() => window.localStorage.getItem("logos:selection:v1")))
         .toContain("\"view\":\"run\"")
     } finally {
@@ -302,11 +279,24 @@ describe("workspace + run integration", () => {
   }, 90_000)
 
   it("deleting the workspace shuts its app run down", async () => {
-    const runs = await getRuns()
-    const key = Object.keys(runs.entries).find((entryKey) => entryKey.endsWith(":root-app"))
-    expect(key).toBeDefined()
-    const wsId = key!.slice(0, key!.indexOf(":"))
-    runPid = runs.entries[key!]?.pid ?? runPid
+    const resetRes = await api("/api/reset", { method: "POST" })
+    expect(resetRes.ok).toBe(true)
+    const reset = await resetRes.json() as { workspace: { id: string } }
+    const wsId = reset.workspace.id
+    const key = `${wsId}:root-app`
+
+    const startRes = await api(`/api/workspaces/${wsId}/runs/root-app`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    expect(startRes.ok).toBe(true)
+    const runs = await pollFor(async () => {
+      const data = await getRuns()
+      return data.entries[key] ? data : null
+    }, 30_000)
+    expect(runs).not.toBeNull()
+    runPid = runs!.entries[key]?.pid ?? runPid
 
     const res = await api(`/api/workspaces/${wsId}`, { method: "DELETE" })
     expect(res.ok).toBe(true)

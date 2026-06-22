@@ -32,7 +32,6 @@ jobs:
     timeout-minutes: 180
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      PNPM_HOME: /home/runner/.local/share/pnpm
     steps:
       - uses: actions/checkout@v5
 
@@ -58,27 +57,18 @@ jobs:
         if: github.event_name != 'schedule'
         run: echo "RUN_EVALS=true" >> "$GITHUB_ENV"
 
-      - name: Enable PNPM
-        if: env.RUN_EVALS == 'true'
-        run: |
-          corepack enable pnpm
-          corepack prepare pnpm@11.8.0 --activate
-          echo "$PNPM_HOME" >> "$GITHUB_PATH"
-
       - uses: actions/setup-node@v6
         if: env.RUN_EVALS == 'true'
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: |
-            logos-ts/pnpm-lock.yaml
-            logos-ts/demos/hn-jobs/pnpm-lock.yaml
+
+      - name: Enable pnpm
+        if: env.RUN_EVALS == 'true'
+        run: corepack enable
 
       - name: Install dependencies
         if: env.RUN_EVALS == 'true'
-        run: |
-          pnpm --dir logos-ts install --frozen-lockfile
-          pnpm --dir logos-ts/demos/hn-jobs install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Skip when Anthropic credentials are missing
         if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY == ''
@@ -88,7 +78,12 @@ jobs:
 
       - name: Install Claude Code
         if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY != ''
-        run: pnpm add --global @anthropic-ai/claude-code
+        env:
+          PNPM_HOME: ~/.local/share/pnpm
+        run: |
+          mkdir -p "$PNPM_HOME"
+          echo "$PNPM_HOME" >> "$GITHUB_PATH"
+          pnpm add --global @anthropic-ai/claude-code
 
       - name: Run evals
         if: env.RUN_EVALS == 'true' && env.ANTHROPIC_API_KEY != ''
@@ -110,7 +105,7 @@ jobs:
           if [ -n "$EVAL_REPEAT" ]; then
             args+=("--repeat" "$EVAL_REPEAT")
           fi
-          pnpm run evals -- "${args[@]}"
+          pnpm evals -- "${args[@]}"
 
       - name: Upload eval artifacts
         if: always()
