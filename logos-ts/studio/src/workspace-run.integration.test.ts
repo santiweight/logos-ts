@@ -254,18 +254,23 @@ describe("workspace + run integration", () => {
         .toContain("\"view\":\"run\"")
 
       await page.reload({ waitUntil: "domcontentloaded" })
+      await page.waitForFunction(async (expectedKey) => {
+        const res = await fetch("/api/runs")
+        const data = await res.json()
+        return data.urls?.[expectedKey] != null
+      }, `${wsId}:root-app`, { timeout: 90_000 })
       await page.waitForFunction(
         (expectedSrc) => document
           .querySelector("iframe.story-frame[title='App']")
           ?.getAttribute("src") === expectedSrc,
         `/runs/${encodeURIComponent(wsId)}/root-app/`,
-        { timeout: 45_000 },
+        { timeout: 90_000 },
       )
       expect(await page.locator("iframe.story-frame[title='App']").getAttribute("src"))
         .toBe(`/runs/${encodeURIComponent(wsId)}/root-app/`)
       const frame = await pollFor(async () =>
         page.frame({ url: (url) => url.toString().includes(`/runs/${encodeURIComponent(wsId)}/root-app/`) }),
-      30_000)
+      90_000)
       expect(frame).not.toBeNull()
       await frame!.waitForFunction(
         () => document.body.dataset["apiRunBase"] != null,

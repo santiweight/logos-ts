@@ -46,6 +46,27 @@ interface WorkspacePolicyEvent {
   details?: Record<string, unknown>
 }
 
+interface ArchWorkspaceEnvelope {
+  workspace: { id: string; kind: "arch"; activeSnapshotId: string }
+}
+
+interface ArchTreeResponse {
+  workspaceId: string
+  nodes: { id: string; kind: string; label: string; path: string; target?: string }[]
+}
+
+interface ArchContentResponse {
+  nodeId: string
+  title: string
+  sections: { kind: string; title: string }[]
+}
+
+interface ArchEvaluationResponse {
+  workspaceId: string
+  checks: { id: string; kind: string; status: string }[]
+  previews: { id: string; kind: string; label: string }[]
+}
+
 function createProject(): string {
   const root = mkdtempSync(join(tmpdir(), "logos-api-project-"))
   mkdirSync(join(root, "src"), { recursive: true })
@@ -181,6 +202,13 @@ async function readPolicyEvents(workspaceId?: string): Promise<WorkspacePolicyEv
   expect(res.ok).toBe(true)
   const body = await res.json() as { events: WorkspacePolicyEvent[] }
   return body.events
+}
+
+async function createArchWorkspaceViaArchApi(): Promise<ArchWorkspaceEnvelope["workspace"]> {
+  const res = await jsonPost("/api/arch/workspaces", {})
+  expect(res.ok).toBe(true)
+  const body = await res.json() as ArchWorkspaceEnvelope
+  return body.workspace
 }
 
 async function readSseEvent(res: Response): Promise<Record<string, unknown>> {
@@ -404,5 +432,41 @@ describe("workspace API mode isolation", () => {
 
     await runRes.body?.cancel()
     controller.abort()
+  }, TEST_TIMEOUT)
+
+  it("exposes an Arch product API without code payloads", async () => {
+    const arch = await createArchWorkspaceViaArchApi()
+    await waitForWorkspaceReady(arch.id)
+
+    const treeRes = await api(`/api/arch/workspaces/${arch.id}/tree`)
+    expect(treeRes.ok).toBe(true)
+    const tree = await treeRes.json() as ArchTreeResponse
+    expect(tree.workspaceId).toBe(arch.id)
+    const answerNode = tree.nodes.find((node) => node.target === "fn:answer")
+    expect(answerNode).toBeDefined()
+    expect(JSON.stringify(tree)).not.toContain("return 42")
+
+    const contentRes = await api(`/api/arch/workspaces/${arch.id}/content?nodeId=${encodeURIComponent(answerNode!.id)}`)
+    expect(contentRes.ok).toBe(true)
+    const content = await contentRes.json() as ArchContentResponse
+    expect(content.nodeId).toBe(answerNode!.id)
+    expect(content.sections.some((section) => section.kind === "contract")).toBe(true)
+    expect(JSON.stringify(content)).not.toContain("return 42")
+
+    const evaluationRes = await api(`/api/arch/workspaces/${arch.id}/evaluation`)
+    expect(evaluationRes.ok).toBe(true)
+    const evaluation = await evaluationRes.json() as ArchEvaluationResponse
+    expect(evaluation.workspaceId).toBe(arch.id)
+    expect(evaluation.checks.some((check) => check.kind === "test")).toBe(true)
+
+    const goalRes = await jsonPost(`/api/arch/workspaces/${arch.id}/goals`, {
+      targetNodeId: answerNode!.id,
+      label: "answer",
+      text: "Make the answer configurable",
+    })
+    expect(goalRes.ok).toBe(true)
+    const goal = await goalRes.json() as { goalId: string; workspaceId: string; goal: Goal }
+    expect(goal.workspaceId).toBe(arch.id)
+    expect(goal.goal.mode).toBe("arch")
   }, TEST_TIMEOUT)
 })

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import { dirname, resolve, join, relative, sep } from "node:path"
 import type { StudioIndex } from "../src/build-index"
 import { authPlugin } from "./server/auth"
+import { createArchApi } from "./server/arch-api"
 import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
 import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 import { buildGoalNamePrompt, cleanGoalName, fallbackGoalName, type GoalNameInput } from "../src/goal-naming"
@@ -318,6 +319,17 @@ function studioApi(runtime: StudioRuntime): Plugin {
         res.setHeader("content-type", "application/json")
         res.end(JSON.stringify(testState))
       })
+
+      server.middlewares.use("/api/arch", createArchApi({
+        projectIndex: () => indexReady,
+        wsMgr,
+        sbManager,
+        runManager,
+        runTargets: caps.runs,
+        testState,
+        readBody,
+        generateGoalName: (input) => generateGoalName(input, PROJECT_ROOT),
+      }))
 
       server.middlewares.use("/api/graph", (_req, res) => {
         const json = execFileSync(tsx, [resolve(LOGOS_TS, "src/build-graph.ts"), PROJECT_ROOT], {

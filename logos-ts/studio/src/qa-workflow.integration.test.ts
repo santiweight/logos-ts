@@ -588,7 +588,7 @@ describe("Studio QA workflow", () => {
         },
       })
 
-      await page.getByRole("button", { name: /Changes 2/ }).click()
+      await page.getByRole("tab", { name: /Changes 2/ }).click()
       await page.getByRole("button", { name: "Snapshot diff" }).click()
       const reviewText = await page.locator(".review-panel").innerText()
       expect(reviewText).toContain("JobCard / Default")
