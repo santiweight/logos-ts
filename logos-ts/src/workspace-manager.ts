@@ -23,6 +23,7 @@ import type { StorybookManager } from "./storybook-manager.js"
 import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchImplementationPrompt, buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
+import { buildClaudePrintArgs } from "./claude-cli.js"
 import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
 import type {
   StoredGoalLifecycle,
@@ -1278,7 +1279,12 @@ export class WorkspaceManager {
 
     const child = this.spawnAgent(
       "claude",
-      ["-p", prompt, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
+      buildClaudePrintArgs({
+        promptArg: prompt,
+        outputFormat: "stream-json",
+        verbose: true,
+        mcpConfigPath,
+      }),
       {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
@@ -1816,7 +1822,13 @@ export class WorkspaceManager {
 
     const child = this.spawnAgent(
       "claude",
-      ["-p", replyText, "-r", sessionId, "--model", "sonnet", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--mcp-config", mcpConfigPath],
+      buildClaudePrintArgs({
+        promptArg: replyText,
+        resumeSessionId: sessionId,
+        outputFormat: "stream-json",
+        verbose: true,
+        mcpConfigPath,
+      }),
       {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],

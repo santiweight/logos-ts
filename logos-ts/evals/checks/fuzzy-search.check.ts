@@ -90,5 +90,5 @@ test("query-aware directory sorting ranks stronger fuzzy matches first", () => {
 
 test("DirectoryPage wires the search query into relevance sorting", () => {
   const page = readFileSync("app/page.tsx", "utf8")
-  assert.match(page, /sortJobsForDirectory\([\s\S]*,\s*sort\s*,\s*(?:q|filters\.q)\s*\)/)
+  assert.match(page, /sortJobsForDirectory\([\s\S]*,\s*sort\s*,\s*(?:q|filters\.q)(?:\s*\|\|\s*undefined)?\s*,?\s*\)/)
 })

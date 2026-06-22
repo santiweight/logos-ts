@@ -103,8 +103,8 @@ test("fuzzy scoring uses positive integer rank for near matches", () => {
 
 test("fuzzy scoring ranks stronger matches before weaker matches", () => {
   const strong = score(job({ company: "Acme", role: "Backend Engineer", rawText: "Backend Engineer TypeScript" }), "backend enginer");
-  const weak = score(job({ company: "Almost", role: "Engineering Manager", rawText: "Engineering leadership" }), "backend enginer");
-  const miss = score(job({ company: "Unrelated Systems", role: "Designer", rawText: "Product design role" }), "backend enginer");
+  const weak = score(job({ company: "Almost", role: "Engineering Manager", rawText: "Engineering leadership", roleFamilies: "[]" }), "backend enginer");
+  const miss = score(job({ company: "Unrelated Systems", role: "Designer", rawText: "Product design role", tags: "[]", roleFamilies: "[]", seniority: null }), "backend enginer");
 
   assert.equal(strong > weak, true);
   assert.equal(weak >= miss, true);

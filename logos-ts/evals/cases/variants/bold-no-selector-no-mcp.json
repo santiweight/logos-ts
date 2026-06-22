@@ -2,27 +2,26 @@
   "name": "bold-no-selector-no-mcp",
   "codebase": "../../../demos/hn-jobs",
   "comment": {
-    "target": "component:JobRow",
+    "target": "file:app/page.tsx",
     "text": "Make this text bold",
-    "component": "JobRow",
-    "label": "div \u00b7 Senior Engineer"
+    "label": "role text"
   },
   "agent": "implementation",
   "checks": {
     "typecheck": {
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
         "pnpm", "exec", "tsc",
         "--noEmit"
       ]
     },
     "behavior": {
-      "oracle": "../../checks/bold-role-element.check.test.tsx",
-      "cwd": "frontend",
+      "oracle": "../../checks/bold-role-element.check.test.ts",
+      "cwd": "",
       "cmd": [
-        "pnpm", "exec", "vitest",
-        "run",
-        "bold-role-element.check.test.tsx"
+        "pnpm", "exec", "tsx",
+        "--test",
+        "bold-role-element.check.test.ts"
       ]
     }
   },

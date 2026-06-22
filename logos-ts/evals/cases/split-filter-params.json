@@ -2,22 +2,22 @@
   "name": "split-filter-params",
   "codebase": "../../demos/hn-jobs",
   "comment": {
-    "target": "file:backend/job-filters.ts",
+    "target": "file:lib/job-filters.ts",
     "label": "job-filters.ts",
-    "text": "Split this module: move the URL-param parsing concern (parseJobFilters and its private sort/apply validators) into a new backend/filter-params.ts. Keep the job predicates and sorting (hasPublicListingSignal, applyBucketsForJob, jobMatchesFilters, sortJobsForDirectory) in backend/job-filters.ts."
+    "text": "Split this module: move the URL-param parsing concern (parseJobFilters, its SearchParamObject/SearchParamSource types, and its private sort/apply validators) into a new lib/filter-params.ts. Keep the job predicates and sorting (hasPublicListingSignal, applyBucketsForJob, jobMatchesFilters, sortJobsForDirectory) in lib/job-filters.ts. Preserve the public parseJobFilters import path for existing callers by re-exporting it from lib/job-filters.ts."
   },
   "agent": "architecture",
   "checks": {
     "structure": {
+      "oracle": "../checks/split-filter-params.check.test.ts",
       "cwd": "",
       "cmd": [
-        "node",
-        "-e",
-        "const fs=require('fs');const nf='backend/filter-params.ts';if(!fs.existsSync(nf)){console.error('missing '+nf);process.exit(1)};const s=fs.readFileSync(nf,'utf8');if(!/parseJobFilters/.test(s)){console.error('parseJobFilters not in '+nf);process.exit(1)};const old=fs.readFileSync('backend/job-filters.ts','utf8');if(/function parseJobFilters/.test(old)){console.error('parseJobFilters still in job-filters.ts');process.exit(1)};for(const fn of ['jobMatchesFilters','sortJobsForDirectory']){if(!new RegExp('function '+fn).test(old)){console.error(fn+' missing from job-filters.ts');process.exit(1)}}"
+        "pnpm", "exec", "tsx",
+        "--test",
+        "split-filter-params.check.test.ts"
       ]
     },
-    "typecheck-backend": { "cwd": "frontend", "cmd": ["pnpm", "exec", "tsc", "-p", "../tsconfig.backend.json", "--noEmit"] },
-    "typecheck-frontend": { "cwd": "frontend", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
-    "behavior": { "cwd": "", "cmd": ["node", "scripts/healthcheck.mjs"] }
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": { "cwd": "", "cmd": ["pnpm", "test"] }
   }
 }

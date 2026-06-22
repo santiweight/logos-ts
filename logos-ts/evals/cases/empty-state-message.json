@@ -15,7 +15,7 @@
   "repeat": 3,
   "checks": {
     "typecheck": {
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
         "pnpm", "exec", "tsc",
         "--noEmit"
@@ -26,9 +26,9 @@
         "../checks/empty-state-message.check.test.tsx",
         "../checks/source-text.ts"
       ],
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
-        "pnpm", "exec", "tsx",
+        "node", "--import", "tsx",
         "--test",
         "empty-state-message.check.test.tsx"
       ]

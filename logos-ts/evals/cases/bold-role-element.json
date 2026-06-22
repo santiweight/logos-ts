@@ -14,7 +14,7 @@
   "agent": "implementation",
   "checks": {
     "typecheck": {
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
         "pnpm", "exec", "tsc",
         "--noEmit"
@@ -25,9 +25,9 @@
         "../checks/bold-role-element.check.test.tsx",
         "../checks/source-text.ts"
       ],
-      "cwd": "frontend",
+      "cwd": "",
       "cmd": [
-        "pnpm", "exec", "tsx",
+        "node", "--import", "tsx",
         "--test",
         "bold-role-element.check.test.tsx"
       ]
