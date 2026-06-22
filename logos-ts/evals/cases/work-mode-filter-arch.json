@@ -1,0 +1,21 @@
+{
+  "name": "work-mode-filter-arch",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Add a work mode filter separate from the existing Remote flag. Parse workMode from URL params, accepting remote, hybrid, and onsite only. Match remote against job.remote, hybrid against job.hybrid, and onsite against job.onsite. Invalid values should be ignored. Keep the existing remote=1 flag working, preserve workMode when search/sort/other filters change, and expose a Work mode filter in DirectoryPage."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/work-mode-filter.check.test.ts",
+      "cwd": "",
+      "cmd": ["pnpm", "exec", "tsx", "--test", "work-mode-filter.check.test.ts"]
+    },
+    "job-filter-regression": { "cwd": "", "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"] }
+  }
+}

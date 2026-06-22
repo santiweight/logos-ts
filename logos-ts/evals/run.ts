@@ -2,6 +2,7 @@
 // have an agent address the case comment, then run hidden checks.
 //
 //   pnpm exec tsx evals/run.ts
+//   pnpm exec tsx evals/run.ts --quick
 //   pnpm exec tsx evals/run.ts rename-company-header
 //   pnpm exec tsx evals/run.ts --tier deterministic --repeat 5
 //
@@ -67,12 +68,19 @@ interface Options {
   tier?: "deterministic" | "capability"
   repeat?: number
   concurrency: number
+  quick: boolean
+  dryRun: boolean
 }
 
 const logosTsRoot = resolve(dirname(import.meta.url.replace("file://", "")), "..")
 const evalsRoot = resolve(logosTsRoot, "evals")
 const casesRoot = resolve(evalsRoot, "cases")
 const tsx = resolve(logosTsRoot, "node_modules/.bin/tsx")
+const quickCaseNames = [
+  "role-sort-arch",
+  "work-mode-filter-arch",
+  "clickable-table-sort-headers-arch",
+]
 
 function buildContext(work: string, targets: string[]): string {
   try {
@@ -303,7 +311,16 @@ function runCase(casePath: string, trial: number): TrialResult {
     }
     try {
       copyOracles(caseDir, check, checkCwd)
-      execFileSync(cmd, args, { cwd: checkCwd, encoding: "utf8" })
+      execFileSync(cmd, args, {
+        cwd: checkCwd,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CI: process.env["CI"] ?? "true",
+          npm_config_verify_deps_before_run: "false",
+          PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false",
+        },
+      })
       results[name] = true
     } catch (e: any) {
       console.error(`[${c.name} t${trial}] check failed (${name}):`, e.message)
@@ -321,6 +338,8 @@ function parseArgs(argv: string[]): Options {
   let tier: Options["tier"]
   let repeat: number | undefined
   let concurrency = 1
+  let quick = false
+  let dryRun = false
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
@@ -334,6 +353,10 @@ function parseArgs(argv: string[]): Options {
     } else if (arg === "--concurrency") {
       concurrency = Number(argv[++i])
       if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error("--concurrency must be a positive integer")
+    } else if (arg === "--quick") {
+      quick = true
+    } else if (arg === "--dry-run") {
+      dryRun = true
     } else if (arg?.startsWith("--")) {
       throw new Error(`Unknown option: ${arg}`)
     } else if (arg) {
@@ -344,6 +367,8 @@ function parseArgs(argv: string[]): Options {
   return {
     selectors,
     concurrency,
+    quick,
+    dryRun,
     ...(tier ? { tier } : {}),
     ...(repeat ? { repeat } : {}),
   }
@@ -368,9 +393,13 @@ function selectCases(options: Options): string[] {
     byName.set(c.name, path)
   }
 
-  const selected = options.selectors.length === 0
+  const selectors = options.quick && options.selectors.length === 0
+    ? quickCaseNames
+    : options.selectors
+
+  const selected = selectors.length === 0
     ? topLevel
-    : options.selectors.map((selector) => {
+    : selectors.map((selector) => {
       const direct = resolve(logosTsRoot, selector)
       if (existsSync(direct)) return direct
       const byCaseName = byName.get(selector)
@@ -412,8 +441,18 @@ async function main(): Promise<void> {
   const trials: Array<{ casePath: string; trial: number }> = []
   for (const casePath of casePaths) {
     const c: EvalCase = JSON.parse(readFileSync(casePath, "utf8"))
-    const repeat = options.repeat ?? c.repeat ?? 1
+    const repeat = options.repeat ?? (options.quick ? 1 : c.repeat ?? 1)
     for (let trial = 1; trial <= repeat; trial += 1) trials.push({ casePath, trial })
+  }
+
+  if (options.dryRun) {
+    console.log(`Selected ${casePaths.length} case(s), ${trials.length} trial(s):`)
+    for (const casePath of casePaths) {
+      const c: EvalCase = JSON.parse(readFileSync(casePath, "utf8"))
+      const trialCount = trials.filter((trial) => trial.casePath === casePath).length
+      console.log(`- ${c.name} (${c.tier ?? "capability"}, ${trialCount} trial${trialCount === 1 ? "" : "s"})`)
+    }
+    return
   }
 
   const startedAt = new Date().toISOString()

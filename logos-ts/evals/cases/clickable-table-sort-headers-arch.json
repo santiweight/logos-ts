@@ -1,0 +1,21 @@
+{
+  "name": "clickable-table-sort-headers-arch",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Make the directory table headers clickable sort controls. Implement links in the table header cells for Company -> sort=company, Role -> sort=role, Salary -> sort=salary-desc, and Posted -> sort=newest. Add a Posted column if needed. The header links must preserve q and all active filters through the existing URL-state flow, and the active sort should be exposed accessibly."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/clickable-table-sort-headers.check.test.ts",
+      "cwd": "",
+      "cmd": ["pnpm", "exec", "tsx", "--test", "clickable-table-sort-headers.check.test.ts"]
+    },
+    "job-filter-regression": { "cwd": "", "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"] }
+  }
+}

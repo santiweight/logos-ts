@@ -1,0 +1,21 @@
+{
+  "name": "employment-type-filter-arch",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Add an employment type filter. Parse type from URL params into filters.type, accepting only full-time, part-time, contract, and internship. Match jobs by their employmentType field exactly, ignore invalid type values, preserve type when search/sort/other filters change, and expose a Type filter in DirectoryPage with clear labels for the accepted values."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/employment-type-filter.check.test.ts",
+      "cwd": "",
+      "cmd": ["pnpm", "exec", "tsx", "--test", "employment-type-filter.check.test.ts"]
+    },
+    "job-filter-regression": { "cwd": "", "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"] }
+  }
+}

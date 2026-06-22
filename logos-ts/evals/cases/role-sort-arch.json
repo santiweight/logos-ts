@@ -1,0 +1,21 @@
+{
+  "name": "role-sort-arch",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Add a Role A-Z sort so users can browse the directory by job title instead of company. Parse sort=role from URL params, sort by normalized primary role/title with empty roles last, tie-break matching roles by company and then newest posting, preserve q and all filters when users change sort or search, and expose a Role A-Z sort option in DirectoryPage."
+  },
+  "agent": "architecture",
+  "tier": "capability",
+  "checks": {
+    "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
+    "behavior": {
+      "oracle": "../checks/role-sort.check.test.ts",
+      "cwd": "",
+      "cmd": ["pnpm", "exec", "tsx", "--test", "role-sort.check.test.ts"]
+    },
+    "job-filter-regression": { "cwd": "", "cmd": ["pnpm", "exec", "tsx", "--test", "tests/job-filters.test.ts"] }
+  }
+}

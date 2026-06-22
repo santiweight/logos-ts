@@ -11,6 +11,7 @@ on:
         options:
           - deterministic
           - capability
+          - quick
           - all
       repeat:
         description: Override trial count
@@ -99,7 +100,9 @@ jobs:
               args+=("$eval_case")
             done
           fi
-          if [ -n "$EVAL_TIER" ] && [ "$EVAL_TIER" != "all" ]; then
+          if [ "$EVAL_TIER" = "quick" ]; then
+            args+=("--quick")
+          elif [ -n "$EVAL_TIER" ] && [ "$EVAL_TIER" != "all" ]; then
             args+=("--tier" "$EVAL_TIER")
           fi
           if [ -n "$EVAL_REPEAT" ]; then

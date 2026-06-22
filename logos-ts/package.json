@@ -12,6 +12,7 @@
     "lint:strict": "eslint src/",
     "test": "vitest run",
     "evals": "tsx evals/run.ts",
+    "evals:quick": "tsx evals/run.ts --quick",
     "evals:deterministic": "tsx evals/run.ts --tier deterministic"
   },
   "dependencies": {

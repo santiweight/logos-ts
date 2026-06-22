@@ -7,10 +7,12 @@ followed by an implementation pass), then runs checks the agent never sees.
 
 ```bash
 pnpm exec tsx evals/run.ts                                 # all cases, default trial counts
+pnpm exec tsx evals/run.ts --quick                         # representative smoke suite, one trial each
 pnpm exec tsx evals/run.ts rename-company-header           # one case by name
 pnpm exec tsx evals/run.ts --tier deterministic            # the must-never-fail suite
 pnpm exec tsx evals/run.ts --tier deterministic --repeat 5 # crank up trials
 pnpm exec tsx evals/run.ts fuzzy-search-arch --concurrency 1
+pnpm exec tsx evals/run.ts --quick --dry-run               # print selected quick cases without agents
 ```
 
 ## Tiers
@@ -22,6 +24,11 @@ pnpm exec tsx evals/run.ts fuzzy-search-arch --concurrency 1
   "can the agent reliably do trivial edits".
 - **capability** — large changes (fuzzy search, scheduled ingestion) in code
   or architecture mode. Pass rate is reported but doesn't gate the exit code.
+
+`--quick` selects a small representative smoke suite from current root-layout
+HN Jobs cases and caps default repeats at one trial per case. It is meant for
+local iteration before spending time and tokens on the full matrix; explicit
+case names, `--tier`, and `--repeat` still work with it.
 
 ## Case format (`cases/*.json`)
 
