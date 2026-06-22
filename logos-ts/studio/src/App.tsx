@@ -141,6 +141,80 @@ export function selectedStorybookRoot(files: FileEntry[], selection: Selection):
   return undefined
 }
 
+export function workspaceReadyForDisplay(
+  workspace: Pick<WorkspaceMeta, "initialization"> | null | undefined,
+): boolean {
+  if (!workspace) return false
+  return workspace?.initialization?.status !== "initializing" && workspace?.initialization?.status !== "error"
+}
+
+function workspaceMetaFromWorkspace(ws: Workspace): WorkspaceMeta {
+  const { forkDir: _forkDir, index: _index, instances: _instances, ...meta } = ws
+  return meta
+}
+
+function workspaceStartupStepStatusText(status: "pending" | "running" | "done" | "error"): string {
+  switch (status) {
+    case "done": return "done"
+    case "running": return "running"
+    case "error": return "error"
+    case "pending":
+    default: return "pending"
+  }
+}
+
+function WorkspaceStartupPanel({
+  workspace,
+  workspacesLoading,
+  openingWorkspaceId,
+}: {
+  workspace: WorkspaceMeta | undefined
+  workspacesLoading: boolean
+  openingWorkspaceId: string | null
+}) {
+  const initialization = workspace?.initialization
+  const hasFailed = initialization?.status === "error"
+  const steps: Array<{
+    id: string
+    label: string
+    status: "pending" | "running" | "done" | "error"
+    detail?: string
+    error?: string
+  }> = initialization?.steps ?? [
+    { id: "project", label: "Load project window", status: workspacesLoading ? "running" as const : "done" as const },
+    { id: "workspaces", label: "Load workspaces", status: workspacesLoading ? "pending" as const : "done" as const },
+    { id: "workspace", label: "Initialize selected workspace", status: openingWorkspaceId ? "running" as const : "pending" as const },
+  ]
+  const message = workspace
+    ? hasFailed
+      ? `Workspace initialization failed for ${workspace.name}.`
+      : `Initializing workspace for ${workspace.name}.`
+    : openingWorkspaceId
+      ? "Initializing workspace for that selection."
+      : "Loading workspaces for this project window."
+
+  return (
+    <div className={`workspace-init-panel ${hasFailed ? "failed" : ""}`}>
+      <div className="workspace-init-spinner" aria-hidden="true" />
+      <div className="workspace-init-title">{hasFailed ? "Initialization failed" : "Initializing"}</div>
+      <div className="workspace-init-message">{message}</div>
+      <div className="workspace-init-steps">
+        {steps.map((step) => (
+          <div key={step.id} className={`workspace-init-step ${step.status}`}>
+            <span className="workspace-init-mark">
+              {step.status === "running" ? <span className="ag-spin">↻</span> : step.status === "done" ? "✓" : step.status === "error" ? "!" : "·"}
+            </span>
+            <span className="workspace-init-label">{step.label}</span>
+            <span className="workspace-init-status">{workspaceStartupStepStatusText(step.status)}</span>
+            {step.error && <div className="workspace-init-error" title={step.error}>{step.error}</div>}
+            {step.detail && step.status !== "error" && <div className="workspace-init-detail" title={step.detail}>{step.detail}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function resolveAgentPanelGoalId(
   selected: { type: "workspace" | "goal"; id: string } | null,
   latestAgentGoalId: string | null,
@@ -200,6 +274,10 @@ export function App() {
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
+  const activeWorkspaceIdRef = useRef<string | null>(null)
+  const openWorkspaceSeqRef = useRef(0)
+  const openWorkspaceAbortRef = useRef<AbortController | null>(null)
+  const [openingWorkspaceId, setOpeningWorkspaceId] = useState<string | null>(null)
   const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
   const [workspaceBaselineIndex, setWorkspaceBaselineIndex] = useState<StudioIndex | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
@@ -252,6 +330,9 @@ export function App() {
     } catch {}
   }, [])
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId)
+  useEffect(() => {
+    activeWorkspaceIdRef.current = activeWorkspaceId
+  }, [activeWorkspaceId])
   const activeStorybookRoot = selectedStorybookRoot(view.files, selection)
   const { url: activeStorybookUrl, state: activeStorybookState } = selectActiveStorybookRuntime(
     activeWorkspaceId,
@@ -365,16 +446,44 @@ export function App() {
     } catch {}
   }, [])
 
-  const openWorkspace = useCallback(async (id: string) => {
+  const openWorkspace = useCallback(async (id: string, opts?: { resetView?: boolean }) => {
+    openWorkspaceAbortRef.current?.abort()
+    const controller = new AbortController()
+    openWorkspaceAbortRef.current = controller
+    openWorkspaceSeqRef.current += 1
+    const requestSeq = openWorkspaceSeqRef.current
+    const resetView = opts?.resetView !== false || activeWorkspaceIdRef.current !== id
+    setOpeningWorkspaceId(id)
+    setActiveWorkspaceId(id)
+    if (resetView) {
+      setWorkspaceIndex(null)
+      setWorkspaceBaselineIndex(null)
+    }
     try {
-      const res = await fetch(`/api/workspaces/${id}`)
+      const res = await fetch(`/api/workspaces/${id}`, { cache: "no-store", signal: controller.signal })
+      if (openWorkspaceSeqRef.current !== requestSeq) return
       if (res.ok) {
         const ws = (await res.json()) as Workspace
-        setWorkspaceIndex(ws.index)
-        setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
-        setActiveWorkspaceId(id)
+        if (openWorkspaceSeqRef.current !== requestSeq) return
+        const meta = workspaceMetaFromWorkspace(ws)
+        setWorkspaces((prev) => (
+          prev.some((candidate) => candidate.id === meta.id)
+            ? prev.map((candidate) => candidate.id === meta.id ? meta : candidate)
+            : [meta, ...prev]
+        ))
+        if (workspaceReadyForDisplay(ws)) {
+          setWorkspaceIndex(ws.index)
+          setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
+        }
       }
-    } catch {}
+    } catch (e) {
+      if ((e as { name?: string }).name === "AbortError") return
+    } finally {
+      if (openWorkspaceSeqRef.current === requestSeq) {
+        setOpeningWorkspaceId(null)
+        if (openWorkspaceAbortRef.current === controller) openWorkspaceAbortRef.current = null
+      }
+    }
   }, [index])
 
   const reindexWorkspace = useCallback(async (id?: string | null) => {
@@ -518,7 +627,7 @@ export function App() {
     const demo = demos.find((d) => d.id === id)
     setDemoMenuOpen(false)
     setDemoSwitching(id)
-    setBusy(`opening ${demo?.name ?? id}…`)
+    setBusy(`opening project: ${demo?.name ?? id}…`)
     for (const es of esRefs.current.values()) es.close()
     esRefs.current.clear()
     try {
@@ -617,7 +726,9 @@ export function App() {
             es.close()
             esRefs.current.delete(goalId)
             setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-            Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => openWorkspace(wsId))
+            Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => {
+              if (activeWorkspaceIdRef.current === wsId) openWorkspace(wsId, { resetView: false })
+            })
           }
         }
         es.onerror = () => {
@@ -642,7 +753,9 @@ export function App() {
             [goalId]: [...(prev[goalId] ?? []), { type: "error", message: "agent stream disconnected" }],
           }))
           setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-          Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => openWorkspace(wsId))
+          Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => {
+            if (activeWorkspaceIdRef.current === wsId) openWorkspace(wsId, { resetView: false })
+          })
         }
       }
       openStream(0)
@@ -683,7 +796,9 @@ export function App() {
           es.close()
           esRefs.current.delete(goalId)
           setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-          Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => openWorkspace(activeWorkspaceId))
+          Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => {
+            if (activeWorkspaceIdRef.current === activeWorkspaceId) openWorkspace(activeWorkspaceId, { resetView: false })
+          })
         }
       }
       es.onerror = () => {
@@ -695,7 +810,9 @@ export function App() {
           [goalId]: [...(prev[goalId] ?? []), { type: "error", message: "merge stream disconnected" }],
         }))
         setRunningGoals((prev) => { const next = new Set(prev); next.delete(goalId); return next })
-        Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => openWorkspace(activeWorkspaceId))
+        Promise.all([refreshWorkspaces(), refreshTests(), refreshStorybooks(), refreshRuns()]).then(() => {
+          if (activeWorkspaceIdRef.current === activeWorkspaceId) openWorkspace(activeWorkspaceId, { resetView: false })
+        })
       }
     },
     [activeWorkspaceId, loadGoalSessionEvents, refreshWorkspaces, refreshTests, refreshStorybooks, refreshRuns, openWorkspace]
@@ -723,37 +840,36 @@ export function App() {
       const data = await resetRes.json() as { workspace: WorkspaceMeta }
       setWorkspaces([data.workspace])
       setSelected({ type: "workspace", id: data.workspace.id })
-
-      const wsRes = await fetch(`/api/workspaces/${data.workspace.id}`)
-      if (wsRes.ok) {
-        const ws = await wsRes.json() as Workspace
-        setWorkspaceIndex(ws.index)
-        setWorkspaceBaselineIndex(selectWorkspaceReviewBaseIndex(index, ws))
-        setActiveWorkspaceId(ws.id)
-        setSelection({ file: "", view: "run" })
-      }
+      await openWorkspace(data.workspace.id)
+      setSelection({ file: "", view: "run" })
       await Promise.all([refreshTests(), refreshStorybooks(), refreshRuns()])
     } finally {
       setBusy(null)
     }
-  }, [refreshTests, refreshStorybooks, refreshRuns])
+  }, [openWorkspace, refreshTests, refreshStorybooks, refreshRuns])
 
   // Poll workspace index while agent is running
   useEffect(() => {
     if (!agentRunning || !activeWorkspaceId) return
-    const iv = setInterval(() => openWorkspace(activeWorkspaceId), 3_000)
+    if (openingWorkspaceId === activeWorkspaceId) return
+    const iv = setInterval(() => openWorkspace(activeWorkspaceId, { resetView: false }), 3_000)
     return () => clearInterval(iv)
-  }, [agentRunning, activeWorkspaceId, openWorkspace])
+  }, [agentRunning, activeWorkspaceId, openingWorkspaceId, openWorkspace])
 
   const workspaceInitializing = workspaces.some((workspace) => workspace.initialization?.status === "initializing")
   useEffect(() => {
     if (!workspaceInitializing) return
     const iv = setInterval(() => {
       refreshWorkspaces()
-      if (activeWorkspaceId) openWorkspace(activeWorkspaceId)
     }, 1_000)
     return () => clearInterval(iv)
-  }, [workspaceInitializing, activeWorkspaceId, refreshWorkspaces, openWorkspace])
+  }, [workspaceInitializing, refreshWorkspaces])
+
+  useEffect(() => {
+    if (!activeWorkspaceId || workspaceIndex || openingWorkspaceId === activeWorkspaceId) return
+    if (!activeWs || !workspaceReadyForDisplay(activeWs)) return
+    openWorkspace(activeWorkspaceId)
+  }, [activeWorkspaceId, activeWs, openingWorkspaceId, openWorkspace, workspaceIndex])
 
   // ---- actions ----
   const onFork = useCallback(async () => {
@@ -1041,10 +1157,10 @@ export function App() {
   const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
   const reviewCount = workspaceIndex ? reviewChangeCount(reviewBaseIndex, workspaceIndex) : 0
   const mainChrome = mainChromeState({ selection, currentFile, runTarget, reviewOpen, reviewCount })
-  const activeDemo = demos.find((d) => d.id === activeDemoId)
-  const demoLabel = demoSwitching
-    ? `Opening ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
-    : activeDemo?.name ?? "Custom"
+  const activeProject = demos.find((d) => d.id === activeDemoId)
+  const projectLabel = demoSwitching
+    ? `Opening project: ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
+    : `Project: ${activeProject?.name ?? "Custom"}`
   const studioStyle = { "--rail-width": `${railWidth}px`, "--comment-width": `${commentWidth}px` } as CSSProperties
   const startRailResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -1081,51 +1197,77 @@ export function App() {
     window.addEventListener("pointerup", onUp)
   }, [commentWidth])
 
-  if (!activeWorkspaceId || !workspaceIndex) {
-    return (
-      <div className="studio" style={studioStyle}>
-        <header className="topbar">
-          <div className="topbar-menu">
-            <button className="topbar-trigger" onClick={() => setDemoMenuOpen((o) => !o)} aria-label="Open menu">
-              ☰
-            </button>
-            <span className="topbar-title">{demoLabel}</span>
+  const renderTopbar = () => (
+    <header className="topbar">
+      <div className="topbar-menu">
+        <button
+          className={`topbar-trigger ${demoMenuOpen ? "active" : ""}`}
+          onClick={() => setDemoMenuOpen((o) => !o)}
+          aria-label="Open project menu"
+        >
+          ☰
+        </button>
+        <span className="topbar-title">{projectLabel}</span>
+        {demoMenuOpen && (
+          <div className="demo-menu">
+            <div className="demo-menu-title">Open Project</div>
+            {demos.map((demo) => (
+              <button
+                key={demo.id}
+                className={`demo-menu-item ${demo.id === activeDemoId ? "active" : ""}`}
+                onClick={() => openDemo(demo.id)}
+              >
+                <span>{demo.name}</span>
+                {demo.id === activeDemoId && <span className="demo-current">current project</span>}
+              </button>
+            ))}
           </div>
-        </header>
-        <div className="empty">Opening workspace…</div>
+        )}
+      </div>
+    </header>
+  )
+  const activeWorkspaceCanDisplay = activeWs ? workspaceReadyForDisplay(activeWs) : workspaceIndex != null
+  const workspaceUiReady = activeWorkspaceId != null && workspaceIndex != null && activeWorkspaceCanDisplay
+
+  if (!workspaceUiReady) {
+    return (
+      <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`} style={studioStyle}>
+        {renderTopbar()}
+        <ChangesRail
+          open={railOpen}
+          onToggle={() => setRailOpen((o) => !o)}
+          workspaces={workspaces}
+          workspacesLoading={workspacesLoading}
+          activeWorkspaceId={activeWorkspaceId}
+          selected={selected}
+          onNewWorkspace={() => createWorkspace()}
+          onResetWorkspaces={resetWorkspaces}
+          onOpenWorkspace={(id) => {
+            setSelected({ type: "workspace", id })
+            openWorkspace(id)
+          }}
+          onFork={onFork}
+          onCreatePullRequest={createWorkspacePullRequest}
+          onSelectGoal={selectGoal}
+          onDeleteWorkspace={deleteWorkspace}
+          onDeleteGoal={deleteGoal}
+          runningGoals={effectiveRunningGoals}
+          onResizeStart={startRailResize}
+        />
+        <main className="workspace-init-shell">
+          <WorkspaceStartupPanel
+            workspace={activeWs}
+            workspacesLoading={workspacesLoading}
+            openingWorkspaceId={openingWorkspaceId}
+          />
+        </main>
       </div>
     )
   }
 
   return (
     <div className={`studio ${railOpen ? "rail-open" : "rail-closed"}`} style={studioStyle}>
-      <header className="topbar">
-        <div className="topbar-menu">
-          <button
-            className={`topbar-trigger ${demoMenuOpen ? "active" : ""}`}
-            onClick={() => setDemoMenuOpen((o) => !o)}
-            aria-label="Open menu"
-          >
-            ☰
-          </button>
-          <span className="topbar-title">{demoLabel}</span>
-          {demoMenuOpen && (
-            <div className="demo-menu">
-              <div className="demo-menu-title">Open Demo</div>
-              {demos.map((demo) => (
-                <button
-                  key={demo.id}
-                  className={`demo-menu-item ${demo.id === activeDemoId ? "active" : ""}`}
-                  onClick={() => openDemo(demo.id)}
-                >
-                  <span>{demo.name}</span>
-                  {demo.id === activeDemoId && <span className="demo-current">current</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </header>
+      {renderTopbar()}
       <ChangesRail
         open={railOpen}
         onToggle={() => setRailOpen((o) => !o)}

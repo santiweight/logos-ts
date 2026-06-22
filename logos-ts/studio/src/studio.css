@@ -1033,6 +1033,93 @@ body.resizing-rail * {
 
 .empty { color: var(--muted); padding: 16px 10px; font-size: 12px; }
 
+.workspace-init-shell {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  background: #18181c;
+}
+.workspace-init-panel {
+  width: min(460px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+.workspace-init-spinner {
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(255,255,255,0.12);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+.workspace-init-panel.failed .workspace-init-spinner {
+  border-top-color: #e5847d;
+  animation: none;
+}
+.workspace-init-title {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.workspace-init-message {
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.workspace-init-steps {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #141417;
+}
+.workspace-init-step {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.workspace-init-step.running { color: #90c6ff; }
+.workspace-init-step.done { color: var(--ok); }
+.workspace-init-step.error { color: #e5847d; }
+.workspace-init-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+}
+.workspace-init-label,
+.workspace-init-error,
+.workspace-init-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-init-status {
+  color: inherit;
+  opacity: 0.72;
+}
+.workspace-init-error,
+.workspace-init-detail {
+  grid-column: 2 / 4;
+  opacity: 0.9;
+}
+.workspace-init-error { color: #e5847d; }
+.workspace-init-detail { color: var(--muted); }
+
 /* ---- Storybook startup feedback ---- */
 .sb-startup { padding: 16px; display: flex; flex-direction: column; gap: 8px; height: 100%; }
 .sb-startup-header { font-size: 12px; color: var(--fg); }

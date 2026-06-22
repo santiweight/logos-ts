@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, reviewChangeCount, selectActiveStorybookRuntime, selectedStorybookRoot } from "./App"
+import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, reviewChangeCount, selectActiveStorybookRuntime, selectedStorybookRoot, workspaceReadyForDisplay } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -147,6 +147,29 @@ describe("reviewChangeCount", () => {
       index([componentFile("export const Default = {}", "<div>before</div>")]),
       index([componentFile("export const Default = {}", "<div>after</div>")]),
     )).toBe(1)
+  })
+})
+
+describe("workspaceReadyForDisplay", () => {
+  it("waits until workspace initialization finishes", () => {
+    expect(workspaceReadyForDisplay(null)).toBe(false)
+    expect(workspaceReadyForDisplay(workspace([]))).toBe(true)
+    expect(workspaceReadyForDisplay({
+      ...workspace([]),
+      initialization: {
+        status: "initializing",
+        updatedAt: 1000,
+        steps: [{ id: "index", label: "Index workspace", status: "running" }],
+      },
+    })).toBe(false)
+    expect(workspaceReadyForDisplay({
+      ...workspace([]),
+      initialization: {
+        status: "ready",
+        updatedAt: 1000,
+        steps: [{ id: "index", label: "Index workspace", status: "done" }],
+      },
+    })).toBe(true)
   })
 })
 
