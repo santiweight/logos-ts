@@ -29,6 +29,8 @@ export function buildArchPrompt(context: string, sandbox: string, goalLine: stri
     `EXCEPTION: React components appear IN FULL, because on the frontend the render tree is the architecture. You may edit component JSX, props wiring, and state placement directly — those edits are kept as-is, not regenerated.\n\n` +
     `Tests appear as \`test("name")\` or \`test("name", () => expr)\` lines above the declaration they cover. You can add new tests (name-only or with a single expression), remove tests, or leave them. Test lines are written back to \`.test.ts\` files automatically — name-only tests get a placeholder body.\n\n` +
     `Restructure the ARCHITECTURE to satisfy the change: move / split / rename / add \`declare\` signatures across files, and reshape component JSX where the change is visual or structural. Keep non-component declarations as bare \`declare\` signatures — do NOT write bodies, values, or import statements for them.\n\n` +
+    `Define acceptance criteria in the architecture itself. For each user-visible behavior or important data contract, add focused \`test("...")\` lines near the declaration that should own the behavior. Prefer tests that pin outcomes, edge cases, ordering, and integration with existing filters/state. If a change needs ranking, scoring, parsing, validation, or normalization, expose that as a named helper with a clear return type so implementation can test it directly. When the request uses ambiguous product terms like "fuzzy", "smart", "ranked", or "intuitive", turn them into concrete tests for exact matches, near matches or common mistakes, negative cases, ordering, and interaction with existing constraints. In search/matching tasks, "fuzzy" means more than substring or prefix search: include typo-tolerance tests for missing, extra, substituted, or transposed characters unless the user explicitly says otherwise.\n\n` +
+    `Choose the smallest architecture that makes the implementation obvious. Reuse existing modules and public flows, keep stable APIs unless the request requires changing them, and only introduce new files when the existing ownership boundary is wrong.\n\n` +
     `Change requests:\n${goalLine}\n\n` +
     `When you are finished, end with a brief summary of what you changed (files modified, signatures added/removed/renamed). Keep it under 5 sentences.\n`
 }
@@ -39,6 +41,15 @@ export function buildImplPrompt(context: string, sandbox: string, goalLine: stri
     `Address these change requests:\n${goalLine}\n\n` +
     `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck. ${verifyNote}\n\n` +
     `When you are finished, end with a brief summary of what you changed (files modified, what was added/fixed/refactored). Keep it under 5 sentences.`
+}
+
+export function buildArchImplementationPrompt(context: string, sandbox: string, goalLine: string, verifyNote: string): string {
+  return `${context}\n\n${sandbox}` +
+    `The architecture pass is complete and has been spliced back into the full source tree. You are now the implementation agent for the same goal.\n\n` +
+    `Implement the architecture that is already present: fill in new or changed bodies, replace any \`not implemented\` placeholder tests with real assertions, and keep the declared contracts stable unless implementation reveals a concrete type/signature mistake. Do not redesign the architecture unless it is required to make the code compile or satisfy the tests.\n\n` +
+    `Address these change requests:\n${goalLine}\n\n` +
+    `Reuse existing helpers and data flow, make it typecheck, and keep the app behavior intuitive for the user-facing workflow. ${verifyNote}\n\n` +
+    `When you are finished, end with a brief summary of what you implemented and which tests you satisfied. Keep it under 5 sentences.`
 }
 
 export function buildVerifyNote(hasTests: boolean): string {

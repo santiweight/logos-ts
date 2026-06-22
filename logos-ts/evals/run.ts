@@ -19,6 +19,7 @@ import {
 } from "node:fs"
 import { basename, dirname, extname, join, resolve } from "node:path"
 import {
+  buildArchImplementationPrompt,
   buildArchPrompt,
   buildGoalLine,
   buildStoryGenerationContext,
@@ -132,6 +133,23 @@ function computeDiff(original: string, modified: string): string {
   }
 }
 
+function buildArchImplPrompt(c: EvalCase, work: string, context: string): string {
+  const goalLine = buildGoalLine({
+    label: c.comment.label ?? c.comment.target,
+    text: c.comment.text,
+    ...(c.comment.component ? { component: c.comment.component } : {}),
+    ...(c.comment.storyId ? { storyId: c.comment.storyId } : {}),
+    ...(c.comment.selector ? { selector: c.comment.selector } : {}),
+  })
+  const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
+  return buildArchImplementationPrompt(
+    context,
+    sandbox,
+    goalLine,
+    "This eval harness has no live test-runner MCP. Run the relevant project test/typecheck commands yourself and iterate until they pass.",
+  )
+}
+
 function buildImplPrompt(
   context: string,
   work: string,
@@ -173,10 +191,10 @@ function runCase(casePath: string, trial: number): TrialResult {
     recursive: true,
     filter: (s) => !/node_modules|\.workspaces|\.logos_cache|dist|__snapshots__/.test(s),
   })
-
-  const pm = existsSync(join(work, "pnpm-lock.yaml")) ? "pnpm" : "npm"
-  console.log(`[${c.name} t${trial}] installing dependencies (${pm})...`)
-  execFileSync(pm, ["install"], { cwd: work, stdio: "inherit" })
+  for (const rel of ["node_modules", "frontend/node_modules"]) {
+    const src = join(codebase, rel)
+    if (existsSync(src) && !existsSync(join(work, rel))) symlinkSync(src, join(work, rel))
+  }
 
   const archMode = c.agent === "architecture" || c.agent === "testing" || c.agent === "arch-impl"
   const bodiesFile = resolve(runDir, "bodies.json")
@@ -221,6 +239,24 @@ function runCase(casePath: string, trial: number): TrialResult {
       cwd: logosTsRoot,
       encoding: "utf8",
     })
+  }
+
+  if (c.agent === "architecture" || c.agent === "testing") {
+    console.log(`[${c.name} t${trial}] rebuilding implementation context...`)
+    const implContext = buildContext(work, targets)
+    const implPrompt = buildArchImplPrompt(c, work, implContext)
+    console.log(`[${c.name} t${trial}] running implementation pass after architecture...`)
+    try {
+      runAgent(implPrompt, {
+        cwd: work,
+        timeout: c.timeoutMs ?? 600_000,
+        extraArgs: isStoryGenerationRequest(c.comment.text)
+          ? ["--append-system-prompt", buildStoryGenerationSystemPrompt()]
+          : [],
+      })
+    } catch (e: any) {
+      console.error(`[${c.name} t${trial}] implementation pass failed:`, e.message)
+    }
   }
 
   if (c.agent === "arch-impl") {

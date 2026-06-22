@@ -699,6 +699,32 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.goalsForWorkspace(arch.id).map((g) => g.id)).toEqual(["first", "second"])
   })
 
+  it("continues architecture goals into an implementation pass before completing", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({
+      spawned,
+      setupProject(root) {
+        writeFileSync(join(root, "thing.ts"), "export function thing(): string { return 'old' }\n")
+      },
+    })
+    const arch = await mgr.create({ kind: "arch" })
+    expectGoal(await mgr.addGoal(arch.id, goal("arch-change", "arch")))
+
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+    expect(mgr.processNext(arch.id, (event) => events.push(event))).toBe("arch-change")
+    await waitFor(() => expect(spawned).toHaveLength(1), 60_000)
+
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => expect(spawned).toHaveLength(2), 60_000)
+    expect(events.some((event) => event.message === "architecture complete; starting implementation…")).toBe(true)
+    expect(spawned[1]!.args.join("\n")).toContain("The architecture pass is complete")
+
+    spawned[1]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(arch.id)[0]?.status).toBe("done"), 60_000)
+    expect(mgr.goalsForWorkspace(arch.id)[0]?.lifecycle).toEqual({ stage: "merged", state: "complete" })
+  }, 90_000)
+
   it("does not start a second architecture agent in the same architecture workspace", async () => {
     const mgr = createManager()
     const arch = await mgr.create({ kind: "arch" })

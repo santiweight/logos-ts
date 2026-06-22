@@ -2,18 +2,24 @@
   "name": "fuzzy-search-arch",
   "codebase": "../../demos/hn-jobs",
   "comment": {
-    "target": "file:lib/job-filters.ts",
-    "targets": ["file:lib/job-filters.ts", "file:app/page.tsx"],
-    "label": "Directory search filters",
-    "text": "Make directory search fuzzy in the shared job filtering logic, and keep the page wired so queried results are relevance-ranked."
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Replace the current search with a server-side fuzzy search. Use an integer score/rank for text matching, support typo-tolerant near matches, display directory results by fuzzy rank when q is present, and keep the existing filters working with search."
   },
   "agent": "architecture",
+  "tier": "capability",
   "checks": {
     "typecheck": { "cwd": "", "cmd": ["pnpm", "exec", "tsc", "--noEmit"] },
     "behavior": {
       "oracle": "../checks/fuzzy-search.check.ts",
       "cwd": "",
       "cmd": ["pnpm", "exec", "tsx", "--test", "fuzzy-search.check.ts"]
+    },
+    "rank-api": {
+      "oracle": "../checks/fuzzy-search.check.test.ts",
+      "cwd": "",
+      "cmd": ["pnpm", "exec", "tsx", "--test", "fuzzy-search.check.test.ts"]
     },
     "project-tests": { "cwd": "", "cmd": ["pnpm", "test"] }
   }

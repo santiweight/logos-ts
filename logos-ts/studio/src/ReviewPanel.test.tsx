@@ -178,7 +178,7 @@ describe("ReviewPanel", () => {
     expect(frames[1]?.getAttribute("srcdoc")).toContain("<div>Platform Engineer</div>")
   })
 
-  it("renders story-only changes as reviewable architecture diffs without snapshots", () => {
+  it("does not render story implementation changes as architecture diffs", () => {
     const base = index([
       storyFile([
         "function StoryRender() {",
@@ -203,13 +203,50 @@ describe("ReviewPanel", () => {
       />
     )
 
-    expect(screen.getByText("components/JobRow.stories.tsx")).toBeInTheDocument()
-    const header = screen.getByRole("button", { name: /components\/JobRow\.stories\.tsx/ })
-    fireEvent.click(header)
+    expect(screen.getByText("No architectural changes in this workspace.")).toBeInTheDocument()
+    expect(container.querySelector(".inline-diff")).toBeNull()
+  })
 
-    const diffText = container.querySelector(".inline-diff")?.textContent
-    expect(diffText).toContain("jobCount1247")
-    expect(diffText).toContain("jobCount1248")
+  it("renders attached acceptance tests as architecture diffs", () => {
+    const base = index([{
+      file: "lib/job-filters.ts",
+      code: "",
+      items: [{
+        kind: "function",
+        name: "jobMatchesFilters",
+        signature: "jobMatchesFilters(job: JobFilterable, filters: JobFilters): boolean",
+        code: "",
+        deps: [],
+        tests: [],
+      }],
+    }])
+    const workspace = index([{
+      file: "lib/job-filters.ts",
+      code: "",
+      items: [{
+        kind: "function",
+        name: "jobMatchesFilters",
+        signature: "jobMatchesFilters(job: JobFilterable, filters: JobFilters): boolean",
+        code: "",
+        deps: [],
+        tests: [{
+          name: "single-word typo tolerance",
+          file: "lib/job-filters.test.ts",
+          code: "test('single-word typo tolerance', () => {})",
+        }],
+      }],
+    }])
+
+    const { container } = render(
+      <ReviewPanel
+        base={base}
+        workspace={workspace}
+      />
+    )
+
+    const header = screen.getByRole("button", { name: /lib\/job-filters\.ts/ })
+    fireEvent.click(header)
+    expect(container.querySelector(".inline-diff")?.textContent).toContain('test("single-word typo tolerance")')
   })
 
 })
