@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { CommentThread, type CommentItem } from "./comment-ui"
+import { CommentComposer, CommentThread, type CommentItem } from "./comment-ui"
 
 afterEach(cleanup)
 
@@ -30,6 +30,37 @@ describe("CommentThread replies", () => {
       fork: false,
       autoMerge: false,
     })
+  })
+
+  it("does not close the main comment composer on Escape", () => {
+    const onClose = vi.fn()
+    render(
+      <CommentThread
+        label="FactTable"
+        comments={[]}
+        onAdd={vi.fn()}
+        onClose={onClose}
+      />
+    )
+
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" })
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it("does not cancel a new comment composer on Escape", () => {
+    const onCancel = vi.fn()
+    render(
+      <CommentComposer
+        label="FactTable"
+        onSave={vi.fn()}
+        onCancel={onCancel}
+      />
+    )
+
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" })
+
+    expect(onCancel).not.toHaveBeenCalled()
   })
 
   it("renders agent replies inline", () => {
