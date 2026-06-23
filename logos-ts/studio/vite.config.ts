@@ -10,6 +10,7 @@ import { createArchApi } from "./server/arch-api"
 import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
 import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 import { buildGoalNamePrompt, cleanGoalName, fallbackGoalName, type GoalNameInput } from "../src/goal-naming"
+import { cleanEnvForClaude } from "../src/claude-cli"
 import { defaultLogosRuntimeDir, resolveLogosRuntimePaths } from "../src/runtime-paths"
 import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
@@ -177,6 +178,7 @@ async function generateGoalName(input: GoalNameInput, cwd: string): Promise<stri
     const raw = await new Promise<string>((resolveOutput, rejectOutput) => {
       execFile("claude", ["-p", prompt, "--model", "haiku", "--output-format", "text"], {
         cwd,
+        env: cleanEnvForClaude(),
         encoding: "utf8",
         timeout: 4_000,
         maxBuffer: 8 * 1024,

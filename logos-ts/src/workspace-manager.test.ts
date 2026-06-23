@@ -43,6 +43,7 @@ class FakeAgentProcess extends EventEmitter {
   killed = false
   cwd = ""
   args: string[] = []
+  env: NodeJS.ProcessEnv = {}
 
   kill(): boolean {
     this.killed = true
@@ -102,6 +103,7 @@ function createManager(opts?: {
             const child = new FakeAgentProcess()
             child.cwd = String(options.cwd ?? "")
             child.args = args
+            child.env = (options.env ?? {}) as NodeJS.ProcessEnv
             opts.spawned!.push(child)
             return child as any
           },
@@ -612,6 +614,37 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(mgr.goalsForWorkspace(code.id)[0]?.sessionId).toBe("session-first")
 
     await waitFor(() => expect(spawned).toHaveLength(1))
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+  }, 60_000)
+
+  it("strips Claude Code session vars from agent spawn env", async () => {
+    vi.stubEnv("CLAUDE_CODE_CHILD_SESSION", "1")
+    vi.stubEnv("CLAUDE_CODE_SESSION_ID", "parent-session")
+    vi.stubEnv("CLAUDE_CODE_ENTRYPOINT", "sdk-ts")
+    vi.stubEnv("ANTHROPIC_API_KEY", "")
+    vi.stubEnv("CLAUDECODE", "1")
+    vi.stubEnv("AI_AGENT", "claude-code_2-1-183_agent")
+    vi.stubEnv("CLAUDE_AGENT_SDK_VERSION", "0.3.183")
+
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    expectGoal(await mgr.addGoal(code.id, goal("env-test", "code")))
+    mgr.processNext(code.id, () => {})
+
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    const env = spawned[0]!.env
+    expect(env).not.toHaveProperty("CLAUDE_CODE_CHILD_SESSION")
+    expect(env).not.toHaveProperty("CLAUDE_CODE_SESSION_ID")
+    expect(env).not.toHaveProperty("CLAUDE_CODE_ENTRYPOINT")
+    expect(env).not.toHaveProperty("ANTHROPIC_API_KEY")
+    expect(env).not.toHaveProperty("CLAUDECODE")
+    expect(env).not.toHaveProperty("AI_AGENT")
+    expect(env).not.toHaveProperty("CLAUDE_AGENT_SDK_VERSION")
+    expect(env).toHaveProperty("LOGOS_SESSION")
+    expect(env).toHaveProperty("LOGOS_WS")
+
     spawned[0]!.emit("close", 0)
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
   }, 60_000)

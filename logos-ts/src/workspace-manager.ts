@@ -23,7 +23,7 @@ import type { StorybookManager } from "./storybook-manager.js"
 import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchImplementationPrompt, buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
-import { buildClaudePrintArgs } from "./claude-cli.js"
+import { buildClaudePrintArgs, cleanEnvForClaude } from "./claude-cli.js"
 import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
 import type {
   StoredGoalLifecycle,
@@ -1289,7 +1289,7 @@ export class WorkspaceManager {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
         // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
-        env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+        env: { ...cleanEnvForClaude(), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
     this.runningAgents.set(goal.id, child)
@@ -1832,7 +1832,7 @@ export class WorkspaceManager {
       {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+        env: { ...cleanEnvForClaude(), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
     this.runningAgents.set(goal.id, child)
