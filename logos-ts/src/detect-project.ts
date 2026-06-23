@@ -131,6 +131,7 @@ function detectRuns(root: string): RunTargetCaps[] {
     const hasVite = Boolean(deps["vite"])
     const hasNext = Boolean(deps["next"])
     const devScript = scripts["dev"]
+    const miniScript = scripts["dev:mini"]
     const hasViteEntrypoint = existsSync(join(dir, "index.html"))
     const hasNextEntrypoint = existsSync(join(dir, "next.config.js")) ||
       existsSync(join(dir, "next.config.mjs")) ||
@@ -138,11 +139,26 @@ function detectRuns(root: string): RunTargetCaps[] {
       existsSync(join(dir, "app")) ||
       existsSync(join(dir, "pages"))
     const env = runTargetEnv(pkg)
+    const isFirstTarget = targets.length === 0
 
     if (hasNext && hasNextEntrypoint) {
+      if (miniScript) {
+        const miniLabel = typeof pkg.name === "string" && pkg.name
+          ? `${pkgNameLabel(pkg.name)} (mini)`
+          : `${isFirstTarget ? "App" : `${labelBase} App`} (mini)`
+        targets.push({
+          id: `${idBase}-mini`,
+          label: miniLabel,
+          cwd: dir,
+          command: "pnpm",
+          args: ["dev:mini", "--", "-H", "127.0.0.1", "-p", "${PORT}"],
+          framework: "next",
+          ...(env ? { env } : {}),
+        })
+      }
       targets.push({
         id: `${idBase}-app`,
-        label: targets.length === 0 ? "App" : `${labelBase} App`,
+        label: isFirstTarget ? "App" : `${labelBase} App`,
         cwd: dir,
         command: devScript ? "pnpm" : "node_modules/.bin/next",
         args: devScript
@@ -157,7 +173,7 @@ function detectRuns(root: string): RunTargetCaps[] {
     if (devScript && hasViteEntrypoint && (hasVite || /\bvite\b/.test(devScript))) {
       targets.push({
         id: `${idBase}-app`,
-        label: targets.length === 0 ? "App" : `${labelBase} App`,
+        label: isFirstTarget ? "App" : `${labelBase} App`,
         cwd: dir,
         command: "pnpm",
         args: ["dev", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
@@ -184,8 +200,20 @@ function detectRuns(root: string): RunTargetCaps[] {
 }
 
 function runTargetEnv(pkg: { name?: unknown }): Record<string, string> | undefined {
-  if (pkg.name === "logos-ts-studio") return { LOGOS_PROJECT: "${WORKSPACE_ROOT}" }
+  if (pkg.name === "logos-ts-studio") {
+    return {
+      LOGOS_PROJECT: "${WORKSPACE_ROOT}/demos/hn-jobs",
+      LOGOS_STARTUP_PROJECT: "${WORKSPACE_ROOT}/demos/hn-jobs",
+    }
+  }
   return undefined
+}
+
+function pkgNameLabel(name: string): string {
+  return name
+    .replace(/^@[^/]+\//, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
 }
 
 function findPackageDirs(root: string): string[] {

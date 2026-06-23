@@ -11,6 +11,14 @@ import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-pro
 import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 import { buildGoalNamePrompt, cleanGoalName, fallbackGoalName, type GoalNameInput } from "../src/goal-naming"
 import { defaultLogosRuntimeDir, resolveLogosRuntimePaths } from "../src/runtime-paths"
+import { detectProject } from "../src/detect-project"
+import { StorybookManager } from "../src/storybook-manager"
+import { RunManager } from "../src/run-manager"
+import { WorkspaceManager } from "../src/workspace-manager"
+import { ClaudeSessionManager } from "../src/claude-session-manager"
+import { LogosRuntimeStore } from "../src/runtime-store"
+import { createPortableStoryResolver } from "../src/portable-stories"
+import { createSessionProject } from "../src/session-project"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -84,31 +92,7 @@ function persistDemo(id: DemoId): void {
   writeFileSync(DEMO_STATE_FILE, JSON.stringify({ id }, null, 2))
 }
 
-function importRuntimeModule<T>(specifier: string): Promise<T> {
-  return import(specifier) as Promise<T>
-}
-
 async function createStudioRuntime(): Promise<StudioRuntime> {
-  const [
-    { detectProject },
-    { StorybookManager },
-    { RunManager },
-    { WorkspaceManager },
-    { ClaudeSessionManager },
-    { LogosRuntimeStore },
-    { createPortableStoryResolver },
-    { createSessionProject },
-  ] = await Promise.all([
-    importRuntimeModule<typeof import("../src/detect-project")>("../src/detect-project"),
-    importRuntimeModule<typeof import("../src/storybook-manager")>("../src/storybook-manager"),
-    importRuntimeModule<typeof import("../src/run-manager")>("../src/run-manager"),
-    importRuntimeModule<typeof import("../src/workspace-manager")>("../src/workspace-manager"),
-    importRuntimeModule<typeof import("../src/claude-session-manager")>("../src/claude-session-manager"),
-    importRuntimeModule<typeof import("../src/runtime-store")>("../src/runtime-store"),
-    importRuntimeModule<typeof import("../src/portable-stories")>("../src/portable-stories"),
-    importRuntimeModule<typeof import("../src/session-project")>("../src/session-project"),
-  ])
-
   const { demoId, sourceProject } = sourceProjectForStartup()
   const runtimePaths = resolveLogosRuntimePaths({
     sourceProject,
