@@ -30,7 +30,7 @@ import {
   isStoryGenerationRequest,
   SEARCH_RANKING_GUIDANCE,
 } from "../src/prompt.js"
-import { buildClaudePrintArgs } from "../src/claude-cli.js"
+import { buildClaudePrintArgs, cleanEnvForClaude } from "../src/claude-cli.js"
 
 interface Check {
   cwd: string
@@ -282,6 +282,7 @@ function runClaudeCli(
     input: prompt,
     timeout: opts.timeout,
     label: "claude",
+    env: cleanEnvForClaude(),
   })
 }
 
@@ -354,12 +355,13 @@ function runCodexCli(
 function spawnAgentCommand(
   command: string,
   args: string[],
-  opts: { cwd: string; input: string; timeout: number; label: string },
+  opts: { cwd: string; input: string; timeout: number; label: string; env?: NodeJS.ProcessEnv },
 ): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd: opts.cwd,
       stdio: ["pipe", "inherit", "inherit"],
+      ...(opts.env ? { env: opts.env } : {}),
     })
     let settled = false
     let timedOut = false
