@@ -60,14 +60,9 @@ export class WorkspaceCodeService {
 
   constructor(private opts: WorkspaceCodeServiceOptions) {}
 
-  createInstance(
-    workspaceId: string,
-    sourceRoot: string,
-    index: unknown,
-    opts: { installNodeModules?: boolean } = {},
-  ): CodeWorkspaceInstance {
+  createInstance(workspaceId: string, sourceRoot: string, index: unknown): CodeWorkspaceInstance {
     const id = `inst-${Date.now()}-${Math.round(Math.random() * 1e6)}`
-    const materializedRoot = this.createMaterializedRoot(id, sourceRoot, opts)
+    const materializedRoot = this.createMaterializedRoot(id, sourceRoot)
     this.ensureRepo(materializedRoot)
     return {
       id,
@@ -162,11 +157,7 @@ export class WorkspaceCodeService {
     }
   }
 
-  private createMaterializedRoot(
-    instanceId: string,
-    sourceRoot = this.opts.projectRoot,
-    opts: { installNodeModules?: boolean } = {},
-  ): string {
+  private createMaterializedRoot(instanceId: string, sourceRoot = this.opts.projectRoot): string {
     mkdirSync(this.opts.runsDir, { recursive: true })
     const dir = resolve(this.opts.runsDir, instanceId)
     if (!existsSync(dir)) {
@@ -180,14 +171,12 @@ export class WorkspaceCodeService {
           return !GENERATED_WORKSPACE_DIRS.has(name)
         },
       })
-      if (opts.installNodeModules !== false) {
-        const nmCache = new NodeModulesCache()
-        for (const pkgDir of this.packageDirsToCache(dir)) {
-          const result = nmCache.ensureFor(pkgDir)
-          const rel = relative(dir, pkgDir)
-          const target = join(dir, rel, "node_modules")
-          if (resolve(result.nodeModulesPath) !== resolve(target)) nmCache.linkTo(result.nodeModulesPath, target)
-        }
+      const nmCache = new NodeModulesCache()
+      for (const pkgDir of this.packageDirsToCache(dir)) {
+        const result = nmCache.ensureFor(pkgDir)
+        const rel = relative(dir, pkgDir)
+        const target = join(dir, rel, "node_modules")
+        if (resolve(result.nodeModulesPath) !== resolve(target)) nmCache.linkTo(result.nodeModulesPath, target)
       }
     }
     return dir

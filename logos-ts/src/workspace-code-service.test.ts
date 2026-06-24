@@ -137,15 +137,4 @@ describe("WorkspaceCodeService", () => {
     expect(git(instance.materializedRoot, ["status", "--porcelain"])).toBe("")
     expect(git(instance.materializedRoot, ["ls-files"])).not.toContain("node_modules")
   })
-
-  it("can defer node_modules installation for async workspace initialization", () => {
-    const { projectRoot, runsDir } = createService()
-    const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [] })
-
-    const instance = service.createInstance("ws", projectRoot, {}, { installNodeModules: false })
-
-    expect(existsSync(join(instance.materializedRoot, "node_modules"))).toBe(false)
-    service.ensureCachedNodeModules(instance)
-    expect(existsSync(join(instance.materializedRoot, "node_modules"))).toBe(true)
-  })
 })

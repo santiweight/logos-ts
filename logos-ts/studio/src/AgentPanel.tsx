@@ -26,7 +26,7 @@ function isThinkingEvent(m: AgentMsg): boolean {
   return m.type === "event" && m.event?.type === "system" && m.event?.subtype === "thinking_tokens"
 }
 
-function Line({ m, prevIsThinking }: { m: AgentMsg; prevIsThinking: boolean }) {
+export function Line({ m, prevIsThinking }: { m: AgentMsg; prevIsThinking: boolean }) {
   if (m.type === "status") return <div className="ag-line ag-status">▸ {m.message}</div>
   if (m.type === "stderr") return <div className="ag-line ag-err">{m.message}</div>
   if (m.type === "error") return <div className="ag-line ag-err">✗ {m.message}</div>

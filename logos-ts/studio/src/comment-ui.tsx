@@ -191,6 +191,7 @@ export function CommentThread({
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit()
+          if (e.key === "Escape") onClose()
         }}
         placeholder="Reply…"
         style={textareaStyle}
@@ -259,6 +260,7 @@ export function CommentComposer({
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit()
+          if (e.key === "Escape") onCancel()
         }}
         placeholder="Add a comment…"
         style={textareaStyle}

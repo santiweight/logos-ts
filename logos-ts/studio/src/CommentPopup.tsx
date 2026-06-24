@@ -35,12 +35,11 @@ export function CommentPopup({ x, y, label, goals, workspaceKind, onAdd, onReply
   }, [label, reset, x, y])
 
   return (
-    <div style={overlayStyle}>
+    <div style={overlayStyle} onClick={onClose}>
       <div
         style={{
           ...popoverShell,
           position: "fixed",
-          pointerEvents: "auto",
           ...applyPopoverDragOffset({ left, top }, offset),
         }}
         onClick={(e) => e.stopPropagation()}
@@ -63,5 +62,4 @@ const overlayStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
   zIndex: 100,
-  pointerEvents: "none",
 }
