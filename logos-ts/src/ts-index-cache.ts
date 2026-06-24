@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
+import { PROJECT_SOURCE_EXCLUDES } from "./project.js"
 
 export interface TsIndexCacheOptions {
   logosTsRoot: string
@@ -62,7 +64,11 @@ export class TsIndexCache {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
       }).trim()
-      return treeHash
+      const configHash = createHash("sha1")
+        .update(PROJECT_SOURCE_EXCLUDES.join("\0"))
+        .digest("hex")
+        .slice(0, 8)
+      return `${treeHash}-${configHash}`
     } catch {
       return null
     }

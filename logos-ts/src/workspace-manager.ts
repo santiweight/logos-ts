@@ -37,6 +37,7 @@ import type {
 } from "./runtime-store.js"
 import { ensureStorySnapshotTestForRoot, missingStorySnapshotDependencies } from "./story-snapshots.js"
 import { TsIndexCache } from "./ts-index-cache.js"
+import { PROJECT_SOURCE_EXCLUDES } from "./project.js"
 
 export interface GoalReply {
   author: "agent" | "user"
@@ -296,12 +297,29 @@ export class WorkspaceManager {
           dirty = true
         }
       }
+      if (WorkspaceManager.stripExcludedIndexFiles(ws)) dirty = true
       if (dirty) this.store.saveWorkspace(ws)
       this.workspaces.set(ws.id, ws)
       if (this.initializeWorkspaces && ws.initialization?.status === "initializing") {
         queueMicrotask(() => this.initializeWorkspace(ws.id, ws.activeInstanceId))
       }
     }
+  }
+
+  private static stripExcludedIndexFiles(ws: WorkspaceRecord): boolean {
+    const excludePatterns = PROJECT_SOURCE_EXCLUDES.map(
+      (dir) => new RegExp(`(^|/)${dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`),
+    )
+    const shouldExclude = (file: string) => excludePatterns.some((re) => re.test(file))
+    let changed = false
+    for (const inst of Object.values(ws.instances)) {
+      const idx = inst.index as { files?: { file: string }[] } | undefined
+      if (!idx?.files) continue
+      const before = idx.files.length
+      idx.files = idx.files.filter((f) => !shouldExclude(f.file))
+      if (idx.files.length !== before) changed = true
+    }
+    return changed
   }
 
   private save(ws: WorkspaceRecord): void {

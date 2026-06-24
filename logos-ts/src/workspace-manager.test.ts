@@ -1318,3 +1318,207 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(existsSync(join(sourceProjectRoot, "src", "generated.txt"))).toBe(false)
   })
 })
+
+describe("stale index cache cleanup", () => {
+  it("strips excluded files from persisted workspace indexes on load", async () => {
+    const root = mkdtempSync(join(tmpdir(), "logos-stale-index-"))
+    tempDirs.push(root)
+    const projectRoot = join(root, "project")
+    mkdirSync(projectRoot, { recursive: true })
+    writeFileSync(join(projectRoot, "package.json"), "{}")
+    mkdirSync(join(projectRoot, "src"), { recursive: true })
+    writeFileSync(join(projectRoot, "src", "app.ts"), "export function app() {}")
+
+    const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
+    const sessions = createSessions()
+
+    const staleIndex = {
+      root: projectRoot,
+      files: [
+        { file: "src/app.ts", code: "export function app() {}", items: [{ kind: "function", name: "app", signature: "app()", code: "export function app() {}", deps: [], tests: [] }] },
+        { file: "lib/generated/snapshot/index.d.ts", code: "export declare ...", items: [{ kind: "function", name: "query", signature: "query()", code: "declare function query()", deps: [], tests: [] }] },
+        { file: "lib/generated/snapshot/runtime/library.d.ts", code: "export declare ...", items: [{ kind: "function", name: "lib", signature: "lib()", code: "declare function lib()", deps: [], tests: [] }] },
+      ],
+    }
+
+    store.saveWorkspace({
+      id: "ws-stale",
+      name: "Stale Workspace",
+      kind: "code",
+      parentId: null,
+      createdAt: Date.now(),
+      baseInstanceId: "inst-1",
+      activeInstanceId: "inst-1",
+      goals: [],
+      instances: {
+        "inst-1": {
+          id: "inst-1",
+          workspaceId: "ws-stale",
+          materializedRoot: join(root, "runs", "inst-1"),
+          mutability: "writable",
+          createdAt: Date.now(),
+          index: staleIndex,
+        },
+      },
+    })
+
+    const mgr = new WorkspaceManager({
+      store,
+      runsDir: join(root, ".agent-runs"),
+      logosTsSrc: join(LOGOS_TS_ROOT, "src"),
+      logosTsRoot: LOGOS_TS_ROOT,
+      projectRoot,
+      caps: { root: projectRoot, nodeModulesDirs: [] },
+      sbManager: { get: () => null, shutdown: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") } as any,
+      sessions: sessions as any,
+      tsx: TSX,
+      getIndex: async () => ({ root: projectRoot, files: [] }),
+      initializeWorkspaces: false,
+      cacheNodeModules: false,
+    })
+
+    const ws = mgr.get("ws-stale")
+    expect(ws).toBeDefined()
+
+    const activeIndex = ws!.index as { files: { file: string }[] }
+    const fileNames = activeIndex.files.map((f) => f.file)
+    expect(fileNames).toContain("src/app.ts")
+    expect(fileNames).not.toContain("lib/generated/snapshot/index.d.ts")
+    expect(fileNames).not.toContain("lib/generated/snapshot/runtime/library.d.ts")
+    expect(activeIndex.files).toHaveLength(1)
+
+    const baseIndex = ws!.instances["inst-1"]?.index as { files: { file: string }[] }
+    expect(baseIndex.files.map((f) => f.file)).not.toContain("lib/generated/snapshot/index.d.ts")
+
+    const reloaded = store.loadWorkspace("ws-stale")
+    const reloadedFiles = (reloaded!.instances["inst-1"]!.index as { files: { file: string }[] }).files.map((f) => f.file)
+    expect(reloadedFiles).not.toContain("lib/generated/snapshot/index.d.ts")
+    expect(reloadedFiles).toContain("src/app.ts")
+  })
+
+  it("preserves indexes that have no excluded files", async () => {
+    const root = mkdtempSync(join(tmpdir(), "logos-clean-index-"))
+    tempDirs.push(root)
+    const projectRoot = join(root, "project")
+    mkdirSync(projectRoot, { recursive: true })
+    writeFileSync(join(projectRoot, "package.json"), "{}")
+
+    const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
+    const sessions = createSessions()
+
+    const cleanIndex = {
+      root: projectRoot,
+      files: [
+        { file: "src/app.ts", code: "export function app() {}", items: [] },
+        { file: "src/utils.ts", code: "export function util() {}", items: [] },
+      ],
+    }
+
+    store.saveWorkspace({
+      id: "ws-clean",
+      name: "Clean Workspace",
+      kind: "code",
+      parentId: null,
+      createdAt: Date.now(),
+      baseInstanceId: "inst-1",
+      activeInstanceId: "inst-1",
+      goals: [],
+      instances: {
+        "inst-1": {
+          id: "inst-1",
+          workspaceId: "ws-clean",
+          materializedRoot: join(root, "runs", "inst-1"),
+          mutability: "writable",
+          createdAt: Date.now(),
+          index: cleanIndex,
+        },
+      },
+    })
+
+    const mgr = new WorkspaceManager({
+      store,
+      runsDir: join(root, ".agent-runs"),
+      logosTsSrc: join(LOGOS_TS_ROOT, "src"),
+      logosTsRoot: LOGOS_TS_ROOT,
+      projectRoot,
+      caps: { root: projectRoot, nodeModulesDirs: [] },
+      sbManager: { get: () => null, shutdown: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") } as any,
+      sessions: sessions as any,
+      tsx: TSX,
+      getIndex: async () => ({ root: projectRoot, files: [] }),
+      initializeWorkspaces: false,
+      cacheNodeModules: false,
+    })
+
+    const ws = mgr.get("ws-clean")
+    const files = (ws!.index as { files: { file: string }[] }).files
+    expect(files).toHaveLength(2)
+    expect(files.map((f) => f.file)).toEqual(["src/app.ts", "src/utils.ts"])
+  })
+
+  it("strips files matching all PROJECT_SOURCE_EXCLUDES patterns", async () => {
+    const root = mkdtempSync(join(tmpdir(), "logos-multi-exclude-"))
+    tempDirs.push(root)
+    const projectRoot = join(root, "project")
+    mkdirSync(projectRoot, { recursive: true })
+    writeFileSync(join(projectRoot, "package.json"), "{}")
+
+    const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
+    const sessions = createSessions()
+
+    const staleIndex = {
+      root: projectRoot,
+      files: [
+        { file: "src/app.ts", code: "", items: [] },
+        { file: "node_modules/pkg/index.ts", code: "", items: [] },
+        { file: "dist/bundle.ts", code: "", items: [] },
+        { file: "generated/prisma/client.d.ts", code: "", items: [] },
+        { file: "lib/generated/snapshot/runtime/library.d.ts", code: "", items: [] },
+        { file: "build/output.ts", code: "", items: [] },
+        { file: "coverage/lcov.ts", code: "", items: [] },
+        { file: "storybook-static/main.ts", code: "", items: [] },
+        { file: ".logos_cache/cached.ts", code: "", items: [] },
+      ],
+    }
+
+    store.saveWorkspace({
+      id: "ws-multi",
+      name: "Multi Exclude",
+      kind: "code",
+      parentId: null,
+      createdAt: Date.now(),
+      baseInstanceId: "inst-1",
+      activeInstanceId: "inst-1",
+      goals: [],
+      instances: {
+        "inst-1": {
+          id: "inst-1",
+          workspaceId: "ws-multi",
+          materializedRoot: join(root, "runs", "inst-1"),
+          mutability: "writable",
+          createdAt: Date.now(),
+          index: staleIndex,
+        },
+      },
+    })
+
+    const mgr = new WorkspaceManager({
+      store,
+      runsDir: join(root, ".agent-runs"),
+      logosTsSrc: join(LOGOS_TS_ROOT, "src"),
+      logosTsRoot: LOGOS_TS_ROOT,
+      projectRoot,
+      caps: { root: projectRoot, nodeModulesDirs: [] },
+      sbManager: { get: () => null, shutdown: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") } as any,
+      sessions: sessions as any,
+      tsx: TSX,
+      getIndex: async () => ({ root: projectRoot, files: [] }),
+      initializeWorkspaces: false,
+      cacheNodeModules: false,
+    })
+
+    const ws = mgr.get("ws-multi")
+    const files = (ws!.index as { files: { file: string }[] }).files.map((f) => f.file)
+    expect(files).toEqual(["src/app.ts"])
+  })
+})
