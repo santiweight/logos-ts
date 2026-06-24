@@ -570,6 +570,7 @@ const FittedIframe = forwardRef<HTMLIFrameElement, IframeHTMLAttributes<HTMLIFra
     const iframeRef = useRef<HTMLIFrameElement | null>(null)
     const [frameSize, setFrameSize] = useState<FrameSize>(DEFAULT_FRAME_SIZE)
     const [scale, setScale] = useState(1)
+    const [loading, setLoading] = useState(true)
 
     const setIframeRef = useCallback((node: HTMLIFrameElement | null) => {
       iframeRef.current = node
@@ -589,6 +590,7 @@ const FittedIframe = forwardRef<HTMLIFrameElement, IframeHTMLAttributes<HTMLIFra
     }, [])
 
     useEffect(() => {
+      setLoading(true)
       refit()
       const viewport = viewportRef.current
       if (!viewport) return
@@ -605,6 +607,7 @@ const FittedIframe = forwardRef<HTMLIFrameElement, IframeHTMLAttributes<HTMLIFra
     }, [props.src, refit])
 
     const handleLoad = useCallback<NonNullable<IframeHTMLAttributes<HTMLIFrameElement>["onLoad"]>>((event) => {
+      setLoading(false)
       onLoad?.(event)
       refit()
       window.setTimeout(refit, 250)
@@ -625,6 +628,7 @@ const FittedIframe = forwardRef<HTMLIFrameElement, IframeHTMLAttributes<HTMLIFra
           </button>
         </div>
         <div className="fit-frame-viewport" ref={viewportRef}>
+          {loading && <div className="fit-frame-loading"><div className="fit-frame-spinner" /></div>}
           <div
             className="fit-frame-stage"
             style={{ width: `${frameSize.width * scale}px`, height: `${frameSize.height * scale}px` }}
