@@ -20,7 +20,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs"
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path"
+import { basename, dirname, extname, join, resolve } from "node:path"
 import {
   buildArchImplementationPrompt,
   buildArchPrompt,
@@ -56,7 +56,6 @@ interface EvalCase {
   tier?: "deterministic" | "capability"
   repeat?: number
   timeoutMs?: number
-  setup?: Check[]
   checks: Record<string, Check>
 }
 
@@ -489,11 +488,7 @@ async function runCase(casePath: string, trial: number, options: Pick<Options, "
   const caseDir = dirname(resolve(casePath))
   const c: EvalCase = JSON.parse(readFileSync(resolve(casePath), "utf8"))
   const codebase = resolve(caseDir, c.codebase)
-  const caseRel = relative(codebase, caseDir)
-  const caseInsideCodebase = caseRel === "" || (!caseRel.startsWith("..") && !isAbsolute(caseRel))
-  const runDir = caseInsideCodebase
-    ? resolve(codebase, "..", ".eval-runs", c.name, `t${trial}`)
-    : resolve(caseDir, "runs", c.name, `t${trial}`)
+  const runDir = resolve(caseDir, "runs", c.name, `t${trial}`)
   const work = resolve(runDir, "work")
   const tier = c.tier ?? "capability"
 
@@ -504,17 +499,6 @@ async function runCase(casePath: string, trial: number, options: Pick<Options, "
   for (const rel of ["node_modules", "frontend/node_modules"]) {
     const src = join(codebase, rel)
     if (existsSync(src) && !existsSync(join(work, rel))) symlinkSync(src, join(work, rel))
-  }
-
-  if (c.setup?.length) {
-    console.log(`[${c.name} t${trial}] running setup...`)
-    for (const setup of c.setup) {
-      const setupCwd = join(work, setup.cwd)
-      copyOracles(caseDir, setup, setupCwd)
-      const [cmd, ...args] = setup.cmd
-      if (!cmd) throw new Error(`setup command missing for ${c.name}`)
-      execFileSync(cmd, args, { cwd: setupCwd, encoding: "utf8" })
-    }
   }
 
   const archMode = c.agent === "architecture" || c.agent === "testing" || c.agent === "arch-impl"

@@ -436,31 +436,6 @@ describe("NodeModulesCache", () => {
     expect(new Set(resolvedPaths).size).toBe(1)
     expect(readdirSync(cacheDir).length).toBe(1)
   })
-
-  it("does not crash on dependencies with unapproved build scripts", () => {
-    const tmp = makeTempDir()
-    const localPkg = join(tmp, "local-pkg")
-    mkdirSync(localPkg, { recursive: true })
-    writeFileSync(join(localPkg, "package.json"), JSON.stringify({
-      name: "build-pkg",
-      version: "1.0.0",
-      scripts: { postinstall: "echo built" },
-    }))
-
-    const project = join(tmp, "project")
-    mkdirSync(project, { recursive: true })
-    writeFileSync(join(project, "package.json"), JSON.stringify({
-      name: "test-build-scripts",
-      version: "1.0.0",
-      dependencies: { "build-pkg": `file:${localPkg}` },
-    }))
-
-    const cacheDir = join(tmp, "cache")
-    const cache = new NodeModulesCache({ cacheDir })
-
-    expect(() => cache.ensureFor(project)).not.toThrow()
-    expect(existsSync(join(project, "node_modules")) || readdirSync(cacheDir).length > 0).toBe(true)
-  })
 })
 
 describe("findPackageDirs", () => {

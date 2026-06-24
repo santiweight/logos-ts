@@ -20,20 +20,6 @@ function envValue(name: string, defaultValue: string): string {
   return value ? value : defaultValue
 }
 
-const POISONED_ENV_PREFIXES = ["CLAUDE_CODE_", "CLAUDE_AGENT_SDK"]
-const POISONED_ENV_KEYS = ["CLAUDECODE", "AI_AGENT", "ANTHROPIC_API_KEY"]
-
-export function cleanEnvForClaude(anthropicApiKey?: string): NodeJS.ProcessEnv {
-  const env = { ...process.env }
-  for (const key of Object.keys(env)) {
-    if (POISONED_ENV_KEYS.includes(key) || POISONED_ENV_PREFIXES.some((p) => key.startsWith(p))) {
-      delete env[key]
-    }
-  }
-  if (anthropicApiKey) env["ANTHROPIC_API_KEY"] = anthropicApiKey
-  return env
-}
-
 export function buildClaudePrintArgs(opts: ClaudePrintArgsOptions): string[] {
   const args = ["-p", opts.promptArg]
   if (opts.resumeSessionId) args.push("-r", opts.resumeSessionId)

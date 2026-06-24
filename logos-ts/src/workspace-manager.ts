@@ -23,8 +23,7 @@ import type { StorybookManager } from "./storybook-manager.js"
 import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchImplementationPrompt, buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
-import { buildClaudePrintArgs, cleanEnvForClaude } from "./claude-cli.js"
-import type { LogosSecrets } from "./logos-secrets.js"
+import { buildClaudePrintArgs } from "./claude-cli.js"
 import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
 import type {
   StoredGoalLifecycle,
@@ -35,9 +34,8 @@ import type {
   StoredWorkspacePublication,
   WorkspaceKind,
 } from "./runtime-store.js"
-import { ensureStoryCaptureHarnessForRoot, missingStorySnapshotDependencies } from "./story-snapshots.js"
+import { ensureStorySnapshotTestForRoot, missingStorySnapshotDependencies } from "./story-snapshots.js"
 import { TsIndexCache } from "./ts-index-cache.js"
-import { PROJECT_SOURCE_EXCLUDES } from "./project.js"
 
 export interface GoalReply {
   author: "agent" | "user"
@@ -238,7 +236,6 @@ export class WorkspaceManager {
   private indexCache: TsIndexCache
   private goalSubscribers = new Map<string, Set<AgentEventCallback>>()
   private spawnAgent: AgentSpawner
-  private secrets: LogosSecrets
   private codeService: WorkspaceCodeService
   private goalWorkingInstances = new Map<string, string>()
   private acceptanceRepairAttempts = new Map<string, number>()
@@ -254,7 +251,6 @@ export class WorkspaceManager {
     sbManager: StorybookManager
     runManager?: RunManager
     sessions: ClaudeSessionManager
-    secrets: LogosSecrets
     tsx: string
     getIndex?: () => Promise<unknown>
     spawnAgent?: AgentSpawner
@@ -275,7 +271,6 @@ export class WorkspaceManager {
     this.getIndex = opts.getIndex ?? null
     this.initializeWorkspaces = opts.initializeWorkspaces ?? true
     this.indexCache = new TsIndexCache({ logosTsRoot: this.logosTsRoot, tsx: this.tsx })
-    this.secrets = opts.secrets
     this.spawnAgent = opts.spawnAgent ?? spawn
     this.codeService = new WorkspaceCodeService({
       runsDir: this.runsDir,
@@ -297,29 +292,12 @@ export class WorkspaceManager {
           dirty = true
         }
       }
-      if (WorkspaceManager.stripExcludedIndexFiles(ws)) dirty = true
       if (dirty) this.store.saveWorkspace(ws)
       this.workspaces.set(ws.id, ws)
       if (this.initializeWorkspaces && ws.initialization?.status === "initializing") {
         queueMicrotask(() => this.initializeWorkspace(ws.id, ws.activeInstanceId))
       }
     }
-  }
-
-  private static stripExcludedIndexFiles(ws: WorkspaceRecord): boolean {
-    const excludePatterns = PROJECT_SOURCE_EXCLUDES.map(
-      (dir) => new RegExp(`(^|/)${dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`),
-    )
-    const shouldExclude = (file: string) => excludePatterns.some((re) => re.test(file))
-    let changed = false
-    for (const inst of Object.values(ws.instances)) {
-      const idx = inst.index as { files?: { file: string }[] } | undefined
-      if (!idx?.files) continue
-      const before = idx.files.length
-      idx.files = idx.files.filter((f) => !shouldExclude(f.file))
-      if (idx.files.length !== before) changed = true
-    }
-    return changed
   }
 
   private save(ws: WorkspaceRecord): void {
@@ -391,13 +369,8 @@ export class WorkspaceManager {
     return rel ? `${inst.id}:${rel}` : inst.id
   }
 
-  private async createInstance(
-    workspaceId: string,
-    sourceRoot: string,
-    index?: unknown,
-    opts: { installNodeModules?: boolean } = {},
-  ): Promise<WorkspaceInstance> {
-    const inst = this.codeService.createInstance(workspaceId, sourceRoot, index ?? {}, opts)
+  private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
+    const inst = this.codeService.createInstance(workspaceId, sourceRoot, index ?? {})
     if (index) {
       inst.index = index
     } else {
@@ -465,7 +438,6 @@ export class WorkspaceManager {
       if (!inst) return
 
       this.setInitializationStep(ws, "story_snapshots", "running")
-      this.codeService.ensureCachedNodeModules(inst)
       const snapshots = await this.runStorySnapshotAcceptance(inst)
       if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
       if (!snapshots.ok) {
@@ -813,9 +785,7 @@ export class WorkspaceManager {
     const parentInst = parentWs ? this.activeInstance(parentWs) : null
     const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
     const sourceIndex = parentInst?.index ?? (this.getIndex ? await this.getIndex() : undefined)
-    const instance = await this.createInstance(id, sourceRoot, sourceIndex, {
-      installNodeModules: !this.initializeWorkspaces,
-    })
+    const instance = await this.createInstance(id, sourceRoot, sourceIndex)
 
     const ws: WorkspaceRecord = {
       id,
@@ -832,7 +802,7 @@ export class WorkspaceManager {
     this.workspaces.set(id, ws)
     this.save(ws)
 
-    if (this.initializeWorkspaces) setTimeout(() => this.initializeWorkspace(id, instance.id), 0)
+    if (this.initializeWorkspaces) this.initializeWorkspace(id, instance.id)
     else this.restartWorkspaceServices(ws, instance)
     return this.toMeta(ws)
   }
@@ -1319,7 +1289,7 @@ export class WorkspaceManager {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
         // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
-        env: { ...cleanEnvForClaude(this.secrets.anthropicApiKey), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+        env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
     this.runningAgents.set(goal.id, child)
@@ -1473,11 +1443,22 @@ export class WorkspaceManager {
     }
   }
 
+  private resolveVitestCommand(cwd: string): { command: string; args: string[] } {
+    for (const candidate of [
+      resolve(cwd, "node_modules/.bin/vitest"),
+      resolve(this.logosTsRoot, "node_modules/.bin/vitest"),
+      resolve(this.logosTsRoot, "studio/node_modules/.bin/vitest"),
+    ]) {
+      if (existsSync(candidate)) return { command: candidate, args: [] }
+    }
+    return { command: "pnpm", args: ["exec", "vitest"] }
+  }
+
   private async runStorySnapshotAcceptance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
     const dirs = this.storybookDirsForInstance(inst)
     if (!dirs) return { ok: true, output: "no Storybook configured" }
     this.sbManager.prepare(dirs.frontendDir)
-    const generated = ensureStoryCaptureHarnessForRoot(inst.materializedRoot, dirs)
+    const generated = ensureStorySnapshotTestForRoot(inst.materializedRoot, dirs)
     if (generated.storyCount === 0) return { ok: true, output: "no stories to snapshot" }
     const missingDeps = missingStorySnapshotDependencies(generated.frontendDir)
     if (missingDeps.length > 0) {
@@ -1490,14 +1471,24 @@ export class WorkspaceManager {
         ].join("\n"),
       }
     }
+    const vitest = this.resolveVitestCommand(generated.frontendDir)
+    const generatedTestFile = relative(generated.frontendDir, generated.testFile)
     try {
-      const { stdout, stderr } = await execFileAsync(this.tsx, [generated.captureScript], {
+      const { stdout, stderr } = await execFileAsync(vitest.command, [
+        ...vitest.args,
+        "run",
+        "--update",
+        "--config",
+        generated.configFile,
+        generatedTestFile,
+      ], {
         cwd: generated.frontendDir,
         encoding: "utf8",
         timeout: 120_000,
         maxBuffer: 16 * 1024 * 1024,
         env: {
           ...process.env,
+          LOGOS_VITEST_CACHE_DIR: resolve(inst.materializedRoot, ".logos_cache", "story-snapshots"),
           NODE_ENV: "test",
         },
       })
@@ -1841,7 +1832,7 @@ export class WorkspaceManager {
       {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...cleanEnvForClaude(this.secrets.anthropicApiKey), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+        env: { ...process.env, LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
     this.runningAgents.set(goal.id, child)

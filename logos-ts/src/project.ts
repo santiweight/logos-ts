@@ -1,18 +1,5 @@
 import { Project, ts } from "ts-morph"
 
-export const PROJECT_SOURCE_EXCLUDES = [
-  "node_modules",
-  "dist",
-  "build",
-  "coverage",
-  "storybook-static",
-  ".next",
-  ".turbo",
-  ".logos_cache",
-  "lib/generated",
-  "generated",
-] as const
-
 // Load a Logos-TS project: add our own .ts/.tsx sources but skip node_modules,
 // so symbol resolution sees intra-project declarations without pulling library
 // types (faster, and external symbols simply resolve to "untracked").
@@ -30,7 +17,8 @@ export function loadProject(root: string): Project {
   project.addSourceFilesAtPaths([
     `${root}/**/*.ts`,
     `${root}/**/*.tsx`,
-    ...PROJECT_SOURCE_EXCLUDES.map((dir) => `!${root}/**/${dir}/**`),
+    `!${root}/**/node_modules/**`,
+    `!${root}/**/dist/**`,
   ])
   return project
 }

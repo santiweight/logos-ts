@@ -59,7 +59,7 @@ export class NodeModulesCache {
     mkdirSync(entryDir, { recursive: true })
 
     this.removeNodeModules(join(packageDir, "node_modules"))
-    execFileSync("pnpm", ["install", "--no-lockfile", "--ignore-scripts"], {
+    execFileSync("pnpm", ["install", "--no-lockfile"], {
       cwd: packageDir,
       stdio: "inherit",
       env: { ...process.env, NODE_ENV: "" },
@@ -125,7 +125,7 @@ export class NodeModulesCache {
     if (!existsSync(join(packageDir, "package.json"))) return
     if (existsSync(join(packageDir, "node_modules"))) return
     console.log(`[logos] installing ${basename(packageDir)} (no lockfile, in-place)…`)
-    execFileSync("pnpm", ["install", "--no-lockfile", "--ignore-scripts"], {
+    execFileSync("pnpm", ["install", "--no-lockfile"], {
       cwd: packageDir,
       stdio: "inherit",
       env: { ...process.env, NODE_ENV: "" },
@@ -141,7 +141,7 @@ export class NodeModulesCache {
 
     console.log(`[logos] pnpm install: ${basename(packageDir)}…`)
     this.removeNodeModules(nodeModulesPath)
-    execFileSync("pnpm", [...install.installArgs, "--ignore-scripts"], {
+    execFileSync("pnpm", install.installArgs, {
       cwd: packageDir,
       stdio: "inherit",
       env: { ...process.env, NODE_ENV: "" },

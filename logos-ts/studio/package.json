@@ -9,7 +9,7 @@
   },
   "scripts": {
     "index": "pnpm --dir .. exec tsx src/build-index.ts ${LOGOS_PROJECT:-demos/hn-jobs} studio/src/studio-index.json",
-    "dev": "vite",
+    "dev": "pnpm --dir .. exec tsx studio/node_modules/vite/bin/vite.js studio",
     "start": "node bin/serve.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
