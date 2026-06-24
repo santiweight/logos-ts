@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, reviewChangeCount, selectActiveStorybookRuntime, selectedStorybookRoot, workspaceReadyForDisplay } from "./App"
+import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, reviewChangeCount, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, workspaceReadyForDisplay } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -170,6 +170,20 @@ describe("workspaceReadyForDisplay", () => {
         steps: [{ id: "index", label: "Index workspace", status: "done" }],
       },
     })).toBe(true)
+  })
+})
+
+describe("selectActiveWorkspaceView", () => {
+  it("hides view state from a previous active workspace", () => {
+    const previousView = {
+      workspaceId: "ws-old",
+      index: index([]),
+      reviewIndex: index([]),
+      baselineIndex: index([]),
+    }
+
+    expect(selectActiveWorkspaceView(previousView, "ws-new")).toBeNull()
+    expect(selectActiveWorkspaceView(previousView, "ws-old")).toBe(previousView)
   })
 })
 

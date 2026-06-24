@@ -33,9 +33,23 @@ const seed = seedData as unknown as StudioIndex
 const SELECTION_STORAGE_KEY = "logos:selection:v1"
 type MobilePanel = "changes" | "thread" | "files" | "main"
 
+export interface WorkspaceViewState {
+  workspaceId: string
+  index: StudioIndex
+  reviewIndex: StudioIndex | null
+  baselineIndex: StudioIndex
+}
+
 export function reviewChangeCount(base: StudioIndex, workspace: StudioIndex): number {
   const sourceChanged = Object.keys(diffIndex(base, workspace)).length > 0
   return (sourceChanged ? 1 : 0) + snapshotChanges(base, workspace).length
+}
+
+export function selectActiveWorkspaceView(
+  state: WorkspaceViewState | null,
+  activeWorkspaceId: string | null,
+): WorkspaceViewState | null {
+  return state?.workspaceId === activeWorkspaceId ? state : null
 }
 
 interface DemoOption {
@@ -280,11 +294,13 @@ export function App() {
   const openWorkspaceSeqRef = useRef(0)
   const openWorkspaceAbortRef = useRef<AbortController | null>(null)
   const [openingWorkspaceId, setOpeningWorkspaceId] = useState<string | null>(null)
-  const [workspaceIndex, setWorkspaceIndex] = useState<StudioIndex | null>(null)
-  const [workspaceReviewIndex, setWorkspaceReviewIndex] = useState<StudioIndex | null>(null)
-  const [workspaceBaselineIndex, setWorkspaceBaselineIndex] = useState<StudioIndex | null>(null)
+  const [workspaceViewState, setWorkspaceViewState] = useState<WorkspaceViewState | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
 
+  const activeWorkspaceView = selectActiveWorkspaceView(workspaceViewState, activeWorkspaceId)
+  const workspaceIndex = activeWorkspaceView?.index ?? null
+  const workspaceReviewIndex = activeWorkspaceView?.reviewIndex ?? null
+  const workspaceBaselineIndex = activeWorkspaceView?.baselineIndex ?? null
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
   const selectedGoalId = selected?.type === "goal" ? selected.id : null
   const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
@@ -474,9 +490,7 @@ export function App() {
     setOpeningWorkspaceId(id)
     setActiveWorkspaceId(id)
     if (resetView) {
-      setWorkspaceIndex(null)
-      setWorkspaceReviewIndex(null)
-      setWorkspaceBaselineIndex(null)
+      setWorkspaceViewState(null)
     }
     try {
       const res = await fetch(`/api/workspaces/${id}`, { cache: "no-store", signal: controller.signal })
@@ -491,9 +505,15 @@ export function App() {
             : [meta, ...prev]
         ))
         if (workspaceReadyForDisplay(ws)) {
-          setWorkspaceIndex(ws.index)
-          setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws, opts?.goalId))
-          setWorkspaceBaselineIndex(await loadWorkspaceReviewBase(ws, opts?.goalId))
+          const reviewIndex = selectWorkspaceReviewIndex(ws, opts?.goalId)
+          const baselineIndex = await loadWorkspaceReviewBase(ws, opts?.goalId)
+          if (openWorkspaceSeqRef.current !== requestSeq) return
+          setWorkspaceViewState({
+            workspaceId: ws.id,
+            index: ws.index,
+            reviewIndex,
+            baselineIndex,
+          })
         }
       }
     } catch (e) {
@@ -514,9 +534,15 @@ export function App() {
       const res = await fetch(`/api/workspaces/${wsId}/reindex${query}`, { method: "POST" })
       if (res.ok) {
         const ws = (await res.json()) as Workspace
-        setWorkspaceIndex(ws.index)
-        setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws, goalId))
-        setWorkspaceBaselineIndex(await loadWorkspaceReviewBase(ws, goalId))
+        const reviewIndex = selectWorkspaceReviewIndex(ws, goalId)
+        const baselineIndex = await loadWorkspaceReviewBase(ws, goalId)
+        if (activeWorkspaceIdRef.current !== ws.id) return
+        setWorkspaceViewState({
+          workspaceId: ws.id,
+          index: ws.index,
+          reviewIndex,
+          baselineIndex,
+        })
         await refreshWorkspaces()
       }
     } catch {}
@@ -853,9 +879,7 @@ export function App() {
     setAgentOpen(false)
     setSelected(null)
     setReviewOpen(false)
-    setWorkspaceIndex(null)
-    setWorkspaceReviewIndex(null)
-    setWorkspaceBaselineIndex(null)
+    setWorkspaceViewState(null)
     setActiveWorkspaceId(null)
 
     try {
@@ -1180,9 +1204,15 @@ export function App() {
         const res = await fetch(`/api/workspaces/${activeWorkspaceId}/reindex?goal=${encodeURIComponent(id)}`, { method: "POST" })
         if (res.ok) {
           const ws = (await res.json()) as Workspace
-          setWorkspaceIndex(ws.index)
-          setWorkspaceReviewIndex(selectWorkspaceReviewIndex(ws, id))
-          setWorkspaceBaselineIndex(await loadWorkspaceReviewBase(ws, id))
+          const reviewIndex = selectWorkspaceReviewIndex(ws, id)
+          const baselineIndex = await loadWorkspaceReviewBase(ws, id)
+          if (activeWorkspaceIdRef.current !== ws.id) return
+          setWorkspaceViewState({
+            workspaceId: ws.id,
+            index: ws.index,
+            reviewIndex,
+            baselineIndex,
+          })
         }
       } catch {}
     }
