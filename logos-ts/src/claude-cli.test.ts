@@ -47,6 +47,16 @@ describe("cleanEnvForClaude", () => {
     expect(env).toHaveProperty("LOGOS_CLAUDE_MODEL", "opus")
     expect(env).toHaveProperty("LOGOS_CLAUDE_EFFORT", "high")
   })
+
+  it("preserves a real Anthropic API key for spawned Claude auth", () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test")
+    vi.stubEnv("CLAUDE_CODE_SESSION_ID", "parent-session")
+
+    const env = cleanEnvForClaude()
+
+    expect(env).toHaveProperty("ANTHROPIC_API_KEY", "sk-ant-test")
+    expect(env).not.toHaveProperty("CLAUDE_CODE_SESSION_ID")
+  })
 })
 
 describe("structural: every file that spawns claude uses cleanEnvForClaude", () => {

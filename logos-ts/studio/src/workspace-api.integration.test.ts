@@ -14,6 +14,8 @@ let agentRuns: string
 let server: ChildProcess
 let baseUrl: string
 let signalFile: string
+let envLogFile: string
+let requireApiKeyFile: string
 const TEST_TIMEOUT = 20_000
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
@@ -78,10 +80,25 @@ function createProject(): string {
 function createFakeClaude(): string {
   const dir = mkdtempSync(join(tmpdir(), "logos-fake-claude-"))
   signalFile = join(dir, "signals.log")
+  envLogFile = join(dir, "env.log")
+  requireApiKeyFile = join(dir, "require-api-key")
   const script = join(dir, "claude")
   writeFileSync(script, [
     "#!/usr/bin/env node",
     "const fs = require('node:fs')",
+    "if (process.env.FAKE_CLAUDE_ENV_LOG) {",
+    "  fs.appendFileSync(process.env.FAKE_CLAUDE_ENV_LOG, JSON.stringify({",
+    "    anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,",
+    "    claudeCodeSessionId: process.env.CLAUDE_CODE_SESSION_ID || null,",
+    "    claudeCodeChildSession: process.env.CLAUDE_CODE_CHILD_SESSION || null,",
+    "    aiAgent: process.env.AI_AGENT || null,",
+    "  }) + '\\n')",
+    "}",
+    "if (process.env.FAKE_CLAUDE_REQUIRE_API_KEY_FILE && fs.existsSync(process.env.FAKE_CLAUDE_REQUIRE_API_KEY_FILE) && !process.env.ANTHROPIC_API_KEY) {",
+    "  console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fake-session' }))",
+    "  console.error('Not logged in · Please run /login')",
+    "  process.exit(1)",
+    "}",
     "process.on('SIGTERM', () => {",
     "  if (process.env.FAKE_CLAUDE_SIGNALS) fs.appendFileSync(process.env.FAKE_CLAUDE_SIGNALS, 'SIGTERM\\n')",
     "  process.exit(143)",
@@ -102,8 +119,41 @@ function sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms))
 }
 
+async function waitFor(assertion: () => void, timeoutMs = TEST_TIMEOUT): Promise<void> {
+  const start = Date.now()
+  let lastError: unknown
+  while (Date.now() - start < timeoutMs) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      lastError = error
+      await sleep(100)
+    }
+  }
+  throw lastError
+}
+
 function fakeClaudeSignals(): string {
   return signalFile && existsSync(signalFile) ? readFileSync(signalFile, "utf8") : ""
+}
+
+function fakeClaudeEnvEntries(): {
+  anthropicApiKey: string | null
+  claudeCodeSessionId: string | null
+  claudeCodeChildSession: string | null
+  aiAgent: string | null
+}[] {
+  if (!envLogFile || !existsSync(envLogFile)) return []
+  return readFileSync(envLogFile, "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as {
+      anthropicApiKey: string | null
+      claudeCodeSessionId: string | null
+      claudeCodeChildSession: string | null
+      aiAgent: string | null
+    })
 }
 
 async function stopServer(): Promise<void> {
@@ -247,6 +297,12 @@ describe("workspace API mode isolation", () => {
         LOGOS_PROJECT: projectRoot,
         LOGOS_AGENT_RUNS_DIR: agentRuns,
         FAKE_CLAUDE_SIGNALS: signalFile,
+        FAKE_CLAUDE_ENV_LOG: envLogFile,
+        FAKE_CLAUDE_REQUIRE_API_KEY_FILE: requireApiKeyFile,
+        ANTHROPIC_API_KEY: "sk-ant-integration-test",
+        CLAUDE_CODE_CHILD_SESSION: "1",
+        CLAUDE_CODE_SESSION_ID: "parent-session",
+        AI_AGENT: "claude-code_2-1-183_agent",
         PATH: `${binDir}:${process.env["PATH"] ?? ""}`,
       },
     })
@@ -432,6 +488,40 @@ describe("workspace API mode isolation", () => {
 
     await runRes.body?.cancel()
     controller.abort()
+  }, TEST_TIMEOUT)
+
+  it("preserves Anthropic API-key auth for spawned Claude agents", async () => {
+    writeFileSync(requireApiKeyFile, "1")
+    try {
+      const envEntryCountBeforeRun = fakeClaudeEnvEntries().length
+      const code = await createWorkspace("code")
+      await waitForWorkspaceReady(code.id)
+      const { res: goalRes, body: goal } = await addGoal(code.id, "code")
+      expect(goalRes.ok).toBe(true)
+
+      const controller = new AbortController()
+      const runRes = await fetch(`${baseUrl}/api/agent/run?workspace=${code.id}&goal=${goal.id}`, {
+        signal: controller.signal,
+      })
+      expect(runRes.ok).toBe(true)
+
+      await waitFor(() => {
+        const entries = fakeClaudeEnvEntries()
+        expect(entries.length).toBeGreaterThan(envEntryCountBeforeRun)
+        const latest = entries[entries.length - 1]
+        expect(latest).toMatchObject({
+          anthropicApiKey: "sk-ant-integration-test",
+          claudeCodeSessionId: null,
+          claudeCodeChildSession: null,
+          aiAgent: null,
+        })
+      })
+
+      await runRes.body?.cancel()
+      controller.abort()
+    } finally {
+      rmSync(requireApiKeyFile, { force: true })
+    }
   }, TEST_TIMEOUT)
 
   it("exposes an Arch product API without code payloads", async () => {
