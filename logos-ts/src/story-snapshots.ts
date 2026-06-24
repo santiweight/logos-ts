@@ -4,6 +4,10 @@ import { join, relative, resolve, sep } from "node:path"
 import { loadProject } from "./project.js"
 import { indexStories, type StoryEntry } from "./stories.js"
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 export interface StorySnapshotRecord {
   key: string
   value: string
@@ -15,6 +19,29 @@ export interface StorySnapshotStore {
   get(story: StoryEntry): string | null
 }
 
+export interface StoryCaptureResult {
+  frontendDir: string
+  captureScript: string
+  entryFile: string
+  htmlFile: string
+  snapshotTestShim: string
+  storyCount: number
+}
+
+export interface StorySnapshotComparison {
+  storyId: string
+  title: string
+  baseline: string | null
+  live: string | null
+  match: boolean
+}
+
+interface StorybookDirs {
+  frontendDir: string
+  configDir?: string
+}
+
+/** @deprecated Use StoryCaptureResult instead. */
 export interface StorySnapshotTestResult {
   frontendDir: string
   testFile: string
@@ -24,10 +51,9 @@ export interface StorySnapshotTestResult {
   storyCount: number
 }
 
-interface StorybookDirs {
-  frontendDir: string
-  configDir?: string
-}
+// ---------------------------------------------------------------------------
+// Constants & helpers
+// ---------------------------------------------------------------------------
 
 const STORY_SNAPSHOT_REQUIRED_PACKAGES = ["@storybook/react", "playwright"] as const
 const SNAPSHOT_SCAN_SKIP_DIRS = new Set([
@@ -73,6 +99,332 @@ function walkFiles(root: string): string[] {
   if (existsSync(root)) walk(root)
   return out
 }
+
+function snapshotDir(root: string): string {
+  return join(resolve(root), ".logos", "__snapshots__", "story-snapshots")
+}
+
+function snapshotFilePath(root: string, storyId: string): string {
+  return join(snapshotDir(root), `${safeStoryFileName(storyId)}.html`)
+}
+
+function previewFile(configDir: string | undefined): string | null {
+  if (!configDir) return null
+  for (const name of ["preview.tsx", "preview.ts", "preview.jsx", "preview.js"]) {
+    const file = join(configDir, name)
+    if (existsSync(file)) return file
+  }
+  return null
+}
+
+function tsconfigAliases(frontendDir: string): Record<string, { replacement: string; relativeToRoot: string | null }> {
+  const tsconfig = join(frontendDir, "tsconfig.json")
+  if (!existsSync(tsconfig)) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(tsconfig, "utf8")) as {
+      compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> }
+    }
+    const baseUrl = resolve(frontendDir, parsed.compilerOptions?.baseUrl ?? ".")
+    const paths = parsed.compilerOptions?.paths ?? {}
+    const aliases: Record<string, { replacement: string; relativeToRoot: string | null }> = {}
+    for (const [key, values] of Object.entries(paths)) {
+      const first = values[0]
+      if (!first) continue
+      const find = key.replace(/\/\*$/, "")
+      const replacement = resolve(baseUrl, first.replace(/\/\*$/, ""))
+      aliases[find] = {
+        replacement,
+        relativeToRoot: isSubpath(frontendDir, replacement) ? posixPath(relative(frontendDir, replacement)) : null,
+      }
+    }
+    return aliases
+  } catch {
+    return {}
+  }
+}
+
+function buildAliasEntries(aliases: Record<string, { replacement: string; relativeToRoot: string | null }>): string {
+  return Object.entries(aliases)
+    .map(([find, alias]) => {
+      const replacement = alias.relativeToRoot != null
+        ? `resolve(projectRoot, ${JSON.stringify(alias.relativeToRoot)})`
+        : JSON.stringify(alias.replacement)
+      return `      { find: ${JSON.stringify(find)}, replacement: ${replacement} },`
+    })
+    .join("\n")
+}
+
+interface BrowserHarnessFiles {
+  logosDir: string
+  entryFile: string
+  htmlFile: string
+  storyMetas: { id: string; title: string; file: string }[]
+}
+
+function writeBrowserHarness(
+  frontendDir: string,
+  scopedStories: StoryEntry[],
+  configDir: string | undefined,
+): BrowserHarnessFiles {
+  const logosDir = join(frontendDir, ".logos")
+  mkdirSync(logosDir, { recursive: true })
+  const entryFile = join(logosDir, "story-snapshots.browser.tsx")
+  const htmlFile = join(logosDir, "story-snapshots.html")
+
+  const grouped = new Map<string, StoryEntry[]>()
+  for (const story of scopedStories) {
+    const list = grouped.get(story.filePath) ?? []
+    if (list.length === 0) grouped.set(story.filePath, list)
+    list.push(story)
+  }
+
+  const preview = previewFile(configDir)
+  const browserImports: string[] = [
+    "import React from \"react\"",
+    "import { createRoot } from \"react-dom/client\"",
+    "import { composeStories, setProjectAnnotations } from \"@storybook/react\"",
+  ]
+  if (preview) browserImports.push(`import preview from ${JSON.stringify(importPath(logosDir, preview))}`)
+  const browserModuleLines: string[] = []
+  const browserStoryLines: string[] = []
+  const storyMetas: { id: string; title: string; file: string }[] = []
+  let index = 0
+  for (const [storyFile, entries] of grouped) {
+    const moduleName = `stories${index}`
+    const composedName = `composed${index}`
+    browserImports.push(`import * as ${moduleName} from ${JSON.stringify(importPath(logosDir, storyFile))}`)
+    browserModuleLines.push(`const ${composedName} = composeStories(${moduleName} as any) as Record<string, React.ComponentType<any>>`)
+    for (const story of entries) {
+      const title = `${story.component} / ${story.exportName}`
+      browserStoryLines.push(`  ${JSON.stringify(story.id)}: { title: ${JSON.stringify(title)}, Component: ${composedName}[${JSON.stringify(story.exportName)}] },`)
+      storyMetas.push({ id: story.id, title, file: safeStoryFileName(story.id) })
+    }
+    index += 1
+  }
+
+  writeFileSync(entryFile, [
+    "/* This file is generated by Logos. Do not edit by hand. */",
+    ...browserImports,
+    "",
+    preview ? "setProjectAnnotations(preview as any)" : "",
+    ...browserModuleLines,
+    "",
+    "const stories: Record<string, { title: string; Component?: React.ComponentType<any> }> = {",
+    ...browserStoryLines,
+    "}",
+    "",
+    "const params = new URLSearchParams(window.location.search)",
+    "const storyId = params.get(\"storyId\") ?? \"\"",
+    "const story = stories[storyId]",
+    "const root = document.getElementById(\"logos-story-root\")",
+    "if (!root) throw new Error(\"Logos story root not found\")",
+    "if (!story?.Component) throw new Error(`story export not found: ${storyId}`)",
+    "document.title = story.title",
+    "createRoot(root).render(",
+    "  React.createElement(",
+    "    \"section\",",
+    "    { \"data-logos-story-rendered\": storyId, \"data-logos-story-title\": story.title },",
+    "    React.createElement(story.Component)",
+    "  )",
+    ")",
+    "",
+  ].filter((line) => line !== null).join("\n"))
+
+  writeFileSync(htmlFile, [
+    "<!doctype html>",
+    "<html lang=\"en\">",
+    "  <head>",
+    "    <meta charset=\"UTF-8\" />",
+    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />",
+    "    <title>Logos Story Snapshot</title>",
+    "  </head>",
+    "  <body>",
+    "    <div id=\"logos-story-root\"></div>",
+    "    <script type=\"module\" src=\"/ .logos/story-snapshots.browser.tsx\"></script>",
+    "  </body>",
+    "</html>",
+    "",
+  ].join("\n").replace("/ .logos/", "/.logos/"))
+
+  return { logosDir, entryFile, htmlFile, storyMetas }
+}
+
+// ---------------------------------------------------------------------------
+// 1. Capture — generate harness files + standalone capture script
+// ---------------------------------------------------------------------------
+
+export function ensureStoryCaptureHarness(root: string, stories: StoryEntry[], dirs: StorybookDirs): StoryCaptureResult {
+  const frontendDir = resolve(dirs.frontendDir)
+  const scopedStories = stories.filter((story) => isSubpath(frontendDir, story.filePath))
+  const { logosDir, entryFile, htmlFile, storyMetas } = writeBrowserHarness(frontendDir, scopedStories, dirs.configDir)
+
+  // Clean up legacy generated files
+  rmSync(join(logosDir, "story-snapshots.test.tsx"), { force: true })
+  rmSync(join(logosDir, "story-snapshots.test.ts"), { force: true })
+  rmSync(join(logosDir, "vitest.story-snapshots.config.ts"), { force: true })
+  rmSync(join(logosDir, "__snapshots__", "story-snapshots.test.tsx.snap"), { force: true })
+  rmSync(join(logosDir, "__snapshots__", "story-snapshots.test.ts.snap"), { force: true })
+
+  const aliases = tsconfigAliases(frontendDir)
+  const aliasEntries = buildAliasEntries(aliases)
+  const storyMetaSource = JSON.stringify(storyMetas, null, 2)
+  const captureScript = join(logosDir, "story-capture.ts")
+
+  writeFileSync(captureScript, [
+    "/* This file is generated by Logos. Do not edit by hand. */",
+    "import { mkdirSync, writeFileSync } from \"node:fs\"",
+    "import { dirname, resolve } from \"node:path\"",
+    "import { fileURLToPath } from \"node:url\"",
+    "import { chromium } from \"playwright\"",
+    "import { createServer } from \"vite\"",
+    "",
+    "const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), \"..\")",
+    `const stories = ${storyMetaSource} as { id: string; title: string; file: string }[]`,
+    "const CONCURRENCY = Number(process.env.LOGOS_STORY_SNAPSHOT_CONCURRENCY ?? 4)",
+    "",
+    "function snapshotDocument(): string {",
+    "  const clone = document.documentElement.cloneNode(true) as HTMLElement",
+    "  clone.querySelectorAll(\"script\").forEach((node) => node.remove())",
+    "  clone.querySelectorAll(\"style\").forEach((node) => node.removeAttribute(\"data-vite-dev-id\"))",
+    "  return `<!doctype html>${clone.outerHTML}`",
+    "}",
+    "",
+    "async function main() {",
+    "  const server = await createServer({",
+    "    root: projectRoot,",
+    "    configFile: false,",
+    "    server: { host: \"127.0.0.1\", port: 0 },",
+    "    define: { \"process.env\": \"{}\" },",
+    "    esbuild: { jsx: \"automatic\", jsxImportSource: \"react\" },",
+    "    resolve: { alias: [",
+    aliasEntries,
+    "    ] },",
+    "  })",
+    "  await server.listen()",
+    "  const browser = await chromium.launch({ headless: true })",
+    "  const baseUrl = server.resolvedUrls?.local[0]",
+    "  if (!baseUrl) throw new Error(\"Vite dev server did not expose a local URL\")",
+    "",
+    "  const results: { storyId: string; file: string; ok: boolean; error?: string }[] = []",
+    "",
+    "  for (let i = 0; i < stories.length; i += CONCURRENCY) {",
+    "    const batch = stories.slice(i, i + CONCURRENCY)",
+    "    await Promise.all(batch.map(async (story) => {",
+    "      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })",
+    "      const storyUrl = new URL(`.logos/story-snapshots.html?storyId=${encodeURIComponent(story.id)}`, baseUrl).toString()",
+    "      try {",
+    "        await page.goto(storyUrl, { waitUntil: \"domcontentloaded\" })",
+    "        await page.locator(`[data-logos-story-rendered='${story.id}']`).waitFor({ timeout: 30_000 })",
+    "        await page.evaluate(() => document.fonts?.ready)",
+    "        const html = await page.evaluate(snapshotDocument)",
+    "        const snapshotFile = resolve(projectRoot, \".logos\", \"__snapshots__\", \"story-snapshots\", `${story.file}.html`)",
+    "        mkdirSync(dirname(snapshotFile), { recursive: true })",
+    "        writeFileSync(snapshotFile, html)",
+    "        results.push({ storyId: story.id, file: story.file, ok: true })",
+    "      } catch (e) {",
+    "        results.push({ storyId: story.id, file: story.file, ok: false, error: e instanceof Error ? e.message : String(e) })",
+    "      } finally {",
+    "        await page.close()",
+    "      }",
+    "    }))",
+    "  }",
+    "",
+    "  await browser.close()",
+    "  await server.close()",
+    "",
+    "  const failed = results.filter((r) => !r.ok)",
+    "  process.stdout.write(JSON.stringify({ ok: failed.length === 0, results }))",
+    "  process.exit(failed.length > 0 ? 1 : 0)",
+    "}",
+    "",
+    "main().catch((e) => {",
+    "  process.stderr.write(e instanceof Error ? e.message : String(e))",
+    "  process.exit(1)",
+    "})",
+    "",
+  ].join("\n"))
+
+  // Vitest shim: reports snapshot comparisons as test cases.
+  // Set LOGOS_SNAPSHOT_BASELINE to a directory to compare against; without it
+  // the shim just asserts each snapshot file was captured.
+  const snapshotTestShim = join(logosDir, "story-snapshots.test.ts")
+  writeFileSync(snapshotTestShim, [
+    "/* This file is generated by Logos. Do not edit by hand. */",
+    "import { existsSync, readFileSync } from \"node:fs\"",
+    "import { resolve } from \"node:path\"",
+    "import { fileURLToPath } from \"node:url\"",
+    "import { describe, expect, it } from \"vitest\"",
+    "",
+    "const projectRoot = resolve(fileURLToPath(import.meta.url), \"../..\") ",
+    `const stories = ${storyMetaSource} as { id: string; title: string; file: string }[]`,
+    "const snapshotDir = resolve(projectRoot, \".logos\", \"__snapshots__\", \"story-snapshots\")",
+    "const baselineRoot = process.env.LOGOS_SNAPSHOT_BASELINE ?? \"\"",
+    "const baselineDir = baselineRoot ? resolve(baselineRoot, \".logos\", \"__snapshots__\", \"story-snapshots\") : \"\"",
+    "",
+    "describe(\"logos story snapshots\", () => {",
+    "  for (const story of stories) {",
+    "    it(story.title, () => {",
+    "      const liveFile = resolve(snapshotDir, `${story.file}.html`)",
+    "      expect(existsSync(liveFile), `snapshot missing: ${story.file}`).toBe(true)",
+    "      if (baselineDir) {",
+    "        const baseFile = resolve(baselineDir, `${story.file}.html`)",
+    "        if (existsSync(baseFile)) {",
+    "          const baseline = readFileSync(baseFile, \"utf8\")",
+    "          const live = readFileSync(liveFile, \"utf8\")",
+    "          expect(live).toBe(baseline)",
+    "        }",
+    "      }",
+    "    })",
+    "  }",
+    "})",
+    "",
+  ].join("\n"))
+
+  return { frontendDir, captureScript, entryFile, htmlFile, snapshotTestShim, storyCount: scopedStories.length }
+}
+
+export function ensureStoryCaptureHarnessForRoot(root: string, dirs: StorybookDirs): StoryCaptureResult {
+  const project = loadProject(root)
+  const stories = indexStories(project.getSourceFiles().filter((source) => !source.getFilePath().includes("/node_modules/")))
+  return ensureStoryCaptureHarness(root, stories, dirs)
+}
+
+// ---------------------------------------------------------------------------
+// 2. Compare — structured baseline vs live diff
+// ---------------------------------------------------------------------------
+
+export function compareStorySnapshots(
+  baselineRoot: string,
+  liveRoot: string,
+  stories: StoryEntry[],
+): StorySnapshotComparison[] {
+  return stories.map((story) => {
+    const baselinePath = snapshotFilePath(baselineRoot, story.id)
+    const livePath = snapshotFilePath(liveRoot, story.id)
+    const baseline = existsSync(baselinePath) ? readFileSync(baselinePath, "utf8") : null
+    const live = existsSync(livePath) ? readFileSync(livePath, "utf8") : null
+    return {
+      storyId: story.id,
+      title: `${story.component} / ${story.exportName}`,
+      baseline,
+      live,
+      match: baseline === live,
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// 3. View — read a single snapshot
+// ---------------------------------------------------------------------------
+
+export function getStorySnapshot(root: string, storyId: string): string | null {
+  const file = snapshotFilePath(root, storyId)
+  return existsSync(file) ? readFileSync(file, "utf8") : null
+}
+
+// ---------------------------------------------------------------------------
+// Legacy snapshot store (used by build-index.ts)
+// ---------------------------------------------------------------------------
 
 export function parseSnapshotKeys(snapContent: string, snapshotFile = ""): StorySnapshotRecord[] {
   const records: StorySnapshotRecord[] = []
@@ -128,40 +480,9 @@ export function loadStorySnapshotStore(root: string, opts: { frontendDir?: strin
   }
 }
 
-function previewFile(configDir: string | undefined): string | null {
-  if (!configDir) return null
-  for (const name of ["preview.tsx", "preview.ts", "preview.jsx", "preview.js"]) {
-    const file = join(configDir, name)
-    if (existsSync(file)) return file
-  }
-  return null
-}
-
-function tsconfigAliases(frontendDir: string): Record<string, { replacement: string; relativeToRoot: string | null }> {
-  const tsconfig = join(frontendDir, "tsconfig.json")
-  if (!existsSync(tsconfig)) return {}
-  try {
-    const parsed = JSON.parse(readFileSync(tsconfig, "utf8")) as {
-      compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> }
-    }
-    const baseUrl = resolve(frontendDir, parsed.compilerOptions?.baseUrl ?? ".")
-    const paths = parsed.compilerOptions?.paths ?? {}
-    const aliases: Record<string, { replacement: string; relativeToRoot: string | null }> = {}
-    for (const [key, values] of Object.entries(paths)) {
-      const first = values[0]
-      if (!first) continue
-      const find = key.replace(/\/\*$/, "")
-      const replacement = resolve(baseUrl, first.replace(/\/\*$/, ""))
-      aliases[find] = {
-        replacement,
-        relativeToRoot: isSubpath(frontendDir, replacement) ? posixPath(relative(frontendDir, replacement)) : null,
-      }
-    }
-    return aliases
-  } catch {
-    return {}
-  }
-}
+// ---------------------------------------------------------------------------
+// Dependency check
+// ---------------------------------------------------------------------------
 
 export function missingStorySnapshotDependencies(frontendDir: string): string[] {
   const root = resolve(frontendDir)
@@ -188,203 +509,32 @@ export function missingStorySnapshotDependencies(frontendDir: string): string[] 
   })
 }
 
+// ---------------------------------------------------------------------------
+// Deprecated — kept for backward compat during migration
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use ensureStoryCaptureHarness instead. */
 export function ensureStorySnapshotTest(root: string, stories: StoryEntry[], dirs: StorybookDirs): StorySnapshotTestResult {
-  const frontendDir = resolve(dirs.frontendDir)
-  const logosDir = join(frontendDir, ".logos")
-  mkdirSync(logosDir, { recursive: true })
-  const testFile = join(logosDir, "story-snapshots.test.ts")
-  const entryFile = join(logosDir, "story-snapshots.browser.tsx")
-  const htmlFile = join(logosDir, "story-snapshots.html")
-  const configFile = join(logosDir, "vitest.story-snapshots.config.ts")
-  rmSync(join(logosDir, "story-snapshots.test.tsx"), { force: true })
-  rmSync(join(logosDir, "__snapshots__", "story-snapshots.test.tsx.snap"), { force: true })
-  rmSync(join(logosDir, "__snapshots__", "story-snapshots.test.ts.snap"), { force: true })
-  const scopedStories = stories.filter((story) => isSubpath(frontendDir, story.filePath))
-  const grouped = new Map<string, StoryEntry[]>()
-  for (const story of scopedStories) {
-    const list = grouped.get(story.filePath) ?? []
-    if (list.length === 0) grouped.set(story.filePath, list)
-    list.push(story)
+  const result = ensureStoryCaptureHarness(root, stories, dirs)
+  return {
+    frontendDir: result.frontendDir,
+    testFile: result.captureScript,
+    entryFile: result.entryFile,
+    htmlFile: result.htmlFile,
+    configFile: result.captureScript,
+    storyCount: result.storyCount,
   }
-
-  const preview = previewFile(dirs.configDir)
-  const browserImports: string[] = [
-    "import React from \"react\"",
-    "import { createRoot } from \"react-dom/client\"",
-    "import { composeStories, setProjectAnnotations } from \"@storybook/react\"",
-  ]
-  if (preview) browserImports.push(`import preview from ${JSON.stringify(importPath(logosDir, preview))}`)
-  const browserModuleLines: string[] = []
-  const browserStoryLines: string[] = []
-  const storyMetas: { id: string; title: string; file: string }[] = []
-  let index = 0
-  for (const [storyFile, entries] of grouped) {
-    const moduleName = `stories${index}`
-    const composedName = `composed${index}`
-    browserImports.push(`import * as ${moduleName} from ${JSON.stringify(importPath(logosDir, storyFile))}`)
-    browserModuleLines.push(`const ${composedName} = composeStories(${moduleName} as any) as Record<string, React.ComponentType<any>>`)
-    for (const story of entries) {
-      const title = `${story.component} / ${story.exportName}`
-      browserStoryLines.push(`  ${JSON.stringify(story.id)}: { title: ${JSON.stringify(title)}, Component: ${composedName}[${JSON.stringify(story.exportName)}] },`)
-      storyMetas.push({ id: story.id, title, file: safeStoryFileName(story.id) })
-    }
-    index += 1
-  }
-
-  const browserSource = [
-    "/* This file is generated by Logos. Do not edit by hand. */",
-    ...browserImports,
-    "",
-    preview ? "setProjectAnnotations(preview as any)" : "",
-    ...browserModuleLines,
-    "",
-    "const stories: Record<string, { title: string; Component?: React.ComponentType<any> }> = {",
-    ...browserStoryLines,
-    "}",
-    "",
-    "const params = new URLSearchParams(window.location.search)",
-    "const storyId = params.get(\"storyId\") ?? \"\"",
-    "const story = stories[storyId]",
-    "const root = document.getElementById(\"logos-story-root\")",
-    "if (!root) throw new Error(\"Logos story root not found\")",
-    "if (!story?.Component) throw new Error(`story export not found: ${storyId}`)",
-    "document.title = story.title",
-    "createRoot(root).render(",
-    "  React.createElement(",
-    "    \"section\",",
-    "    { \"data-logos-story-rendered\": storyId, \"data-logos-story-title\": story.title },",
-    "    React.createElement(story.Component)",
-    "  )",
-    ")",
-    "",
-  ].filter((line) => line !== null).join("\n")
-  writeFileSync(entryFile, browserSource)
-
-  writeFileSync(htmlFile, [
-    "<!doctype html>",
-    "<html lang=\"en\">",
-    "  <head>",
-    "    <meta charset=\"UTF-8\" />",
-    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />",
-    "    <title>Logos Story Snapshot</title>",
-    "  </head>",
-    "  <body>",
-    "    <div id=\"logos-story-root\"></div>",
-    "    <script type=\"module\" src=\"/ .logos/story-snapshots.browser.tsx\"></script>",
-    "  </body>",
-    "</html>",
-    "",
-  ].join("\n").replace("/ .logos/", "/.logos/"))
-
-  const aliases = tsconfigAliases(frontendDir)
-  const aliasEntries = Object.entries(aliases)
-    .map(([find, alias]) => {
-      const replacement = alias.relativeToRoot != null
-        ? `resolve(projectRoot, ${JSON.stringify(alias.relativeToRoot)})`
-        : JSON.stringify(alias.replacement)
-      return `      { find: ${JSON.stringify(find)}, replacement: ${replacement} },`
-    })
-    .join("\n")
-  const configSource = [
-    "/* This file is generated by Logos. Do not edit by hand. */",
-    "import { dirname, resolve } from \"node:path\"",
-    "import { fileURLToPath } from \"node:url\"",
-    "",
-    "const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), \"..\")",
-    "",
-    "export default {",
-    "  test: {",
-    "    globals: true,",
-    "    environment: \"node\",",
-    "    include: [\".logos/**/*.test.ts\"],",
-    "    maxConcurrency: Number(process.env.LOGOS_STORY_SNAPSHOT_CONCURRENCY ?? 4),",
-    "  },",
-    "  esbuild: {",
-    "    jsx: \"automatic\",",
-    "    jsxImportSource: \"react\",",
-    "  },",
-    "  resolve: {",
-    "    alias: [",
-    aliasEntries,
-    "    ],",
-    "  },",
-    "}",
-    "",
-  ].join("\n")
-  writeFileSync(configFile, configSource)
-
-  const storyMetaSource = JSON.stringify(storyMetas, null, 2)
-  const testSource = [
-    "/* This file is generated by Logos. Do not edit by hand. */",
-    "import { mkdirSync } from \"node:fs\"",
-    "import { dirname, resolve } from \"node:path\"",
-    "import { fileURLToPath } from \"node:url\"",
-    "import { afterAll, beforeAll, describe, expect, it } from \"vitest\"",
-    "import { chromium, type Browser } from \"playwright\"",
-    "import { createServer, type ViteDevServer } from \"vite\"",
-    "",
-    "const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), \"..\")",
-    `const stories = ${storyMetaSource} as { id: string; title: string; file: string }[]`,
-    "let server: ViteDevServer",
-    "let browser: Browser",
-    "",
-    "function snapshotDocument(): string {",
-    "  const clone = document.documentElement.cloneNode(true) as HTMLElement",
-    "  clone.querySelectorAll(\"script\").forEach((node) => node.remove())",
-    "  clone.querySelectorAll(\"style\").forEach((node) => node.removeAttribute(\"data-vite-dev-id\"))",
-    "  return `<!doctype html>${clone.outerHTML}`",
-    "}",
-    "",
-    "describe(\"logos browser story snapshots\", () => {",
-    "  beforeAll(async () => {",
-    "    server = await createServer({",
-    "      root: projectRoot,",
-    "      configFile: false,",
-    "      server: { host: \"127.0.0.1\", port: 0 },",
-    "      define: { \"process.env\": \"{}\" },",
-    "      esbuild: { jsx: \"automatic\", jsxImportSource: \"react\" },",
-    "      resolve: { alias: [",
-    aliasEntries,
-    "      ] },",
-    "    })",
-    "    await server.listen()",
-    "    browser = await chromium.launch({ headless: true })",
-    "  }, 60_000)",
-    "",
-    "  afterAll(async () => {",
-    "    await browser?.close()",
-    "    await server?.close()",
-    "  }, 60_000)",
-    "",
-    "  for (const story of stories) {",
-    "    it.concurrent(story.title, async () => {",
-    "      const baseUrl = server.resolvedUrls?.local[0]",
-    "      if (!baseUrl) throw new Error(\"Vite story snapshot server did not expose a local URL\")",
-    "      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })",
-    "      const storyUrl = new URL(`.logos/story-snapshots.html?storyId=${encodeURIComponent(story.id)}`, baseUrl).toString()",
-    "      try {",
-    "        await page.goto(storyUrl, { waitUntil: \"domcontentloaded\" })",
-    "        await page.locator(`[data-logos-story-rendered='${story.id}']`).waitFor({ timeout: 30_000 })",
-    "        await page.evaluate(() => document.fonts?.ready)",
-    "        const html = await page.evaluate(snapshotDocument)",
-    "        const snapshotFile = resolve(projectRoot, \".logos\", \"__snapshots__\", \"story-snapshots\", `${story.file}.html`)",
-    "        mkdirSync(dirname(snapshotFile), { recursive: true })",
-    "        await expect(html).toMatchFileSnapshot(snapshotFile)",
-    "      } finally {",
-    "        await page.close()",
-    "      }",
-    "    }, 60_000)",
-    "  }",
-    "})",
-    "",
-  ].join("\n")
-  writeFileSync(testFile, testSource)
-
-  return { frontendDir, testFile, entryFile, htmlFile, configFile, storyCount: scopedStories.length }
 }
 
+/** @deprecated Use ensureStoryCaptureHarnessForRoot instead. */
 export function ensureStorySnapshotTestForRoot(root: string, dirs: StorybookDirs): StorySnapshotTestResult {
-  const project = loadProject(root)
-  const stories = indexStories(project.getSourceFiles().filter((source) => !source.getFilePath().includes("/node_modules/")))
-  return ensureStorySnapshotTest(root, stories, dirs)
+  const result = ensureStoryCaptureHarnessForRoot(root, dirs)
+  return {
+    frontendDir: result.frontendDir,
+    testFile: result.captureScript,
+    entryFile: result.entryFile,
+    htmlFile: result.htmlFile,
+    configFile: result.captureScript,
+    storyCount: result.storyCount,
+  }
 }

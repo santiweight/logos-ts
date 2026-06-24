@@ -8,7 +8,19 @@ import { fileURLToPath } from "node:url"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const STUDIO = resolve(__dirname, "..")
 
-const projectRoot = resolve(process.argv[2] || process.cwd())
+const args = process.argv.slice(2)
+let projectRoot = null
+let port = null
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--port" && args[i + 1]) {
+    port = args[++i]
+  } else if (!projectRoot) {
+    projectRoot = resolve(args[i])
+  }
+}
+
+projectRoot = projectRoot || resolve(process.cwd())
 
 if (!existsSync(projectRoot)) {
   console.error(`Error: path does not exist: ${projectRoot}`)
@@ -23,9 +35,14 @@ if (!hasTsFiles) {
 }
 
 console.log(`\nLogos Studio`)
-console.log(`  Project: ${projectRoot}\n`)
+console.log(`  Project: ${projectRoot}`)
+if (port) console.log(`  Port:    ${port}`)
+console.log()
 
-const child = spawn(resolve(STUDIO, "node_modules/.bin/vite"), ["dev"], {
+const viteArgs = ["dev"]
+if (port) viteArgs.push("--port", port, "--strictPort")
+
+const child = spawn(resolve(STUDIO, "node_modules/.bin/vite"), viteArgs, {
   cwd: STUDIO,
   env: { ...process.env, LOGOS_PROJECT: projectRoot },
   stdio: "inherit",

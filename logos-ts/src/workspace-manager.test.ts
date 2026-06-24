@@ -93,6 +93,7 @@ function createManager(opts?: {
     caps: { root: projectRoot, nodeModulesDirs: [], ...extraCaps },
     sbManager: sbManager as any,
     sessions: sessions as any,
+    secrets: { anthropicApiKey: "test-key" } as any,
     tsx: opts?.tsx ?? TSX,
     getIndex: async () => ({ root: projectRoot, files: [] }),
     initializeWorkspaces: opts?.initializeWorkspaces ?? false,
@@ -638,7 +639,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(env).not.toHaveProperty("CLAUDE_CODE_CHILD_SESSION")
     expect(env).not.toHaveProperty("CLAUDE_CODE_SESSION_ID")
     expect(env).not.toHaveProperty("CLAUDE_CODE_ENTRYPOINT")
-    expect(env).not.toHaveProperty("ANTHROPIC_API_KEY")
+    expect(env).toHaveProperty("ANTHROPIC_API_KEY", "test-key")
     expect(env).not.toHaveProperty("CLAUDECODE")
     expect(env).not.toHaveProperty("AI_AGENT")
     expect(env).not.toHaveProperty("CLAUDE_AGENT_SDK_VERSION")
@@ -1233,6 +1234,7 @@ describe("WorkspaceManager workspace kinds", () => {
       caps: { root: projectRoot, nodeModulesDirs: [] },
       sbManager: { get: () => null, shutdown: () => undefined } as any,
       sessions: { deleteByWorkspace: () => undefined } as any,
+      secrets: { anthropicApiKey: "test-key" } as any,
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
       initializeWorkspaces: false,
@@ -1250,6 +1252,7 @@ describe("WorkspaceManager workspace kinds", () => {
       caps: { root: projectRoot, nodeModulesDirs: [] },
       sbManager: { get: () => null, shutdown: () => undefined } as any,
       sessions: { deleteByWorkspace: () => undefined } as any,
+      secrets: { anthropicApiKey: "test-key" } as any,
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
       initializeWorkspaces: false,
@@ -1292,6 +1295,7 @@ describe("WorkspaceManager workspace kinds", () => {
       caps: { root: sourceProjectRoot, nodeModulesDirs: [] },
       sbManager: { get: () => null, shutdown: () => undefined } as any,
       sessions: createSessions() as any,
+      secrets: { anthropicApiKey: "test-key" } as any,
       tsx: TSX,
       getIndex: async () => ({ root: sourceProjectRoot, files: [] }),
       initializeWorkspaces: false,

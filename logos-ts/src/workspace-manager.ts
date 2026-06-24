@@ -35,7 +35,7 @@ import type {
   StoredWorkspacePublication,
   WorkspaceKind,
 } from "./runtime-store.js"
-import { ensureStorySnapshotTestForRoot, missingStorySnapshotDependencies } from "./story-snapshots.js"
+import { ensureStoryCaptureHarnessForRoot, missingStorySnapshotDependencies } from "./story-snapshots.js"
 import { TsIndexCache } from "./ts-index-cache.js"
 import { PROJECT_SOURCE_EXCLUDES } from "./project.js"
 
@@ -1473,22 +1473,11 @@ export class WorkspaceManager {
     }
   }
 
-  private resolveVitestCommand(cwd: string): { command: string; args: string[] } {
-    for (const candidate of [
-      resolve(cwd, "node_modules/.bin/vitest"),
-      resolve(this.logosTsRoot, "node_modules/.bin/vitest"),
-      resolve(this.logosTsRoot, "studio/node_modules/.bin/vitest"),
-    ]) {
-      if (existsSync(candidate)) return { command: candidate, args: [] }
-    }
-    return { command: "pnpm", args: ["exec", "vitest"] }
-  }
-
   private async runStorySnapshotAcceptance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
     const dirs = this.storybookDirsForInstance(inst)
     if (!dirs) return { ok: true, output: "no Storybook configured" }
     this.sbManager.prepare(dirs.frontendDir)
-    const generated = ensureStorySnapshotTestForRoot(inst.materializedRoot, dirs)
+    const generated = ensureStoryCaptureHarnessForRoot(inst.materializedRoot, dirs)
     if (generated.storyCount === 0) return { ok: true, output: "no stories to snapshot" }
     const missingDeps = missingStorySnapshotDependencies(generated.frontendDir)
     if (missingDeps.length > 0) {
@@ -1501,24 +1490,14 @@ export class WorkspaceManager {
         ].join("\n"),
       }
     }
-    const vitest = this.resolveVitestCommand(generated.frontendDir)
-    const generatedTestFile = relative(generated.frontendDir, generated.testFile)
     try {
-      const { stdout, stderr } = await execFileAsync(vitest.command, [
-        ...vitest.args,
-        "run",
-        "--update",
-        "--config",
-        generated.configFile,
-        generatedTestFile,
-      ], {
+      const { stdout, stderr } = await execFileAsync(this.tsx, [generated.captureScript], {
         cwd: generated.frontendDir,
         encoding: "utf8",
         timeout: 120_000,
         maxBuffer: 16 * 1024 * 1024,
         env: {
           ...process.env,
-          LOGOS_VITEST_CACHE_DIR: resolve(inst.materializedRoot, ".logos_cache", "story-snapshots"),
           NODE_ENV: "test",
         },
       })
