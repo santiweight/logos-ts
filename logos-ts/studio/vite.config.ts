@@ -19,6 +19,7 @@ import { createPortableStoryResolver } from "../src/portable-stories"
 import { createSessionProject } from "../src/session-project"
 import { buildGoalNamePrompt, cleanGoalName, fallbackGoalName, type GoalNameInput } from "../src/goal-naming"
 import { cleanEnvForClaude } from "../src/claude-cli"
+import { LogosSecrets } from "../src/logos-secrets"
 import { defaultLogosRuntimeDir, resolveLogosRuntimePaths } from "../src/runtime-paths"
 import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
@@ -63,6 +64,7 @@ type StudioRuntime = {
   indexReady: Promise<StudioIndex>
   sbManager: import("../src/storybook-manager").StorybookManager
   runManager: import("../src/run-manager").RunManager
+  secrets: import("../src/logos-secrets").LogosSecrets
   wsMgr: import("../src/workspace-manager").WorkspaceManager
   portableStories: import("../src/portable-stories").PortableStoryResolver
 }
@@ -136,6 +138,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   const runManager = new RunManager(runtimeStore, projectRoot)
 
   const sessionMgr = new ClaudeSessionManager(runtimeStore)
+  const secrets = new LogosSecrets()
 
   const wsMgr = new WorkspaceManager({
     store: runtimeStore,
@@ -148,6 +151,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     sbManager,
     runManager,
     sessions: sessionMgr,
+    secrets,
     tsx,
     getIndex: () => indexReady,
   })
@@ -161,7 +165,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     },
   })
 
-  return { demoId, sourceProject, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, runManager, wsMgr, portableStories }
+  return { demoId, sourceProject, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, runManager, secrets, wsMgr, portableStories }
 }
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
@@ -178,7 +182,7 @@ function goalNamingEnabled(): boolean {
     && process.env.VITEST !== "true"
 }
 
-async function generateGoalName(input: GoalNameInput, cwd: string): Promise<string> {
+async function generateGoalName(input: GoalNameInput, cwd: string, anthropicApiKey?: string): Promise<string> {
   if (!goalNamingEnabled()) return fallbackGoalName(input)
 
   const prompt = buildGoalNamePrompt(input)
@@ -186,7 +190,7 @@ async function generateGoalName(input: GoalNameInput, cwd: string): Promise<stri
     const raw = await new Promise<string>((resolveOutput, rejectOutput) => {
       execFile("claude", ["-p", prompt, "--model", "haiku", "--output-format", "text"], {
         cwd,
-        env: cleanEnvForClaude(),
+        env: cleanEnvForClaude(anthropicApiKey),
         encoding: "utf8",
         timeout: 4_000,
         maxBuffer: 8 * 1024,
@@ -216,6 +220,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         indexReady,
         sbManager,
         runManager,
+        secrets,
         wsMgr,
       } = runtime
 
@@ -327,7 +332,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         runTargets: caps.runs,
         testState,
         readBody,
-        generateGoalName: (input) => generateGoalName(input, PROJECT_ROOT),
+        generateGoalName: (input) => generateGoalName(input, PROJECT_ROOT, secrets.anthropicApiKey),
       }))
 
       server.middlewares.use("/api/graph", (_req, res) => {
@@ -452,7 +457,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
             appPath: typeof body.appPath === "string" ? body.appPath : null,
             runTargetId: typeof body.runTargetId === "string" ? body.runTargetId : null,
           }
-          const goalName = typeof body.goalName === "string" ? body.goalName : await generateGoalName(namingInput, PROJECT_ROOT)
+          const goalName = typeof body.goalName === "string" ? body.goalName : await generateGoalName(namingInput, PROJECT_ROOT, secrets.anthropicApiKey)
           const result = await wsMgr.addGoal(wsId, {
             id: `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
             text: String(body.text ?? ""),

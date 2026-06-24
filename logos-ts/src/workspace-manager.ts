@@ -24,6 +24,7 @@ import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
 import { buildArchImplementationPrompt, buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
 import { buildClaudePrintArgs, cleanEnvForClaude } from "./claude-cli.js"
+import type { LogosSecrets } from "./logos-secrets.js"
 import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
 import type {
   StoredGoalLifecycle,
@@ -236,6 +237,7 @@ export class WorkspaceManager {
   private indexCache: TsIndexCache
   private goalSubscribers = new Map<string, Set<AgentEventCallback>>()
   private spawnAgent: AgentSpawner
+  private secrets: LogosSecrets
   private codeService: WorkspaceCodeService
   private goalWorkingInstances = new Map<string, string>()
   private acceptanceRepairAttempts = new Map<string, number>()
@@ -251,6 +253,7 @@ export class WorkspaceManager {
     sbManager: StorybookManager
     runManager?: RunManager
     sessions: ClaudeSessionManager
+    secrets: LogosSecrets
     tsx: string
     getIndex?: () => Promise<unknown>
     spawnAgent?: AgentSpawner
@@ -271,6 +274,7 @@ export class WorkspaceManager {
     this.getIndex = opts.getIndex ?? null
     this.initializeWorkspaces = opts.initializeWorkspaces ?? true
     this.indexCache = new TsIndexCache({ logosTsRoot: this.logosTsRoot, tsx: this.tsx })
+    this.secrets = opts.secrets
     this.spawnAgent = opts.spawnAgent ?? spawn
     this.codeService = new WorkspaceCodeService({
       runsDir: this.runsDir,
@@ -1297,7 +1301,7 @@ export class WorkspaceManager {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
         // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
-        env: { ...cleanEnvForClaude(), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+        env: { ...cleanEnvForClaude(this.secrets.anthropicApiKey), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
     this.runningAgents.set(goal.id, child)
@@ -1840,7 +1844,7 @@ export class WorkspaceManager {
       {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...cleanEnvForClaude(), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+        env: { ...cleanEnvForClaude(this.secrets.anthropicApiKey), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
       },
     )
     this.runningAgents.set(goal.id, child)

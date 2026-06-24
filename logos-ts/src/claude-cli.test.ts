@@ -12,14 +12,14 @@ afterEach(() => {
 })
 
 describe("cleanEnvForClaude", () => {
-  it("strips Claude Code session vars that break auth in spawned agents", () => {
+  it("strips Claude Code session vars and inherited ANTHROPIC_API_KEY", () => {
     vi.stubEnv("CLAUDE_CODE_CHILD_SESSION", "1")
     vi.stubEnv("CLAUDE_CODE_SESSION_ID", "abc-123")
     vi.stubEnv("CLAUDE_CODE_ENTRYPOINT", "sdk-ts")
     vi.stubEnv("CLAUDE_CODE_EXECPATH", "/some/path/claude")
     vi.stubEnv("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS", "1")
     vi.stubEnv("CLAUDE_AGENT_SDK_VERSION", "0.3.183")
-    vi.stubEnv("ANTHROPIC_API_KEY", "")
+    vi.stubEnv("ANTHROPIC_API_KEY", "inherited-should-be-stripped")
     vi.stubEnv("CLAUDECODE", "1")
     vi.stubEnv("AI_AGENT", "claude-code_2-1-183_agent")
     vi.stubEnv("HOME", "/Users/test")
@@ -38,6 +38,16 @@ describe("cleanEnvForClaude", () => {
     expect(env).toHaveProperty("HOME", "/Users/test")
   })
 
+  it("sets ANTHROPIC_API_KEY from explicit argument", () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "inherited-junk")
+    vi.stubEnv("CLAUDE_CODE_SESSION_ID", "parent-session")
+
+    const env = cleanEnvForClaude("sk-ant-from-secrets-file")
+
+    expect(env).toHaveProperty("ANTHROPIC_API_KEY", "sk-ant-from-secrets-file")
+    expect(env).not.toHaveProperty("CLAUDE_CODE_SESSION_ID")
+  })
+
   it("preserves LOGOS_ env vars", () => {
     vi.stubEnv("LOGOS_CLAUDE_MODEL", "opus")
     vi.stubEnv("LOGOS_CLAUDE_EFFORT", "high")
@@ -46,16 +56,6 @@ describe("cleanEnvForClaude", () => {
 
     expect(env).toHaveProperty("LOGOS_CLAUDE_MODEL", "opus")
     expect(env).toHaveProperty("LOGOS_CLAUDE_EFFORT", "high")
-  })
-
-  it("preserves a real Anthropic API key for spawned Claude auth", () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test")
-    vi.stubEnv("CLAUDE_CODE_SESSION_ID", "parent-session")
-
-    const env = cleanEnvForClaude()
-
-    expect(env).toHaveProperty("ANTHROPIC_API_KEY", "sk-ant-test")
-    expect(env).not.toHaveProperty("CLAUDE_CODE_SESSION_ID")
   })
 })
 
