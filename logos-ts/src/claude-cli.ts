@@ -30,7 +30,7 @@ export function cleanEnvForClaude(anthropicApiKey?: string): NodeJS.ProcessEnv {
       delete env[key]
     }
   }
-  if (anthropicApiKey) env.ANTHROPIC_API_KEY = anthropicApiKey
+  if (anthropicApiKey) env["ANTHROPIC_API_KEY"] = anthropicApiKey
   return env
 }
 
