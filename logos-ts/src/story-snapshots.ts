@@ -30,6 +30,17 @@ interface StorybookDirs {
 }
 
 const STORY_SNAPSHOT_REQUIRED_PACKAGES = ["@storybook/react", "playwright"] as const
+const SNAPSHOT_SCAN_SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".next",
+  ".logos_cache",
+  "dist",
+  "build",
+  "coverage",
+  "storybook-static",
+  "generated",
+])
 
 function posixPath(path: string): string {
   return path.split(sep).join("/")
@@ -53,7 +64,7 @@ function walkFiles(root: string): string[] {
   const out: string[] = []
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === ".next" || entry.name === ".logos_cache") continue
+      if (entry.isDirectory() && SNAPSHOT_SCAN_SKIP_DIRS.has(entry.name)) continue
       const full = join(dir, entry.name)
       if (entry.isDirectory()) walk(full)
       else out.push(full)
@@ -286,6 +297,7 @@ export function ensureStorySnapshotTest(root: string, stories: StoryEntry[], dir
     "    globals: true,",
     "    environment: \"node\",",
     "    include: [\".logos/**/*.test.ts\"],",
+    "    maxConcurrency: Number(process.env.LOGOS_STORY_SNAPSHOT_CONCURRENCY ?? 4),",
     "  },",
     "  esbuild: {",
     "    jsx: \"automatic\",",
@@ -308,14 +320,13 @@ export function ensureStorySnapshotTest(root: string, stories: StoryEntry[], dir
     "import { dirname, resolve } from \"node:path\"",
     "import { fileURLToPath } from \"node:url\"",
     "import { afterAll, beforeAll, describe, expect, it } from \"vitest\"",
-    "import { chromium, type Browser, type Page } from \"playwright\"",
+    "import { chromium, type Browser } from \"playwright\"",
     "import { createServer, type ViteDevServer } from \"vite\"",
     "",
     "const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), \"..\")",
     `const stories = ${storyMetaSource} as { id: string; title: string; file: string }[]`,
     "let server: ViteDevServer",
     "let browser: Browser",
-    "let page: Page",
     "",
     "function snapshotDocument(): string {",
     "  const clone = document.documentElement.cloneNode(true) as HTMLElement",
@@ -338,27 +349,30 @@ export function ensureStorySnapshotTest(root: string, stories: StoryEntry[], dir
     "    })",
     "    await server.listen()",
     "    browser = await chromium.launch({ headless: true })",
-    "    page = await browser.newPage({ viewport: { width: 1280, height: 900 } })",
     "  }, 60_000)",
     "",
     "  afterAll(async () => {",
-    "    await page?.close()",
     "    await browser?.close()",
     "    await server?.close()",
     "  }, 60_000)",
     "",
     "  for (const story of stories) {",
-    "    it(story.title, async () => {",
+    "    it.concurrent(story.title, async () => {",
     "      const baseUrl = server.resolvedUrls?.local[0]",
     "      if (!baseUrl) throw new Error(\"Vite story snapshot server did not expose a local URL\")",
+    "      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })",
     "      const storyUrl = new URL(`.logos/story-snapshots.html?storyId=${encodeURIComponent(story.id)}`, baseUrl).toString()",
-    "      await page.goto(storyUrl, { waitUntil: \"networkidle\" })",
-    "      await page.locator(`[data-logos-story-rendered='${story.id}']`).waitFor({ timeout: 30_000 })",
-    "      await page.evaluate(() => document.fonts?.ready)",
-    "      const html = await page.evaluate(snapshotDocument)",
-    "      const snapshotFile = resolve(projectRoot, \".logos\", \"__snapshots__\", \"story-snapshots\", `${story.file}.html`)",
-    "      mkdirSync(dirname(snapshotFile), { recursive: true })",
-    "      await expect(html).toMatchFileSnapshot(snapshotFile)",
+    "      try {",
+    "        await page.goto(storyUrl, { waitUntil: \"domcontentloaded\" })",
+    "        await page.locator(`[data-logos-story-rendered='${story.id}']`).waitFor({ timeout: 30_000 })",
+    "        await page.evaluate(() => document.fonts?.ready)",
+    "        const html = await page.evaluate(snapshotDocument)",
+    "        const snapshotFile = resolve(projectRoot, \".logos\", \"__snapshots__\", \"story-snapshots\", `${story.file}.html`)",
+    "        mkdirSync(dirname(snapshotFile), { recursive: true })",
+    "        await expect(html).toMatchFileSnapshot(snapshotFile)",
+    "      } finally {",
+    "        await page.close()",
+    "      }",
     "    }, 60_000)",
     "  }",
     "})",

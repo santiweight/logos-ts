@@ -92,7 +92,11 @@ describe("story snapshot virtual storage", () => {
     expect(testSource).toContain("from \"playwright\"")
     expect(testSource).toContain("from \"vite\"")
     expect(testSource).toContain("chromium.launch")
+    expect(testSource).toContain("it.concurrent")
+    expect(testSource).toContain("waitUntil: \"domcontentloaded\"")
+    expect(testSource).not.toContain("waitUntil: \"networkidle\"")
     expect(testSource).toContain("toMatchFileSnapshot")
+    expect(config).toContain("maxConcurrency")
     expect(entrySource).toContain("createRoot")
   })
 

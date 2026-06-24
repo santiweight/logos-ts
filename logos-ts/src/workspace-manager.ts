@@ -369,8 +369,13 @@ export class WorkspaceManager {
     return rel ? `${inst.id}:${rel}` : inst.id
   }
 
-  private async createInstance(workspaceId: string, sourceRoot: string, index?: unknown): Promise<WorkspaceInstance> {
-    const inst = this.codeService.createInstance(workspaceId, sourceRoot, index ?? {})
+  private async createInstance(
+    workspaceId: string,
+    sourceRoot: string,
+    index?: unknown,
+    opts: { installNodeModules?: boolean } = {},
+  ): Promise<WorkspaceInstance> {
+    const inst = this.codeService.createInstance(workspaceId, sourceRoot, index ?? {}, opts)
     if (index) {
       inst.index = index
     } else {
@@ -438,6 +443,7 @@ export class WorkspaceManager {
       if (!inst) return
 
       this.setInitializationStep(ws, "story_snapshots", "running")
+      this.codeService.ensureCachedNodeModules(inst)
       const snapshots = await this.runStorySnapshotAcceptance(inst)
       if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
       if (!snapshots.ok) {
@@ -785,7 +791,9 @@ export class WorkspaceManager {
     const parentInst = parentWs ? this.activeInstance(parentWs) : null
     const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
     const sourceIndex = parentInst?.index ?? (this.getIndex ? await this.getIndex() : undefined)
-    const instance = await this.createInstance(id, sourceRoot, sourceIndex)
+    const instance = await this.createInstance(id, sourceRoot, sourceIndex, {
+      installNodeModules: !this.initializeWorkspaces,
+    })
 
     const ws: WorkspaceRecord = {
       id,
@@ -802,7 +810,7 @@ export class WorkspaceManager {
     this.workspaces.set(id, ws)
     this.save(ws)
 
-    if (this.initializeWorkspaces) this.initializeWorkspace(id, instance.id)
+    if (this.initializeWorkspaces) setTimeout(() => this.initializeWorkspace(id, instance.id), 0)
     else this.restartWorkspaceServices(ws, instance)
     return this.toMeta(ws)
   }

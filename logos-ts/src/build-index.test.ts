@@ -77,6 +77,30 @@ describe("buildStudioIndex component detection", () => {
     expect(item?.signature).not.toContain(root)
   })
 
+  it("skips generated dependency output while indexing project architecture", () => {
+    const root = createProject()
+    mkdirSync(join(root, "lib", "generated", "snapshot", "runtime"), { recursive: true })
+    writeFileSync(join(root, "components", "Dashboard.tsx"), `
+      export function Dashboard() {
+        return <main>Dashboard</main>
+      }
+    `)
+    writeFileSync(join(root, "lib", "generated", "snapshot", "index.d.ts"), `
+      export interface PrismaClientGeneratedType {
+        value: string
+      }
+    `)
+    writeFileSync(join(root, "lib", "generated", "snapshot", "runtime", "library.d.ts"), `
+      export type GeneratedRuntimePayload = { value: string }
+    `)
+
+    const index = buildStudioIndex(root)
+
+    expect(index.files.map((entry) => entry.file)).toContain("components/Dashboard.tsx")
+    expect(index.files.map((entry) => entry.file)).not.toContain("lib/generated/snapshot/index.d.ts")
+    expect(index.files.map((entry) => entry.file)).not.toContain("lib/generated/snapshot/runtime/library.d.ts")
+  })
+
   it("enriches PascalCase JSX functions without Storybook stories", () => {
     const root = createProject()
     writeFileSync(join(root, "components", "FiltersSidebar.tsx"), `
