@@ -9,38 +9,19 @@
   },
   "agent": "implementation",
   "checks": {
-    "typecheck": {
-      "cwd": "",
-      "cmd": [
-        "pnpm",
-        "exec",
-        "tsc",
-        "--noEmit"
+    "project-tests": { "cwd": "", "cmd": ["pnpm", "test"] },
+    "diff-judge": {
+      "type": "judge",
+      "criteria": [
+        "The implementation keeps substantive fuzzy-search/filtering/ranking logic in backend, domain, data, or server-side helpers rather than hiding it inside React component-local code.",
+        "The diff implements an integer-like score or rank for query matching and uses that score to influence result ordering when q is present.",
+        "The q filter itself is fuzzy or typo-tolerant; near matches should pass filtering rather than only changing sort order after a substring filter.",
+        "The approach plausibly handles common typo shapes such as missing, extra, substituted, or transposed characters without matching completely unrelated queries.",
+        "Structured fields such as company, role/title, tags, or role families are treated as stronger signals than incidental raw-text mentions.",
+        "Existing non-search filters still compose with search, and the page/component layer only wires the query/results through.",
+        "The patch is focused and includes reasonable direct tests for the new fuzzy matching and ranking behavior."
       ]
-    },
-    "behavior": {
-      "oracle": "../checks/fuzzy-search.check.ts",
-      "cwd": "",
-      "cmd": [
-        "node",
-        "--import",
-        "tsx",
-        "--test",
-        "fuzzy-search.check.ts"
-      ]
-    },
-    "rank-api": {
-      "oracle": "../checks/fuzzy-search.check.test.ts",
-      "cwd": "",
-      "cmd": [
-        "node",
-        "--import",
-        "tsx",
-        "--test",
-        "fuzzy-search.check.test.ts"
-      ]
-    },
-    "project-tests": { "cwd": "", "cmd": ["pnpm", "test"] }
+    }
   },
   "tier": "capability"
 }
