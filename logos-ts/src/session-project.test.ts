@@ -17,6 +17,10 @@ function makeSourceProject() {
   writeFileSync(join(sourceRoot, ".git", "HEAD"), "ref: refs/heads/main\n")
   mkdirSync(join(sourceRoot, ".logos"), { recursive: true })
   writeFileSync(join(sourceRoot, ".logos", "runtime.db"), "runtime\n")
+  mkdirSync(join(sourceRoot, ".hn-jobs-runtime", "old-run"), { recursive: true })
+  writeFileSync(join(sourceRoot, ".hn-jobs-runtime", "old-run", "dev.db"), "old app db\n")
+  mkdirSync(join(sourceRoot, "prisma"), { recursive: true })
+  writeFileSync(join(sourceRoot, "prisma", "snapshot.db"), "snapshot\n")
   return { root, sourceRoot }
 }
 
@@ -33,6 +37,8 @@ describe("session project isolation", () => {
     expect(readFileSync(join(session.root, "app.ts"), "utf8")).toContain("source")
     expect(existsSync(join(session.root, ".git"))).toBe(false)
     expect(existsSync(join(session.root, ".logos", "runtime.db"))).toBe(false)
+    expect(existsSync(join(session.root, ".hn-jobs-runtime"))).toBe(false)
+    expect(existsSync(join(session.root, "prisma", "snapshot.db"))).toBe(false)
     expect(lstatSync(join(session.root, "node_modules")).isSymbolicLink()).toBe(true)
 
     writeFileSync(join(session.root, "app.ts"), "export const value = 'session'\n")

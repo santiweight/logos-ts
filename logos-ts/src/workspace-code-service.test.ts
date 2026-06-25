@@ -106,11 +106,15 @@ describe("WorkspaceCodeService", () => {
       ".dev-sessions/session-old",
       ".test-fixtures/archmode-test-old",
       ".workspaces/ws-old",
+      ".hn-jobs-runtime/old-run",
       "storybook-static",
     ]) {
       mkdirSync(join(projectRoot, dir), { recursive: true })
       writeFileSync(join(projectRoot, dir, "generated.txt"), "generated\n")
     }
+    mkdirSync(join(projectRoot, "prisma"), { recursive: true })
+    writeFileSync(join(projectRoot, "prisma", "dev.db"), "sqlite\n")
+    writeFileSync(join(projectRoot, "prisma", "dev.db-wal"), "sqlite wal\n")
     writeFileSync(join(projectRoot, "old.bodies.json"), "{}\n")
 
     const instance = service.createInstance("ws", projectRoot, {})
@@ -119,7 +123,10 @@ describe("WorkspaceCodeService", () => {
     expect(existsSync(join(instance.materializedRoot, ".dev-sessions"))).toBe(false)
     expect(existsSync(join(instance.materializedRoot, ".test-fixtures"))).toBe(false)
     expect(existsSync(join(instance.materializedRoot, ".workspaces"))).toBe(false)
+    expect(existsSync(join(instance.materializedRoot, ".hn-jobs-runtime"))).toBe(false)
     expect(existsSync(join(instance.materializedRoot, "storybook-static"))).toBe(false)
+    expect(existsSync(join(instance.materializedRoot, "prisma", "dev.db"))).toBe(false)
+    expect(existsSync(join(instance.materializedRoot, "prisma", "dev.db-wal"))).toBe(false)
     expect(existsSync(join(instance.materializedRoot, "old.bodies.json"))).toBe(false)
     expect(git(instance.materializedRoot, ["status", "--porcelain"])).toBe("")
     expect(git(instance.materializedRoot, ["ls-files"])).not.toContain(".agent-runs")

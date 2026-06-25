@@ -889,7 +889,7 @@ export class WorkspaceManager {
 
     // Remove materialized instance directories
     for (const inst of Object.values(ws.instances)) {
-      rmSync(inst.materializedRoot, { recursive: true, force: true })
+      rmSync(inst.materializedRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
     }
 
     // Remove workspace state
@@ -899,13 +899,10 @@ export class WorkspaceManager {
 
   resetAll(): void {
     this.abortAll()
-    for (const id of [...this.workspaces.keys()]) {
-      this.delete(id)
-    }
     this.sbManager.shutdownAll()
     this.runManager.shutdownAll()
     this.sessions.deleteAll()
-    rmSync(this.runsDir, { recursive: true, force: true })
+    rmSync(this.runsDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     mkdirSync(this.runsDir, { recursive: true })
     this.store.deleteAllWorkspaces()
     this.store.deleteAllPolicyEvents()

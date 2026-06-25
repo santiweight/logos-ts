@@ -28,6 +28,10 @@ interface WorkspaceMeta {
   initialization?: WorkspaceInitialization
 }
 
+interface WorkspaceState extends WorkspaceMeta {
+  forkDir: string
+}
+
 interface WorkspaceInitialization {
   status: "initializing" | "ready" | "error"
   steps: { id: string; status: string; output?: string }[]
@@ -233,6 +237,12 @@ async function readWorkspace(id: string): Promise<WorkspaceMeta> {
   return await res.json() as WorkspaceMeta
 }
 
+async function listWorkspaces(): Promise<WorkspaceMeta[]> {
+  const res = await api("/api/workspaces")
+  expect(res.ok).toBe(true)
+  return await res.json() as WorkspaceMeta[]
+}
+
 async function waitForWorkspaceReady(id: string, timeoutMs = TEST_TIMEOUT): Promise<WorkspaceMeta> {
   const start = Date.now()
   let latest: WorkspaceMeta | null = null
@@ -338,6 +348,33 @@ describe("workspace API mode isolation", () => {
 
     const updated = await readWorkspace(code.id)
     expect(updated.goals.map((g) => g.id)).toContain(body.id)
+  }, TEST_TIMEOUT)
+
+  it("resets all workspaces and starts a fresh replacement workspace", async () => {
+    const first = await createWorkspace("code")
+    const second = await createWorkspace("code")
+    const goal = await addGoal(first.id, "code")
+    expect(goal.res.ok).toBe(true)
+
+    const firstState = await readWorkspace(first.id) as WorkspaceState
+    const secondState = await readWorkspace(second.id) as WorkspaceState
+    expect(existsSync(firstState.forkDir)).toBe(true)
+    expect(existsSync(secondState.forkDir)).toBe(true)
+
+    const resetRes = await api("/api/reset", { method: "POST" })
+    expect(resetRes.ok).toBe(true)
+    const resetBody = await resetRes.json() as { ok: boolean; workspace: WorkspaceMeta }
+    expect(resetBody.ok).toBe(true)
+    expect(resetBody.workspace.id).not.toBe(first.id)
+    expect(resetBody.workspace.id).not.toBe(second.id)
+    expect(resetBody.workspace.goals).toEqual([])
+
+    const workspaces = await listWorkspaces()
+    expect(workspaces.map((workspace) => workspace.id)).toEqual([resetBody.workspace.id])
+    expect(await api(`/api/workspaces/${first.id}`)).toMatchObject({ status: 404 })
+    expect(await api(`/api/workspaces/${second.id}`)).toMatchObject({ status: 404 })
+    expect(existsSync(firstState.forkDir)).toBe(false)
+    expect(existsSync(secondState.forkDir)).toBe(false)
   }, TEST_TIMEOUT)
 
   it("forks arch goals from code workspaces into dedicated arch workspaces", async () => {

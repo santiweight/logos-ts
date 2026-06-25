@@ -81,7 +81,7 @@ function createManager(opts?: {
   opts?.setupProject?.(projectRoot)
   const sessions = opts?.sessions ?? createSessions()
   const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
-  const sbManager = opts?.sbManager ?? { get: () => null, shutdown: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") }
+  const sbManager = opts?.sbManager ?? { get: () => null, shutdown: () => undefined, shutdownAll: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") }
   const extraCaps = typeof opts?.caps === "function" ? opts.caps(projectRoot) : (opts?.caps ?? {})
 
   return new WorkspaceManager({
@@ -269,6 +269,26 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(arch.kind).toBe("arch")
     expect(mgr.get(code.id)?.kind).toBe("code")
     expect(mgr.get(arch.id)?.kind).toBe("arch")
+  })
+
+  it("resetAll clears workspace state and materialized instances", async () => {
+    const mgr = createManager()
+    const first = await mgr.create({ kind: "code" })
+    const second = await mgr.create({ kind: "code" })
+    const firstDir = mgr.get(first.id)?.forkDir
+    const secondDir = mgr.get(second.id)?.forkDir
+    if (!firstDir || !secondDir) throw new Error("missing workspace dirs")
+
+    expect(existsSync(firstDir)).toBe(true)
+    expect(existsSync(secondDir)).toBe(true)
+
+    mgr.resetAll()
+
+    expect(mgr.list()).toEqual([])
+    expect(mgr.get(first.id)).toBeUndefined()
+    expect(mgr.get(second.id)).toBeUndefined()
+    expect(existsSync(firstDir)).toBe(false)
+    expect(existsSync(secondDir)).toBe(false)
   })
 
   it("tracks asynchronous workspace initialization", async () => {

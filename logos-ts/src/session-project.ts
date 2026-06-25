@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync } from "node:fs"
+import { constants as fsConstants, cpSync, existsSync, mkdirSync, mkdtempSync } from "node:fs"
 import { basename, join, relative, resolve } from "node:path"
 import { gcDevSessions, writeDevSessionPid } from "./dev-session-gc.js"
 import { NodeModulesCache, findPackageDirs } from "./node-modules-cache.js"
@@ -8,9 +8,26 @@ export interface SessionProject {
   id: string
 }
 
+const GENERATED_SESSION_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".dev-sessions",
+  ".agent-runs",
+  ".logos_cache",
+  ".logos",
+  ".vite-logos",
+  ".hn-jobs-runtime",
+  ".next",
+  "dist",
+])
+
 function isSubpath(parent: string, child: string): boolean {
   const rel = relative(resolve(parent), resolve(child))
   return rel === "" || (!!rel && !rel.startsWith("..") && !rel.startsWith("/"))
+}
+
+function isGeneratedDatabaseFile(part: string): boolean {
+  return /\.db(?:-(?:journal|shm|wal))?$/.test(part)
 }
 
 export function devSessionsDirFor(sourceRoot: string, preferredDir: string): string {
@@ -36,20 +53,12 @@ export function createSessionProject(sourceRoot: string, preferredSessionsDir: s
     const rel = relative(resolvedSourceRoot, sourcePath)
     if (!rel) return true
     const parts = rel.split(/[/\\]/)
-    return !parts.some((part) => (
-      part === "node_modules" ||
-      part === ".git" ||
-      part === ".dev-sessions" ||
-      part === ".agent-runs" ||
-      part === ".logos_cache" ||
-      part === ".logos" ||
-      part === ".vite-logos" ||
-      part === "dist"
-    ))
+    return !parts.some((part) => GENERATED_SESSION_DIRS.has(part) || isGeneratedDatabaseFile(part))
   }
 
   cpSync(sourceRoot, root, {
     recursive: true,
+    mode: fsConstants.COPYFILE_FICLONE,
     filter: shouldCopy,
   })
 

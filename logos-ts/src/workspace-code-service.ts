@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { constants as fsConstants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { execFile, execFileSync } from "node:child_process"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { NodeModulesCache, findPackageDirs } from "./node-modules-cache.js"
@@ -17,6 +17,7 @@ const GENERATED_WORKSPACE_DIRS = new Set([
   ".test-fixtures",
   ".vite",
   ".vite-logos",
+  ".hn-jobs-runtime",
   ".next",
   "dist",
   "storybook-static",
@@ -53,6 +54,10 @@ export interface WorkspaceCodeServiceOptions {
 function isSubpath(parent: string, child: string): boolean {
   const rel = relative(resolve(parent), resolve(child))
   return rel === "" || (!!rel && !rel.startsWith("..") && !rel.startsWith("/"))
+}
+
+function isGeneratedDatabaseFile(name: string): boolean {
+  return /\.db(?:-(?:journal|shm|wal))?$/.test(name)
 }
 
 export class WorkspaceCodeService {
@@ -173,10 +178,12 @@ export class WorkspaceCodeService {
       const copyGit = existsSync(join(sourceRoot, ".git")) && isSubpath(this.opts.runsDir, sourceRoot)
       cpSync(sourceRoot, dir, {
         recursive: true,
+        mode: fsConstants.COPYFILE_FICLONE,
         filter: (sourcePath) => {
           const name = basename(sourcePath)
           if (name === ".git") return copyGit
           if (name.endsWith(".bodies.json")) return false
+          if (isGeneratedDatabaseFile(name)) return false
           return !GENERATED_WORKSPACE_DIRS.has(name)
         },
       })
@@ -225,6 +232,10 @@ export class WorkspaceCodeService {
       ...GENERATED_WORKSPACE_DIRS,
       "*/node_modules",
       "*.bodies.json",
+      "*.db",
+      "*.db-journal",
+      "*.db-shm",
+      "*.db-wal",
     ]
     const missing = excludes.filter((entry) => !existing.split(/\r?\n/).includes(entry))
     if (missing.length > 0) {

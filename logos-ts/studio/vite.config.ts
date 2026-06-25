@@ -21,14 +21,6 @@ import { buildGoalNamePrompt, cleanGoalName, fallbackGoalName, type GoalNameInpu
 import { cleanEnvForClaude } from "../src/claude-cli"
 import { LogosSecrets } from "../src/logos-secrets"
 import { defaultLogosRuntimeDir, resolveLogosRuntimePaths } from "../src/runtime-paths"
-import { detectProject } from "../src/detect-project"
-import { StorybookManager } from "../src/storybook-manager"
-import { RunManager } from "../src/run-manager"
-import { WorkspaceManager } from "../src/workspace-manager"
-import { ClaudeSessionManager } from "../src/claude-session-manager"
-import { LogosRuntimeStore } from "../src/runtime-store"
-import { createPortableStoryResolver } from "../src/portable-stories"
-import { createSessionProject } from "../src/session-project"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
