@@ -1,0 +1,20 @@
+{
+  "name": "fuzzy-search-edge-cases-arch-impl",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Replace the current search with a server-side fuzzy search. Use an integer score/rank for text matching, support typo-tolerant near matches including missing, extra, substituted, and transposed characters, display directory results by fuzzy rank when q is present, and keep existing filters working with search. Put the substantive matching and ranking implementation in lib/job-filters.ts or another backend/domain helper, not in app/page.tsx. The scorer should handle multi-token queries that span structured fields, require every query token to match, avoid unrelated design/product false positives for backend engineer typos, and rank structured company/role/tags matches above incidental rawText mentions."
+  },
+  "agent": "arch-impl",
+  "checks": {
+    "edge-cases": {
+      "oracle": "../checks/fuzzy-search-edge-cases.check.test.ts",
+      "cwd": "",
+      "cmd": ["node", "--import", "tsx", "--test", "fuzzy-search-edge-cases.check.test.ts"]
+    },
+    "project-tests": { "cwd": "", "cmd": ["pnpm", "test"] }
+  },
+  "tier": "capability"
+}

@@ -1,0 +1,32 @@
+{
+  "name": "fuzzy-search-edge-cases",
+  "codebase": "../../demos/hn-jobs",
+  "comment": {
+    "target": "component:DirectoryPage",
+    "label": "DirectoryPage",
+    "component": "DirectoryPage",
+    "text": "Replace the current search with a server-side fuzzy search. Use an integer score/rank for text matching, support typo-tolerant near matches including missing, extra, substituted, and transposed characters, display directory results by fuzzy rank when q is present, and keep existing filters working with search. Put the substantive matching and ranking implementation in lib/job-filters.ts or another backend/domain helper, not in app/page.tsx. The scorer should handle multi-token queries that span structured fields, require every query token to match, avoid unrelated design/product false positives for backend engineer typos, and rank structured company/role/tags matches above incidental rawText mentions."
+  },
+  "agent": "implementation",
+  "checks": {
+    "edge-cases": {
+      "oracle": "../checks/fuzzy-search-edge-cases.check.test.ts",
+      "cwd": "",
+      "cmd": ["node", "--import", "tsx", "--test", "fuzzy-search-edge-cases.check.test.ts"]
+    },
+    "project-tests": { "cwd": "", "cmd": ["pnpm", "test"] },
+    "diff-judge": {
+      "type": "judge",
+      "criteria": [
+        "The implementation keeps substantive fuzzy-search/filtering/ranking logic in backend, domain, data, or server-side helpers rather than hiding it inside React component-local code.",
+        "The q filter itself is fuzzy or typo-tolerant; near matches pass filtering rather than only changing sort order.",
+        "The scorer handles missing, extra, substituted, and transposed query characters.",
+        "Multi-token queries can match across structured fields, but every query token must match somewhere.",
+        "Unrelated design/product postings score 0 for backend engineer typo queries.",
+        "Structured company, role/title, tags, or role-family matches outrank incidental rawText mentions.",
+        "The patch includes relevant tests for edge cases and avoids broad unrelated rewrites."
+      ]
+    }
+  },
+  "tier": "capability"
+}
