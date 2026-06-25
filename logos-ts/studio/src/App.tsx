@@ -168,63 +168,50 @@ function workspaceMetaFromWorkspace(ws: Workspace): WorkspaceMeta {
   return meta
 }
 
-function workspaceStartupStepStatusText(status: "pending" | "running" | "done" | "error"): string {
-  switch (status) {
-    case "done": return "done"
-    case "running": return "running"
-    case "error": return "error"
-    case "pending":
-    default: return "pending"
-  }
-}
-
-function WorkspaceStartupPanel({
+function WorkspaceStartupScreen({
   workspace,
   workspacesLoading,
-  openingWorkspaceId,
 }: {
   workspace: WorkspaceMeta | undefined
   workspacesLoading: boolean
-  openingWorkspaceId: string | null
 }) {
   const initialization = workspace?.initialization
   const hasFailed = initialization?.status === "error"
-  const steps: Array<{
-    id: string
-    label: string
-    status: "pending" | "running" | "done" | "error"
-    detail?: string
-    error?: string
-  }> = initialization?.steps ?? [
-    { id: "project", label: "Load project window", status: workspacesLoading ? "running" as const : "done" as const },
-    { id: "workspaces", label: "Load workspaces", status: workspacesLoading ? "pending" as const : "done" as const },
-    { id: "workspace", label: "Initialize selected workspace", status: openingWorkspaceId ? "running" as const : "pending" as const },
-  ]
-  const message = workspace
-    ? hasFailed
-      ? `Workspace initialization failed for ${workspace.name}.`
-      : `Initializing workspace for ${workspace.name}.`
-    : openingWorkspaceId
-      ? "Initializing workspace for that selection."
-      : "Loading workspaces for this project window."
+
+  const projectDone = !workspacesLoading
+  const wsInitializing = initialization?.status === "initializing"
+  const wsDone = initialization?.status === "ready" || (!initialization && projectDone && workspace != null)
+
+  const projectStatus: "running" | "done" = projectDone ? "done" : "running"
+  const wsStatus: "pending" | "running" | "done" | "error" =
+    hasFailed ? "error" : wsDone ? "done" : wsInitializing ? "running" : projectDone ? "running" : "pending"
+
+  const activeStep = initialization?.steps?.find((s) => s.status === "running")
+  const failedStep = initialization?.steps?.find((s) => s.status === "error")
+  const wsDetail = hasFailed
+    ? failedStep?.error ?? "Workspace initialization failed."
+    : activeStep?.label ?? (wsStatus === "running" ? "Preparing workspace…" : undefined)
 
   return (
-    <div className={`workspace-init-panel ${hasFailed ? "failed" : ""}`}>
-      <div className="workspace-init-spinner" aria-hidden="true" />
-      <div className="workspace-init-title">{hasFailed ? "Initialization failed" : "Initializing"}</div>
-      <div className="workspace-init-message">{message}</div>
-      <div className="workspace-init-steps">
-        {steps.map((step) => (
-          <div key={step.id} className={`workspace-init-step ${step.status}`}>
+    <div className={`workspace-init-fullscreen ${hasFailed ? "failed" : ""}`}>
+      <div className="workspace-init-panel">
+        <div className="workspace-init-spinner" aria-hidden="true" />
+        <div className="workspace-init-title">{hasFailed ? "Initialization failed" : "Initializing"}</div>
+        <div className="workspace-init-steps">
+          <div className={`workspace-init-step ${projectStatus}`}>
             <span className="workspace-init-mark">
-              {step.status === "running" ? <span className="ag-spin">↻</span> : step.status === "done" ? "✓" : step.status === "error" ? "!" : "·"}
+              {projectStatus === "running" ? <span className="ag-spin">↻</span> : "✓"}
             </span>
-            <span className="workspace-init-label">{step.label}</span>
-            <span className="workspace-init-status">{workspaceStartupStepStatusText(step.status)}</span>
-            {step.error && <div className="workspace-init-error" title={step.error}>{step.error}</div>}
-            {step.detail && step.status !== "error" && <div className="workspace-init-detail" title={step.detail}>{step.detail}</div>}
+            <span className="workspace-init-label">Load project window</span>
           </div>
-        ))}
+          <div className={`workspace-init-step ${wsStatus}`}>
+            <span className="workspace-init-mark">
+              {wsStatus === "running" ? <span className="ag-spin">↻</span> : wsStatus === "done" ? "✓" : wsStatus === "error" ? "!" : "·"}
+            </span>
+            <span className="workspace-init-label">Initialize workspace</span>
+            {wsDetail && <div className={`workspace-init-detail ${hasFailed ? "workspace-init-error" : ""}`} title={wsDetail}>{wsDetail}</div>}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1330,35 +1317,12 @@ export function App() {
 
   if (!workspaceUiReady) {
     return (
-      <div className={`studio ${railOpen ? "rail-open" : "rail-closed"} mobile-${mobilePanel}`} style={studioStyle}>
+      <div className="studio" style={studioStyle}>
         {renderTopbar()}
-        <ChangesRail
-          open={railOpen}
-          onToggle={() => setRailOpen((o) => !o)}
-          workspaces={workspaces}
+        <WorkspaceStartupScreen
+          workspace={activeWs}
           workspacesLoading={workspacesLoading}
-          activeWorkspaceId={activeWorkspaceId}
-          selected={selected}
-          onNewWorkspace={() => createWorkspace()}
-          onResetWorkspaces={resetWorkspaces}
-          onOpenWorkspace={(id) => {
-            setSelected({ type: "workspace", id })
-            openWorkspace(id)
-          }}
-          onCreatePullRequest={createWorkspacePullRequest}
-          onSelectGoal={selectGoal}
-          onDeleteWorkspace={deleteWorkspace}
-          onDeleteGoal={deleteGoal}
-          runningGoals={effectiveRunningGoals}
-          onResizeStart={startRailResize}
         />
-        <main className="workspace-init-shell">
-          <WorkspaceStartupPanel
-            workspace={activeWs}
-            workspacesLoading={workspacesLoading}
-            openingWorkspaceId={openingWorkspaceId}
-          />
-        </main>
       </div>
     )
   }

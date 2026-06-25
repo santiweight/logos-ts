@@ -1074,14 +1074,16 @@ body.resizing-rail * {
   text-align: center;
 }
 
-.workspace-init-shell {
-  grid-column: 2 / -1;
+.workspace-init-fullscreen {
+  grid-column: 1 / -1;
   grid-row: 2;
-  min-width: 0;
-  min-height: 0;
   display: grid;
   place-items: center;
   background: #18181c;
+}
+.workspace-init-fullscreen.failed .workspace-init-spinner {
+  border-top-color: #e5847d;
+  animation: none;
 }
 .workspace-init-panel {
   width: min(460px, calc(100% - 48px));
@@ -1099,21 +1101,10 @@ body.resizing-rail * {
   border-radius: 50%;
   animation: spin 900ms linear infinite;
 }
-.workspace-init-panel.failed .workspace-init-spinner {
-  border-top-color: #e5847d;
-  animation: none;
-}
 .workspace-init-title {
   margin-top: 4px;
   font-size: 15px;
   font-weight: 700;
-}
-.workspace-init-message {
-  max-width: 100%;
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
-  overflow-wrap: anywhere;
 }
 .workspace-init-steps {
   width: 100%;
@@ -1148,10 +1139,6 @@ body.resizing-rail * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.workspace-init-status {
-  color: inherit;
-  opacity: 0.72;
 }
 .workspace-init-error,
 .workspace-init-detail {
