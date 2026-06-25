@@ -1508,18 +1508,22 @@ export class WorkspaceManager {
     }
   }
 
-  private shutdownWorkspaceStorybooks(ws: WorkspaceRecord): void {
-    this.sbManager.shutdown(ws.id)
+  private shutdownWorkspaceStorybooks(ws: WorkspaceRecord, preserveIds = new Set<string>()): void {
+    if (!preserveIds.has(ws.id)) this.sbManager.shutdown(ws.id)
     for (const inst of Object.values(ws.instances)) {
-      this.sbManager.shutdown(inst.id)
+      if (!preserveIds.has(inst.id)) this.sbManager.shutdown(inst.id)
       for (const storybook of this.storybookCaps()) {
-        this.sbManager.shutdown(this.storybookServiceId(inst, storybook.frontendDir))
+        const id = this.storybookServiceId(inst, storybook.frontendDir)
+        if (!preserveIds.has(id)) this.sbManager.shutdown(id)
       }
     }
   }
 
   private restartWorkspaceServices(ws: WorkspaceRecord, inst: WorkspaceInstance): void {
-    this.shutdownWorkspaceStorybooks(ws)
+    const preservedStorybooks = new Set(
+      this.storybookCaps().map((storybook) => this.storybookServiceId(inst, storybook.frontendDir)),
+    )
+    this.shutdownWorkspaceStorybooks(ws, preservedStorybooks)
     this.runManager.shutdownWorkspace(ws.id)
     this.codeService.ensureCachedNodeModules(inst)
     if (this.storybookCaps().length > 0) {

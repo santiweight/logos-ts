@@ -16,6 +16,7 @@ let baseUrl: string
 let signalFile: string
 let envLogFile: string
 let requireApiKeyFile: string
+let configFile: string
 const TEST_TIMEOUT = 20_000
 const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
 
@@ -287,6 +288,8 @@ describe("workspace API mode isolation", () => {
   beforeAll(async () => {
     projectRoot = createProject()
     binDir = createFakeClaude()
+    configFile = join(binDir, "config.json")
+    writeFileSync(configFile, JSON.stringify({ anthropic_api_key: "sk-ant-integration-test" }))
     agentRuns = mkdtempSync(join(tmpdir(), "logos-api-agent-runs-"))
     server = spawn("pnpm", ["dev", "--", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
@@ -299,6 +302,7 @@ describe("workspace API mode isolation", () => {
         FAKE_CLAUDE_SIGNALS: signalFile,
         FAKE_CLAUDE_ENV_LOG: envLogFile,
         FAKE_CLAUDE_REQUIRE_API_KEY_FILE: requireApiKeyFile,
+        LOGOS_CONFIG_PATH: configFile,
         ANTHROPIC_API_KEY: "sk-ant-integration-test",
         CLAUDE_CODE_CHILD_SESSION: "1",
         CLAUDE_CODE_SESSION_ID: "parent-session",

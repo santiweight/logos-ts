@@ -7,7 +7,7 @@ const CONFIG_PATH = resolve(homedir(), ".logos", "config.json")
 export class LogosSecrets {
   readonly anthropicApiKey: string | undefined
 
-  constructor(configPath = CONFIG_PATH) {
+  constructor(configPath = process.env["LOGOS_CONFIG_PATH"] || CONFIG_PATH) {
     try {
       const raw = JSON.parse(readFileSync(configPath, "utf8"))
       const key = raw?.anthropic_api_key
