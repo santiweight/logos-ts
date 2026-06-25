@@ -155,4 +155,24 @@ describe("WorkspaceCodeService", () => {
     service.ensureCachedNodeModules(instance)
     expect(existsSync(join(instance.materializedRoot, "node_modules"))).toBe(true)
   })
+
+  it("re-copies source when a stale instance directory has no package.json", () => {
+    const { projectRoot, runsDir } = createService()
+
+    const staleId = "inst-stale-test"
+    const staleDir = join(runsDir, staleId)
+    mkdirSync(staleDir, { recursive: true })
+    mkdirSync(join(staleDir, ".next"))
+    writeFileSync(join(staleDir, ".next", "build.json"), "{}")
+    expect(existsSync(join(staleDir, "package.json"))).toBe(false)
+
+    const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [] })
+    // @ts-expect-error — access private method to test with a known instance ID
+    const recovered = service.createMaterializedRoot(staleId, projectRoot, { installNodeModules: false })
+
+    expect(recovered).toBe(staleDir)
+    expect(existsSync(join(staleDir, "package.json"))).toBe(true)
+    expect(existsSync(join(staleDir, "shared.txt"))).toBe(true)
+    expect(existsSync(join(staleDir, ".next"))).toBe(false)
+  })
 })

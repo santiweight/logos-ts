@@ -1,4 +1,4 @@
-import { constants as fsConstants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { constants as fsConstants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { execFile, execFileSync } from "node:child_process"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { NodeModulesCache, findPackageDirs } from "./node-modules-cache.js"
@@ -174,6 +174,9 @@ export class WorkspaceCodeService {
   ): string {
     mkdirSync(this.opts.runsDir, { recursive: true })
     const dir = resolve(this.opts.runsDir, instanceId)
+    if (existsSync(dir) && !existsSync(join(dir, "package.json"))) {
+      rmSync(dir, { recursive: true, force: true })
+    }
     if (!existsSync(dir)) {
       const copyGit = existsSync(join(sourceRoot, ".git")) && isSubpath(this.opts.runsDir, sourceRoot)
       cpSync(sourceRoot, dir, {
