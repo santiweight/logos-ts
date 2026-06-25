@@ -270,21 +270,6 @@ body.resizing-rail * {
 .rail-row.ws { font-weight: 600; }
 .rail-row.comment { padding-left: 18px; font-weight: 400; font-size: 11px; }
 .rail-dot.fork { color: var(--accent); display: inline-flex; vertical-align: middle; margin-right: 2px; }
-.rail-fork {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-.rail-fork:hover { color: var(--text); border-color: var(--muted); background: rgba(255,255,255,0.04); }
 .rail-merge {
   width: 18px;
   height: 18px;

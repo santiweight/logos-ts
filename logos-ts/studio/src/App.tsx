@@ -923,11 +923,6 @@ export function App() {
   }, [activeWorkspaceId, activeWs, openingWorkspaceId, openWorkspace, workspaceIndex])
 
   // ---- actions ----
-  const onFork = useCallback(async () => {
-    setBusy("forking workspace…")
-    try { await createWorkspace(activeWorkspaceId, activeWs?.kind ?? "code") } finally { setBusy(null) }
-  }, [createWorkspace, activeWorkspaceId, activeWs?.kind])
-
   const onSelect = useCallback((sel: Selection) => {
     setSelection(sel)
     setMobilePanel("main")
@@ -1350,7 +1345,6 @@ export function App() {
             setSelected({ type: "workspace", id })
             openWorkspace(id)
           }}
-          onFork={onFork}
           onCreatePullRequest={createWorkspacePullRequest}
           onSelectGoal={selectGoal}
           onDeleteWorkspace={deleteWorkspace}
@@ -1385,7 +1379,6 @@ export function App() {
           setSelected({ type: "workspace", id })
           openWorkspace(id)
         }}
-        onFork={onFork}
         onCreatePullRequest={createWorkspacePullRequest}
         onSelectGoal={selectGoal}
         onDeleteWorkspace={deleteWorkspace}

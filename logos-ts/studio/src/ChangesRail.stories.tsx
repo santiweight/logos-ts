@@ -101,7 +101,6 @@ const baseArgs = {
   onNewWorkspace: noop,
   onResetWorkspaces: noop,
   onOpenWorkspace: noop,
-  onFork: noop,
   onCreatePullRequest: noop,
   onSelectGoal: noop,
   onDeleteWorkspace: noop,
