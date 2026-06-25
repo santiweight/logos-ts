@@ -291,7 +291,7 @@ describe("workspace API mode isolation", () => {
     configFile = join(binDir, "config.json")
     writeFileSync(configFile, JSON.stringify({ anthropic_api_key: "sk-ant-integration-test" }))
     agentRuns = mkdtempSync(join(tmpdir(), "logos-api-agent-runs-"))
-    server = spawn("pnpm", ["dev", "--", "--host", "127.0.0.1", "--port", "0"], {
+    server = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1", "--port", "0"], {
       cwd: STUDIO,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,

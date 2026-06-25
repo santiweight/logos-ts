@@ -148,7 +148,7 @@ describe("workspace + storybook integration", () => {
     agentRuns = mkdtempSync(join(tmpdir(), "logos-storybook-agent-runs-"))
     // detached → own process group, so teardown can kill the whole tree
     // (pnpm -> vite -> storybooks) without touching unrelated dev servers.
-    server = spawn("pnpm", ["dev"], {
+    server = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1", "--port", "0"], {
       cwd: resolve(STUDIO, ".."),
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
