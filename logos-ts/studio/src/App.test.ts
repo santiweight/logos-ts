@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, reviewChangeCount, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, workspaceReadyForDisplay } from "./App"
+import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, resolveSidebarFilters, reviewChangeCount, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, sidebarFilterScope, workspaceReadyForDisplay } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -198,6 +198,41 @@ describe("resolveAgentPanelGoalId", () => {
 
   it("returns no goal when there is neither a selected goal nor an agent-run goal", () => {
     expect(resolveAgentPanelGoalId(null, null)).toBeNull()
+  })
+})
+
+describe("sidebar filter scoping", () => {
+  it("uses a workspace scope when no goal is selected", () => {
+    expect(sidebarFilterScope("ws-1", null)).toBe("workspace:ws-1")
+  })
+
+  it("uses a workspace and goal scope when a goal is selected", () => {
+    expect(sidebarFilterScope("ws-1", "goal-1")).toBe("workspace:ws-1:goal:goal-1")
+  })
+
+  it("resolves stored filters for the active scope", () => {
+    expect(resolveSidebarFilters({
+      "workspace:ws-1": {
+        functions: true,
+        classes: false,
+        components: true,
+        types: true,
+      },
+    }, "workspace:ws-1")).toEqual({
+      functions: true,
+      classes: false,
+      components: true,
+      types: true,
+    })
+  })
+
+  it("falls back to default filters for a new scope", () => {
+    expect(resolveSidebarFilters({}, "workspace:ws-1:goal:goal-1")).toEqual({
+      functions: false,
+      classes: true,
+      components: true,
+      types: false,
+    })
   })
 })
 

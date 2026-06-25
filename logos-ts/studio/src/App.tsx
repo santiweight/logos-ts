@@ -31,7 +31,22 @@ import seedData from "./studio-index.json"
 
 const seed = seedData as unknown as StudioIndex
 const SELECTION_STORAGE_KEY = "logos:selection:v1"
+const SIDEBAR_FILTERS_STORAGE_KEY = "logos:sidebar-filters:v1"
 type MobilePanel = "changes" | "thread" | "files" | "main"
+
+export interface SidebarFilters {
+  functions: boolean
+  classes: boolean
+  components: boolean
+  types: boolean
+}
+
+const DEFAULT_SIDEBAR_FILTERS: SidebarFilters = {
+  functions: false,
+  classes: true,
+  components: true,
+  types: false,
+}
 
 export interface WorkspaceViewState {
   workspaceId: string
@@ -109,6 +124,49 @@ function readStoredSelection(): Selection {
   } catch {
     return defaultSelection()
   }
+}
+
+function normalizeSidebarFilters(value: unknown): SidebarFilters | null {
+  if (typeof value !== "object" || value == null) return null
+  const record = value as Record<string, unknown>
+  return {
+    functions: typeof record["functions"] === "boolean" ? record["functions"] : DEFAULT_SIDEBAR_FILTERS.functions,
+    classes: typeof record["classes"] === "boolean" ? record["classes"] : DEFAULT_SIDEBAR_FILTERS.classes,
+    components: typeof record["components"] === "boolean" ? record["components"] : DEFAULT_SIDEBAR_FILTERS.components,
+    types: typeof record["types"] === "boolean" ? record["types"] : DEFAULT_SIDEBAR_FILTERS.types,
+  }
+}
+
+function readStoredSidebarFilters(): Record<string, SidebarFilters> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(SIDEBAR_FILTERS_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (typeof parsed !== "object" || parsed == null || Array.isArray(parsed)) return {}
+    const out: Record<string, SidebarFilters> = {}
+    for (const [scope, value] of Object.entries(parsed)) {
+      const filters = normalizeSidebarFilters(value)
+      if (filters) out[scope] = filters
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export function sidebarFilterScope(activeWorkspaceId: string | null, selectedGoalId: string | null): string {
+  if (selectedGoalId) {
+    return activeWorkspaceId ? `workspace:${activeWorkspaceId}:goal:${selectedGoalId}` : `goal:${selectedGoalId}`
+  }
+  return activeWorkspaceId ? `workspace:${activeWorkspaceId}` : "default"
+}
+
+export function resolveSidebarFilters(
+  filtersByScope: Record<string, SidebarFilters>,
+  scope: string,
+): SidebarFilters {
+  return filtersByScope[scope] ?? DEFAULT_SIDEBAR_FILTERS
 }
 
 export function buildStorybookRenderKey(
@@ -268,12 +326,7 @@ export function App() {
   const [railOpen, setRailOpen] = useState(true)
   const [railWidth, setRailWidth] = useState(280)
   const [commentWidth, setCommentWidth] = useState(320)
-  const [sidebarFilters, setSidebarFilters] = useState({
-    functions: false,
-    classes: true,
-    components: true,
-    types: false,
-  })
+  const [sidebarFiltersByScope, setSidebarFiltersByScope] = useState<Record<string, SidebarFilters>>(() => readStoredSidebarFilters())
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
   const hasBootedRef = useRef(false)
@@ -291,6 +344,17 @@ export function App() {
   const workspaceBaselineIndex = activeWorkspaceView?.baselineIndex ?? null
   const view: StudioIndex = workspaceIndex ?? { root: "", files: [] }
   const selectedGoalId = selected?.type === "goal" ? selected.id : null
+  const sidebarFilterScopeId = sidebarFilterScope(activeWorkspaceId, selectedGoalId)
+  const sidebarFilters = useMemo(
+    () => resolveSidebarFilters(sidebarFiltersByScope, sidebarFilterScopeId),
+    [sidebarFiltersByScope, sidebarFilterScopeId],
+  )
+  const updateSidebarFilters = useCallback((update: (filters: SidebarFilters) => SidebarFilters) => {
+    setSidebarFiltersByScope((current) => ({
+      ...current,
+      [sidebarFilterScopeId]: update(resolveSidebarFilters(current, sidebarFilterScopeId)),
+    }))
+  }, [sidebarFilterScopeId])
   const reviewBaseIndex = selectReviewBaseIndex(index, workspaceBaselineIndex)
   const reviewWorkspaceIndex = workspaceReviewIndex ?? workspaceIndex
 
@@ -690,6 +754,12 @@ export function App() {
       window.localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify(selection))
     } catch {}
   }, [selection])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_FILTERS_STORAGE_KEY, JSON.stringify(sidebarFiltersByScope))
+    } catch {}
+  }, [sidebarFiltersByScope])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1372,7 +1442,7 @@ export function App() {
             aria-pressed={sidebarFilters.functions}
             aria-label={sidebarFilters.functions ? "Hide functions" : "Show functions"}
             title={sidebarFilters.functions ? "Hide functions" : "Show functions"}
-            onClick={() => setSidebarFilters((filters) => ({ ...filters, functions: !filters.functions }))}
+            onClick={() => updateSidebarFilters((filters) => ({ ...filters, functions: !filters.functions }))}
           >
             {ICONS.fn}
           </button>
@@ -1382,7 +1452,7 @@ export function App() {
             aria-pressed={sidebarFilters.classes}
             aria-label={sidebarFilters.classes ? "Hide classes" : "Show classes"}
             title={sidebarFilters.classes ? "Hide classes" : "Show classes"}
-            onClick={() => setSidebarFilters((filters) => ({ ...filters, classes: !filters.classes }))}
+            onClick={() => updateSidebarFilters((filters) => ({ ...filters, classes: !filters.classes }))}
           >
             {ICONS.cls}
           </button>
@@ -1392,7 +1462,7 @@ export function App() {
             aria-pressed={sidebarFilters.components}
             aria-label={sidebarFilters.components ? "Hide React components" : "Show React components"}
             title={sidebarFilters.components ? "Hide React components" : "Show React components"}
-            onClick={() => setSidebarFilters((filters) => ({ ...filters, components: !filters.components }))}
+            onClick={() => updateSidebarFilters((filters) => ({ ...filters, components: !filters.components }))}
           >
             {ICONS.comp}
           </button>
@@ -1402,7 +1472,7 @@ export function App() {
             aria-pressed={sidebarFilters.types}
             aria-label={sidebarFilters.types ? "Hide types" : "Show types"}
             title={sidebarFilters.types ? "Hide types" : "Show types"}
-            onClick={() => setSidebarFilters((filters) => ({ ...filters, types: !filters.types }))}
+            onClick={() => updateSidebarFilters((filters) => ({ ...filters, types: !filters.types }))}
           >
             T
           </button>
