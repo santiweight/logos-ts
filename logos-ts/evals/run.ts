@@ -25,12 +25,12 @@ import {
   buildArchImplementationPrompt,
   buildArchPrompt,
   buildGoalLine,
-  buildStoryGenerationContext,
   buildStoryGenerationSystemPrompt,
   FRONTEND_BACKEND_SPLIT_GUIDANCE,
   isStoryGenerationRequest,
 } from "../src/prompt.js"
 import { buildClaudePrintArgs, cleanEnvForClaude } from "../src/claude-cli.js"
+import { LogosSecrets } from "../src/logos-secrets.js"
 
 interface CommandCheck {
   cwd: string
@@ -111,6 +111,7 @@ const defaultMaterializer = parseMaterializer(process.env["LOGOS_EVAL_MATERIALIZ
 const evalAgentModel = process.env["LOGOS_EVAL_MODEL"] ?? "sonnet"
 const evalJudgeModel = process.env["LOGOS_EVAL_JUDGE_MODEL"] ?? evalAgentModel
 const claudeTools = "Read,Write,Edit,MultiEdit,Bash,Glob,Grep"
+const evalSecrets = new LogosSecrets()
 const sourceSnapshots = new Map<string, SourceSnapshot>()
 
 interface SnapshotFile {
@@ -233,15 +234,11 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
 
   const sandbox = `IMPORTANT: Your working directory is ${work}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
 
-  const enrichedContext = isStoryGenerationRequest(c.comment.text)
-    ? `${context}\n\n${buildStoryGenerationContext()}`
-    : context
-
   if (c.agent === "architecture" || c.agent === "testing") {
-    return buildArchPrompt(enrichedContext, sandbox, goalLine)
+    return buildArchPrompt(context, sandbox, goalLine)
   }
 
-  return `${enrichedContext}\n\n${sandbox}` +
+  return `${context}\n\n${sandbox}` +
     `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change.\n\n` +
     `Address these change requests:\n${goalLine}\n\n` +
     `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck.` +
@@ -296,7 +293,7 @@ function runClaudeCli(
     input: prompt,
     timeout: opts.timeout,
     label: "claude",
-    env: cleanEnvForClaude(),
+    env: cleanEnvForClaude(evalSecrets.anthropicApiKey),
   })
 }
 

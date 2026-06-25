@@ -696,6 +696,33 @@ describe("WorkspaceManager workspace kinds", () => {
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
   }, 60_000)
 
+  it("passes Storybook story-generation guidance as hidden system prompt", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    const storyGoal = {
+      ...goal("story-goal", "code"),
+      text: "Generate Storybook stories for `Thing`.",
+      component: "Thing",
+      target: "component:Thing",
+    }
+    expectGoal(await mgr.addGoal(code.id, storyGoal))
+    mgr.processNext(code.id, () => {})
+
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    const args = spawned[0]!.args
+    const prompt = args[args.indexOf("-p") + 1] ?? ""
+    expect(args).toContain("--append-system-prompt")
+    expect(args[args.indexOf("--append-system-prompt") + 1]).toContain("Use the project's existing Storybook style")
+    expect(args[args.indexOf("--append-system-prompt") + 1]).toContain("Every file in the import chain from the stories file must be browser-safe")
+    expect(prompt).toContain("Generate Storybook stories for `Thing`.")
+    expect(prompt).not.toContain("Use the project's existing Storybook style")
+    expect(prompt).not.toContain("Every file in the import chain from the stories file must be browser-safe")
+
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+  }, 60_000)
+
   it("stops architecture goals when stripping fails", async () => {
     const binDir = mkdtempSync(join(tmpdir(), "logos-failing-tsx-"))
     tempDirs.push(binDir)

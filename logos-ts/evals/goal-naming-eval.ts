@@ -15,16 +15,16 @@ interface Case {
 
 const cases: Case[] = [
   {
-    name: "verbose story-writing instructions should distill to component + intent",
+    name: "short story-writing request should distill to component + intent",
     input: {
-      text: "Write Storybook stories for the React component `ValueOrDash`. Use the project's existing Storybook style, imports, decorators, fixture patterns, and file naming. Cover the component's normal/default state, meaningful prop-driven variants, and any empty, loading, error, disabled, long-content, or interaction-relevant states that apply.",
+      text: "Generate Storybook stories for `ValueOrDash`.",
       target: "component:ValueOrDash",
       component: "ValueOrDash",
       label: "ValueOrDash",
       mode: "code",
     },
     reject: [
-      /^Write Storybook/i,
+      /^Generate Storybook/i,
       /React Component$/i,
       /Use the project/i,
     ],

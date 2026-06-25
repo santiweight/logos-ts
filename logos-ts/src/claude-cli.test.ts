@@ -63,6 +63,7 @@ describe("structural: every file that spawns claude uses cleanEnvForClaude", () 
   const filesToCheck = [
     resolve(SRC, "workspace-manager.ts"),
     resolve(STUDIO, "vite.config.ts"),
+    resolve(SRC, "../evals/run.ts"),
   ]
 
   for (const filePath of filesToCheck) {

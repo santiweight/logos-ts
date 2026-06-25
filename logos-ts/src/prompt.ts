@@ -97,24 +97,27 @@ export function isStoryGenerationRequest(text: string): boolean {
 export function buildStoryGenerationSystemPrompt(): string {
   return [
     "When generating Storybook stories, keep component stories deterministic and self-contained.",
-    "If the target component renders a nested iframe whose src points at an app-owned route, dynamic localhost port, workspace proxy, generated preview page, or external Storybook runtime, do not make the story depend on that live iframe target.",
-    "Mock that iframe boundary in Storybook instead. If the component has no way to do that, add a small optional story/test seam such as a renderStoryFrame or renderFrame prop that defaults to the real iframe in production, and use that seam from the story.",
-    "Do not add component-story variants that exercise live iframe runtime selection, such as renderer/storyRenderer set to storybook, storybookUrl values, hard-coded localhost ports, or external Storybook hosts, unless the user explicitly asks for an integration/runtime story.",
-    "Even when the iframe is mocked, do not add a StorybookRenderer or storybook-mode variant merely to cover URL construction. That branch belongs in unit or integration tests, not component stories.",
-    "Use app or browser integration tests for the real iframe runtime; component stories should only verify layout, state, props, and fallback UI around the iframe boundary.",
-    "If the target is a server component or route file with server-only imports, extract a browser-safe presentational component and then update the original server component to import and render that presentational component. Do not leave the extracted component used only by stories.",
-  ].join("\n")
-}
-
-export function buildStoryGenerationContext(): string {
-  return [
-    "# STORYBOOK STORY-GENERATION CONTEXT",
+    "Use the project's existing Storybook style, imports, decorators, fixture patterns, and file naming.",
+    "If a colocated stories file already exists, improve it instead of duplicating stories.",
+    "Cover the component's normal/default state, meaningful prop-driven variants, and any empty, loading, error, disabled, long-content, or interaction-relevant states that apply.",
+    "Use small deterministic fixtures and generic sample data. Do not use network, database, timers, randomness, or production-only services.",
+    "Keep examples domain-neutral unless the component's public API requires specific domain-shaped data.",
+    "Prefer typed Meta and StoryObj exports when that matches the project, and keep the stories typechecking.",
     "Storybook stories run inside Storybook's preview iframe. If the component under test creates its own iframe, that nested iframe is a runtime boundary that Storybook does not automatically provide.",
     "Do not hard-code localhost ports, external Storybook URLs, workspace proxy URLs, or app-owned preview routes in component stories. In particular, avoid values like `http://localhost:6006`, `/portable-story.html`, or `${storybookUrl}/iframe.html` unless the story itself provisions that runtime.",
     "Do not treat iframe runtime props as ordinary visual variants. Avoid `renderer: \"storybook\"`, `storyRenderer: \"storybook\"`, `storybookUrl`, and similar props in component stories unless the task explicitly asks for an integration story and provides the runtime.",
     "If the component has a renderer/storyRenderer prop, choose one safe default value for visual stories and do not add a separate storybook-mode story just to exercise iframe URL construction.",
-    "For iframe-owning components, prefer a deterministic mock/fixture for the nested frame: add or use an optional `renderStoryFrame`/`renderFrame`-style prop that defaults to the real iframe, then pass a mock frame from the story. Keep startup, loading, and failure states as ordinary component stories when they do not need the nested iframe target.",
-    "For server components and route files, a stories-only extraction is incomplete. The original server component should continue to own data loading, but it must import the new browser-safe presentational component and render it with the computed props.",
+    "If the target component renders a nested iframe whose src points at an app-owned route, dynamic localhost port, workspace proxy, generated preview page, or external Storybook runtime, do not make the story depend on that live iframe target.",
+    "Mock that iframe boundary in Storybook instead. If the component has no way to do that, add a small optional story/test seam such as a renderStoryFrame or renderFrame prop that defaults to the real iframe in production, and use that seam from the story.",
+    "When mocking an iframe boundary, name or comment the mock clearly with words like mockFrame, fixture frame, iframe boundary, nested iframe, app runtime, or portable-story so future readers can see why the real iframe is not rendered.",
+    "Do not add component-story variants that exercise live iframe runtime selection, such as renderer/storyRenderer set to storybook, storybookUrl values, hard-coded localhost ports, or external Storybook hosts, unless the user explicitly asks for an integration/runtime story.",
+    "Even when the iframe is mocked, do not add a StorybookRenderer or storybook-mode variant merely to cover URL construction. That branch belongs in unit or integration tests, not component stories.",
+    "Use app or browser integration tests for the real iframe runtime; component stories should only verify layout, state, props, and fallback UI around the iframe boundary.",
+    "Storybook bundles run in the browser. Every file in the import chain from the stories file must be browser-safe.",
+    "If the target is a server component, route file, or file with server-only imports such as Prisma, database clients, Node fs/crypto, server actions, or ORM helpers, do not import it directly from stories.",
+    "Instead, extract a browser-safe presentational component into its own file that takes data as props and has zero server-only imports.",
+    "Update the original server component to import and render that presentational component with its computed props. Do not leave the extracted component used only by stories.",
+    "Export the presentational component so the index can detect it.",
   ].join("\n")
 }
 

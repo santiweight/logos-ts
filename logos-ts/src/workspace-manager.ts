@@ -22,7 +22,7 @@ const execFileAsync = promisify(execFile)
 import type { StorybookManager } from "./storybook-manager.js"
 import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
-import { buildArchImplementationPrompt, buildArchPrompt, buildGoalLine, buildImplPrompt, buildVerifyNote, selectNextGoal } from "./prompt.js"
+import { buildArchImplementationPrompt, buildArchPrompt, buildGoalLine, buildImplPrompt, buildStoryGenerationSystemPrompt, buildVerifyNote, isStoryGenerationRequest, selectNextGoal } from "./prompt.js"
 import { buildClaudePrintArgs, cleanEnvForClaude } from "./claude-cli.js"
 import type { LogosSecrets } from "./logos-secrets.js"
 import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
@@ -159,6 +159,7 @@ type RunManagerLike = Pick<RunManager, "ensure" | "restart" | "shutdownWorkspace
 const MAX_ACCEPTANCE_REPAIR_ATTEMPTS = 1
 const INDEX_MAX_BUFFER = 128 * 1024 * 1024
 const DEFAULT_MERGE_POLICY: GoalMergePolicy = { autoMerge: true }
+const storyGenerationSystemArgs = () => ["--append-system-prompt", buildStoryGenerationSystemPrompt()]
 
 const noopRunManager: RunManagerLike = {
   ensure: () => Promise.resolve(""),
@@ -1321,6 +1322,7 @@ export class WorkspaceManager {
         outputFormat: "stream-json",
         verbose: true,
         mcpConfigPath,
+        ...(isStoryGenerationRequest(goal.text) ? { extraArgs: storyGenerationSystemArgs() } : {}),
       }),
       {
         cwd: dir,
@@ -1848,6 +1850,7 @@ export class WorkspaceManager {
         outputFormat: "stream-json",
         verbose: true,
         mcpConfigPath,
+        ...(isStoryGenerationRequest(goal.text) ? { extraArgs: storyGenerationSystemArgs() } : {}),
       }),
       {
         cwd: dir,
