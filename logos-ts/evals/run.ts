@@ -27,16 +27,25 @@ import {
   buildGoalLine,
   buildStoryGenerationContext,
   buildStoryGenerationSystemPrompt,
+  FRONTEND_BACKEND_SPLIT_GUIDANCE,
   isStoryGenerationRequest,
   SEARCH_RANKING_GUIDANCE,
 } from "../src/prompt.js"
 import { buildClaudePrintArgs, cleanEnvForClaude } from "../src/claude-cli.js"
 
-interface Check {
+interface CommandCheck {
   cwd: string
   cmd: string[]
   oracle?: string | string[]
 }
+
+interface JudgeCheck {
+  type: "judge"
+  criteria?: string[]
+  maxDiffChars?: number
+}
+
+type Check = CommandCheck | JudgeCheck
 
 interface EvalCase {
   name: string
@@ -56,7 +65,7 @@ interface EvalCase {
   tier?: "deterministic" | "capability"
   repeat?: number
   timeoutMs?: number
-  setup?: Check[]
+  setup?: CommandCheck[]
   checks: Record<string, Check>
 }
 
@@ -80,6 +89,7 @@ interface Options {
   quick: boolean
   dryRun: boolean
   backend: AgentBackend
+  judgeBackend?: AgentBackend
   materializer: Materializer
 }
 
@@ -100,6 +110,7 @@ type BenchmarkMode = "implementation" | "architecture"
 const defaultAgentBackend = parseAgentBackend(process.env["LOGOS_EVAL_AGENT"] ?? "claude-cli")
 const defaultMaterializer = parseMaterializer(process.env["LOGOS_EVAL_MATERIALIZER"] ?? "copy")
 const evalAgentModel = process.env["LOGOS_EVAL_MODEL"] ?? "sonnet"
+const evalJudgeModel = process.env["LOGOS_EVAL_JUDGE_MODEL"] ?? evalAgentModel
 const claudeTools = "Read,Write,Edit,MultiEdit,Bash,Glob,Grep"
 const sourceSnapshots = new Map<string, SourceSnapshot>()
 
@@ -133,6 +144,10 @@ function parseMaterializer(value: string): Materializer {
 function describeAgentModel(backend: AgentBackend): string {
   if (backend === "codex-cli") return process.env["LOGOS_CODEX_MODEL"] ?? "codex default"
   return evalAgentModel
+}
+
+function describeJudgeBackend(options: Pick<Options, "backend" | "judgeBackend">): AgentBackend {
+  return options.judgeBackend ?? (options.backend === "codex-cli" ? "codex-cli" : "claude-cli")
 }
 
 function benchmarkMode(agent: EvalCase["agent"]): BenchmarkMode {
@@ -231,6 +246,7 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
     `You are an implementation agent. The ARCHITECTURE CONTEXT above already lists every file and symbol your change touches — do NOT use grep/find/ls to explore the codebase. Open a file only to read or edit an implementation body you must change.\n\n` +
     `Address these change requests:\n${goalLine}\n\n` +
     `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck.` +
+    ` ${FRONTEND_BACKEND_SPLIT_GUIDANCE}` +
     ` ${SEARCH_RANKING_GUIDANCE}` +
     ` For TypeScript node:test suites, prefer \`node --import tsx --test <test-file>\`; if \`pnpm test\` or \`pnpm exec tsx --test\` fails with \`listen EPERM\`, rerun the same tests with \`node --import tsx --test\`.` +
     ` This project has no automated test runner configured. Verify your changes manually.`
@@ -421,12 +437,139 @@ function appendedSystemPrompt(args: string[]): string {
 
 function computeDiff(original: string, modified: string): string {
   try {
-    return execFileSync("diff", ["-ruN", "--exclude=node_modules", "--exclude=.next", "--exclude=.logos", "--exclude=.storybook", original, modified], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 })
+    return execFileSync("diff", [
+      "-ruN",
+      "--exclude=node_modules",
+      "--exclude=.next",
+      "--exclude=.logos",
+      "--exclude=.storybook",
+      "--exclude=*.tsbuildinfo",
+      original,
+      modified,
+    ], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 })
   } catch (e: any) {
     const raw: string = e.stdout ?? ""
     const lines = raw.split("\n")
     return lines.length > 500 ? lines.slice(0, 500).join("\n") + "\n[diff truncated]" : raw
   }
+}
+
+function isJudgeCheck(check: Check): check is JudgeCheck {
+  return "type" in check && check.type === "judge"
+}
+
+function truncateMiddle(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value
+  const headChars = Math.floor(maxChars * 0.6)
+  const tailChars = Math.max(0, maxChars - headChars)
+  return `${value.slice(0, headChars)}\n[diff truncated]\n${value.slice(value.length - tailChars)}`
+}
+
+function extractJsonObject(value: string): Record<string, unknown> {
+  const direct = value.trim()
+  const candidates = [
+    direct,
+    direct.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, ""),
+  ]
+
+  const start = direct.indexOf("{")
+  const end = direct.lastIndexOf("}")
+  if (start >= 0 && end > start) candidates.push(direct.slice(start, end + 1))
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  throw new Error(`judge did not return a JSON object: ${value.slice(0, 500)}`)
+}
+
+function buildJudgePrompt(c: EvalCase, diff: string, check: JudgeCheck): string {
+  const criteria = check.criteria?.length
+    ? check.criteria
+    : [
+      "The diff addresses the requested behavior in a plausible, maintainable way.",
+      "The diff keeps implementation scope focused and avoids broad unrelated rewrites.",
+      "Substantive data behavior belongs in backend/domain/data modules or server-side helpers; UI code should only wire inputs/results and handle presentation.",
+      "Any tests added or changed are relevant to the requested behavior.",
+      "The diff does not obviously introduce broken imports, invalid syntax, or dead code.",
+    ]
+
+  return [
+    "You are judging an eval candidate by reading only the user's requested change and the unified diff produced by the agent.",
+    "Return strict JSON only, with this shape:",
+    `{"pass": boolean, "score": number, "issues": string[], "summary": string}`,
+    "Use score 0-100. Set pass=true only when the diff is generally sane and satisfies every must-have criterion.",
+    "",
+    "User request:",
+    c.comment.text,
+    "",
+    "Criteria:",
+    ...criteria.map((criterion) => `- ${criterion}`),
+    "",
+    "Unified diff:",
+    "```diff",
+    diff || "[no diff]",
+    "```",
+  ].join("\n")
+}
+
+function runClaudeJudge(prompt: string): string {
+  const args = buildClaudePrintArgs({
+    promptArg: "-",
+    model: evalJudgeModel,
+    outputFormat: "text",
+    noSessionPersistence: true,
+  })
+  const output = execFileSync("claude", args, {
+    cwd: logosTsRoot,
+    input: prompt,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+    env: cleanEnvForClaude(),
+  })
+  return output
+}
+
+function runCodexJudge(prompt: string): string {
+  const args = [
+    "exec",
+    "-",
+    "--cd",
+    logosTsRoot,
+    "--sandbox",
+    "read-only",
+    "--skip-git-repo-check",
+  ]
+  if (process.env["LOGOS_CODEX_MODEL"]) args.push("--model", process.env["LOGOS_CODEX_MODEL"])
+
+  const command = commandExists("codex") ? "codex" : "pnpm"
+  const effectiveArgs = command === "codex" ? args : ["dlx", "@openai/codex", ...args]
+  return execFileSync(command, effectiveArgs, {
+    cwd: logosTsRoot,
+    input: prompt,
+    encoding: "utf8",
+    maxBuffer: 2 * 1024 * 1024,
+  })
+}
+
+function runJudgeCheck(c: EvalCase, check: JudgeCheck, diff: string, backend: AgentBackend): boolean {
+  const maxDiffChars = check.maxDiffChars ?? 80_000
+  const prompt = buildJudgePrompt(c, truncateMiddle(diff, maxDiffChars), check)
+  const output = backend === "codex-cli" ? runCodexJudge(prompt) : runClaudeJudge(prompt)
+  const parsed = extractJsonObject(output)
+  const passed = parsed["pass"] === true
+  const score = typeof parsed["score"] === "number" ? parsed["score"] : "unknown"
+  const summary = typeof parsed["summary"] === "string" ? parsed["summary"] : ""
+  const issues = Array.isArray(parsed["issues"]) ? parsed["issues"].filter((issue) => typeof issue === "string") : []
+
+  console.log(`[${c.name}] judge score: ${score}; pass=${passed}${summary ? `; ${summary}` : ""}`)
+  for (const issue of issues.slice(0, 5)) console.log(`[${c.name}] judge issue: ${issue}`)
+  return passed
 }
 
 function buildArchImplPrompt(c: EvalCase, work: string, context: string): string {
@@ -467,14 +610,14 @@ function buildImplPrompt(
     `Fill in all \`declare\` function bodies and test stubs. Wire the new helpers into the existing code as the architecture indicates. Make sure existing tests still pass.`
 }
 
-function copyOracles(caseDir: string, check: Check, checkCwd: string): void {
+function copyOracles(caseDir: string, check: CommandCheck, checkCwd: string): void {
   const oracles = typeof check.oracle === "string" ? [check.oracle] : check.oracle ?? []
   for (const oracle of oracles) {
     copyFileSync(resolve(caseDir, oracle), join(checkCwd, basename(oracle)))
   }
 }
 
-function resolveCheckCwd(work: string, check: Check): string {
+function resolveCheckCwd(work: string, check: CommandCheck): string {
   const checkCwd = join(work, check.cwd)
   if (existsSync(checkCwd)) return checkCwd
 
@@ -520,11 +663,11 @@ async function runCase(casePath: string, trial: number, options: Pick<Options, "
   const archMode = c.agent === "architecture" || c.agent === "testing" || c.agent === "arch-impl"
   const bodiesFile = resolve(runDir, "bodies.json")
   const originalSnapshot = resolve(runDir, "original")
+  cpSync(work, originalSnapshot, {
+    recursive: true,
+    filter: (s) => !/node_modules/.test(s),
+  })
   if (archMode) {
-    cpSync(work, originalSnapshot, {
-      recursive: true,
-      filter: (s) => !/node_modules/.test(s),
-    })
     console.log(`[${c.name} t${trial}] stripping to architecture view...`)
     execFileSync(tsx, [resolve(logosTsRoot, "src/archmode.ts"), "strip", work, bodiesFile], {
       cwd: logosTsRoot,
@@ -609,9 +752,22 @@ async function runCase(casePath: string, trial: number, options: Pick<Options, "
     }
   }
 
+  const finalDiff = computeDiff(originalSnapshot, work)
+  console.log(`[${c.name} t${trial}] final diff: ${finalDiff.length} chars`)
+
   console.log(`[${c.name} t${trial}] running checks...`)
   const results: Record<string, boolean> = {}
   for (const [name, check] of Object.entries(c.checks)) {
+    if (isJudgeCheck(check)) {
+      try {
+        results[name] = runJudgeCheck(c, check, finalDiff, describeJudgeBackend(options))
+      } catch (e: any) {
+        console.error(`[${c.name} t${trial}] judge failed (${name}):`, e.message)
+        results[name] = false
+      }
+      continue
+    }
+
     const checkCwd = resolveCheckCwd(work, check)
     const [cmd, ...args] = check.cmd
     if (!cmd) {
@@ -663,6 +819,9 @@ function parseArgs(argv: string[]): Options {
   let quick = false
   let dryRun = false
   let backend = defaultAgentBackend
+  let judgeBackend: AgentBackend | undefined = process.env["LOGOS_EVAL_JUDGE_BACKEND"]
+    ? parseAgentBackend(process.env["LOGOS_EVAL_JUDGE_BACKEND"])
+    : undefined
   let materializer = defaultMaterializer
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -683,6 +842,8 @@ function parseArgs(argv: string[]): Options {
       dryRun = true
     } else if (arg === "--backend") {
       backend = parseAgentBackend(argv[++i] ?? "")
+    } else if (arg === "--judge-backend") {
+      judgeBackend = parseAgentBackend(argv[++i] ?? "")
     } else if (arg === "--materializer") {
       materializer = parseMaterializer(argv[++i] ?? "")
     } else if (arg?.startsWith("--")) {
@@ -698,6 +859,7 @@ function parseArgs(argv: string[]): Options {
     quick,
     dryRun,
     backend,
+    ...(judgeBackend ? { judgeBackend } : {}),
     materializer,
     ...(tier ? { tier } : {}),
     ...(repeat ? { repeat } : {}),
@@ -797,6 +959,7 @@ function printBenchmarkSummary(results: TrialResult[]): void {
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2))
   console.log(`Agent backend: ${options.backend} (model: ${describeAgentModel(options.backend)})`)
+  console.log(`Judge backend: ${describeJudgeBackend(options)} (model: ${describeAgentModel(describeJudgeBackend(options))})`)
   console.log(`Materializer: ${options.materializer}`)
   const casePaths = selectCases(options)
   if (casePaths.length === 0) {

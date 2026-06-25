@@ -42,6 +42,8 @@ Optional knobs:
 ```bash
 LOGOS_EVAL_AGENT=claude-cli-safe pnpm exec tsx evals/run.ts --tier deterministic
 LOGOS_EVAL_MODEL=sonnet pnpm exec tsx evals/run.ts rename-company-header
+LOGOS_EVAL_JUDGE_MODEL=sonnet pnpm exec tsx evals/run.ts fuzzy-search
+LOGOS_EVAL_JUDGE_BACKEND=codex-cli pnpm exec tsx evals/run.ts fuzzy-search
 LOGOS_CODEX_MODEL=gpt-5.5 pnpm exec tsx evals/run.ts fuzzy-search --backend codex-cli
 LOGOS_CODEX_MODEL=gpt-5.4-mini pnpm exec tsx evals/run.ts fuzzy-search --backend codex-cli
 LOGOS_CODEX_SANDBOX=danger-full-access pnpm exec tsx evals/run.ts fuzzy-search --backend codex-cli
@@ -97,6 +99,13 @@ case names, `--tier`, and `--repeat` still work with it.
       "oracle": ["../checks/foo.check.test.tsx", "../checks/fixtures.ts"],
       "cwd": "frontend",
       "cmd": ["pnpm", "exec", "vitest", "run", "foo.check.test.tsx"]
+    },
+    "diff-judge": {
+      "type": "judge",
+      "criteria": [
+        "The diff addresses the request in a plausible, maintainable way.",
+        "The patch is focused and avoids broad unrelated rewrites."
+      ]
     }
   }
 }
@@ -105,6 +114,15 @@ case names, `--tier`, and `--repeat` still work with it.
 `oracle` files are copied into `<fork>/<cwd>/` right before the check runs, so
 the agent can never overfit to them. `checks/fixtures.ts` holds the shared
 `baseJob`/`filters` fixture.
+
+Judge checks snapshot the fork before the agent runs, compute the final unified
+diff, and ask an LLM to return strict JSON: `{"pass": boolean, "score": number,
+"issues": string[], "summary": string}`. They are useful for capability cases
+where the important question is whether the produced patch is generally sane,
+appropriately scoped, and follows architectural guidance, not whether it chose
+one exact helper name or export shape. By default, judge checks use Codex when
+the agent backend is `codex-cli`; otherwise they use Claude. Override with
+`--judge-backend` or `LOGOS_EVAL_JUDGE_BACKEND`.
 
 ## Architecture cases
 
