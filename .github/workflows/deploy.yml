@@ -18,8 +18,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          submodules: recursive
+      - name: Stub private submodules for pnpm workspace
+        run: |
+          if [ ! -f logos-ts/demos/hn-jobs/package.json ]; then
+            mkdir -p logos-ts/demos/hn-jobs
+            node - <<'NODE'
+            const fs = require("node:fs")
+            fs.writeFileSync("logos-ts/demos/hn-jobs/package.json", JSON.stringify({
+              name: "hn-jobs",
+              version: "0.1.0",
+              private: true,
+              packageManager: "pnpm@11.8.0",
+              dependencies: {
+                "@edrickwong/spartan": "github:edrickwong/spartan",
+                "@google/generative-ai": "^0.24.1",
+                "@prisma/client": "^5.22.0",
+                next: "^14.2.18",
+                react: "^18.3.1",
+                "react-dom": "^18.3.1",
+              },
+              devDependencies: {
+                "@storybook/addon-a11y": "10.4.6",
+                "@storybook/addon-docs": "10.4.6",
+                "@storybook/nextjs-vite": "10.4.6",
+                "@storybook/react": "10.4.6",
+                "@types/node": "^22.9.0",
+                "@types/react": "^18.3.12",
+                "@types/react-dom": "^18.3.1",
+                playwright: "^1.61.0",
+                prisma: "^5.22.0",
+                storybook: "10.4.6",
+                "tsconfig-paths": "^4.2.0",
+                tsx: "^4.19.2",
+                typescript: "^5.6.3",
+                vite: "7.2.7",
+              },
+            }, null, 2))
+          NODE
+          fi
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
       - name: Validate deployment configuration
         env:
