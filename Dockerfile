@@ -9,7 +9,7 @@ RUN apt-get update \
 WORKDIR /app
 
 ENV PNPM_HOME=/usr/local/share/pnpm
-ENV PATH=$PNPM_HOME:$PATH
+ENV PATH=$PNPM_HOME/bin:$PNPM_HOME:$PATH
 
 COPY package.json pnpm-lock.yaml ./
 COPY pnpm-workspace.deploy.yaml ./pnpm-workspace.yaml
