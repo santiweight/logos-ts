@@ -29,7 +29,6 @@ import {
   buildStoryGenerationSystemPrompt,
   FRONTEND_BACKEND_SPLIT_GUIDANCE,
   isStoryGenerationRequest,
-  SEARCH_RANKING_GUIDANCE,
 } from "../src/prompt.js"
 import { buildClaudePrintArgs, cleanEnvForClaude } from "../src/claude-cli.js"
 
@@ -247,7 +246,6 @@ function buildPrompt(c: EvalCase, work: string, context: string): string {
     `Address these change requests:\n${goalLine}\n\n` +
     `Keep exported signatures stable unless a change requires otherwise; reuse existing helpers; make it typecheck.` +
     ` ${FRONTEND_BACKEND_SPLIT_GUIDANCE}` +
-    ` ${SEARCH_RANKING_GUIDANCE}` +
     ` For TypeScript node:test suites, prefer \`node --import tsx --test <test-file>\`; if \`pnpm test\` or \`pnpm exec tsx --test\` fails with \`listen EPERM\`, rerun the same tests with \`node --import tsx --test\`.` +
     ` This project has no automated test runner configured. Verify your changes manually.`
 }
