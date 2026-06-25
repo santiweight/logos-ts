@@ -276,6 +276,7 @@ export function App() {
   })
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
+  const hasBootedRef = useRef(false)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const activeWorkspaceIdRef = useRef<string | null>(null)
   const openWorkspaceSeqRef = useRef(0)
@@ -1315,7 +1316,9 @@ export function App() {
   const activeWorkspaceCanDisplay = activeWs ? workspaceReadyForDisplay(activeWs) : workspaceIndex != null
   const workspaceUiReady = activeWorkspaceId != null && workspaceIndex != null && activeWorkspaceCanDisplay
 
-  if (!workspaceUiReady) {
+  if (workspaceUiReady) hasBootedRef.current = true
+
+  if (!workspaceUiReady && !hasBootedRef.current) {
     return (
       <div className="studio" style={studioStyle}>
         {renderTopbar()}
@@ -1424,6 +1427,14 @@ export function App() {
       </aside>
 
       <GotoCtx.Provider value={gotoCtx}>
+      {!workspaceUiReady ? (
+        <main className="workspace-init-shell">
+          <WorkspaceStartupScreen
+            workspace={activeWs}
+            workspacesLoading={workspacesLoading}
+          />
+        </main>
+      ) : (
       <main className="main">
         <nav className={`main-nav ${mainChrome.showModeTabs ? "" : "single"}`}>
           <div className="main-title-row">
@@ -1493,6 +1504,7 @@ export function App() {
           <AgentPanel events={agentPanelEvents} running={agentPanelRunning} goal={agentPanelGoal} onClose={closeAgent} />
         )}
       </main>
+      )}
       </GotoCtx.Provider>
 
       <footer className="statusbar">
