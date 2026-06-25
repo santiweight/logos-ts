@@ -39,6 +39,7 @@ interface WorkspaceInitialization {
 
 interface Goal {
   id: string
+  label?: string
   mode: "code" | "arch"
   status?: "pending" | "running" | "done" | "error"
   workspaceId?: string
@@ -375,6 +376,33 @@ describe("workspace API mode isolation", () => {
     expect(await api(`/api/workspaces/${second.id}`)).toMatchObject({ status: 404 })
     expect(existsSync(firstState.forkDir)).toBe(false)
     expect(existsSync(secondState.forkDir)).toBe(false)
+  }, TEST_TIMEOUT)
+
+  it("returns a goal immediately with a fallback name when no goalName is provided", async () => {
+    const code = await createWorkspace("code")
+    const res = await jsonPost(`/api/workspaces/${code.id}/goals`, {
+      target: "fn:answer",
+      label: "answer",
+      text: "make the dashboard load faster",
+      mode: "code",
+    })
+    expect(res.ok).toBe(true)
+    const body = await res.json() as Goal
+    expect(body.label).toBe("Make Dashboard Load Faster")
+  }, TEST_TIMEOUT)
+
+  it("uses the provided goalName when one is given", async () => {
+    const code = await createWorkspace("code")
+    const res = await jsonPost(`/api/workspaces/${code.id}/goals`, {
+      target: "fn:answer",
+      label: "answer",
+      text: "make it faster",
+      mode: "code",
+      goalName: "Speed Up Dashboard",
+    })
+    expect(res.ok).toBe(true)
+    const body = await res.json() as Goal
+    expect(body.label).toBe("Speed Up Dashboard")
   }, TEST_TIMEOUT)
 
   it("forks arch goals from code workspaces into dedicated arch workspaces", async () => {

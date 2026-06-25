@@ -970,6 +970,16 @@ export class WorkspaceManager {
     return { goal: g, workspaceId: ws.id }
   }
 
+  renameGoal(wsId: string, goalId: string, label: string): Goal | null {
+    const ws = this.workspaces.get(wsId)
+    if (!ws) return null
+    const goal = ws.goals.find((g) => g.id === goalId)
+    if (!goal) return null
+    goal.label = label
+    this.save(ws)
+    return goal
+  }
+
   setGoalAutoMerge(wsId: string, goalId: string, autoMerge: boolean): Goal | null {
     const ws = this.workspaces.get(wsId)
     if (!ws) return null

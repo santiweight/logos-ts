@@ -441,6 +441,32 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(expectGoal(await mgr.addGoal(code.id, goal("second", "code"))).goal.id).toBe("second")
   })
 
+  it("renames a goal label and persists the change", async () => {
+    const mgr = createManager()
+    const ws = await mgr.create({ kind: "code" })
+    const result = expectGoal(await mgr.addGoal(ws.id, goal("rename-me", "code")))
+
+    expect(result.goal.label).toBe("thing")
+
+    const renamed = mgr.renameGoal(ws.id, "rename-me", "Better Name")
+    expect(renamed).not.toBeNull()
+    expect(renamed!.label).toBe("Better Name")
+
+    const persisted = mgr.get(ws.id)!.goals.find((g) => g.id === "rename-me")
+    expect(persisted!.label).toBe("Better Name")
+  })
+
+  it("returns null when renaming a goal in a nonexistent workspace", () => {
+    const mgr = createManager()
+    expect(mgr.renameGoal("no-such-ws", "no-such-goal", "x")).toBeNull()
+  })
+
+  it("returns null when renaming a nonexistent goal", async () => {
+    const mgr = createManager()
+    const ws = await mgr.create({ kind: "code" })
+    expect(mgr.renameGoal(ws.id, "no-such-goal", "x")).toBeNull()
+  })
+
   it("prepares the Storybook bridge when creating a snapshot-ready workspace baseline", async () => {
     const prepared: string[] = []
     let projectRoot = ""

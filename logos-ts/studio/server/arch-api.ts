@@ -1,3 +1,4 @@
+import { fallbackGoalName } from "../../src/goal-naming"
 import type { Connect } from "vite"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type {
@@ -44,6 +45,7 @@ type WorkspaceManagerLike = {
     goal: Omit<Goal, "status" | "lifecycle" | "mergePolicy" | "workingInstanceId" | "mergedInstanceId">,
     opts?: { fork?: boolean; autoMerge?: boolean },
   ): Promise<{ goal: Goal; workspaceId: string } | { error: string; status: number }>
+  renameGoal(workspaceId: string, goalId: string, label: string): Goal | null
   ensureStorybook(workspaceId: string): Promise<void>
   ensureRun(workspaceId: string, targetId: string, opts?: { restart?: boolean }): Promise<void>
 }
@@ -610,32 +612,36 @@ async function handleArchApi(runtime: ArchApiRuntime, req: IncomingMessage, res:
         const target = typeof body["target"] === "string" ? body["target"] : node?.target ?? targetNodeId
         const labelInput = stringField(body, "label", node?.label ?? "Arch change")
         const text = stringField(body, "text", "")
-        const goalName = await runtime.generateGoalName({
+        const namingInput = {
           text,
           label: labelInput,
           target,
-          mode: "arch",
+          mode: "arch" as const,
           component: node?.kind === "component" ? node.label : null,
           storyId: typeof body["storyId"] === "string" ? body["storyId"] : node?.kind === "story" ? node.id.replace(/^story:/, "") : null,
           selector: typeof body["selector"] === "string" ? body["selector"] : null,
           htmlContext: typeof body["htmlContext"] === "string" ? body["htmlContext"] : null,
-        })
+        }
+        const goalId = `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`
         const result = await runtime.wsMgr.addGoal(workspaceId, {
-          id: `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+          id: goalId,
           text,
-          label: goalName,
+          label: fallbackGoalName(namingInput),
           target,
           mode: "arch",
           createdAt: Date.now(),
-          storyId: typeof body["storyId"] === "string" ? body["storyId"] : node?.kind === "story" ? node.id.replace(/^story:/, "") : null,
-          selector: typeof body["selector"] === "string" ? body["selector"] : null,
-          component: node?.kind === "component" ? node.label : null,
+          storyId: namingInput.storyId,
+          selector: namingInput.selector,
+          component: namingInput.component,
         }, { fork: body["fork"] === true, autoMerge: body["autoMerge"] !== false })
         if ("error" in result) {
           json(res, { error: result.error }, result.status)
           return
         }
         json(res, { goalId: result.goal.id, workspaceId: result.workspaceId, status: "queued", goal: result.goal })
+        runtime.generateGoalName(namingInput).then((name) => {
+          runtime.wsMgr.renameGoal(result.workspaceId, goalId, name)
+        }).catch(() => {})
         return
       }
 

@@ -449,9 +449,11 @@ function studioApi(runtime: StudioRuntime): Plugin {
             appPath: typeof body.appPath === "string" ? body.appPath : null,
             runTargetId: typeof body.runTargetId === "string" ? body.runTargetId : null,
           }
-          const goalName = typeof body.goalName === "string" ? body.goalName : await generateGoalName(namingInput, PROJECT_ROOT, secrets.anthropicApiKey)
+          const hasExplicitName = typeof body.goalName === "string"
+          const goalName = hasExplicitName ? body.goalName : fallbackGoalName(namingInput)
+          const goalId = `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`
           const result = await wsMgr.addGoal(wsId, {
-            id: `goal-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+            id: goalId,
             text: String(body.text ?? ""),
             label: goalName,
             target: String(body.target ?? ""),
@@ -469,6 +471,12 @@ function studioApi(runtime: StudioRuntime): Plugin {
             return
           }
           res.end(JSON.stringify({ ...result.goal, workspaceId: result.workspaceId }))
+          if (!hasExplicitName) {
+            const resultWsId = result.workspaceId
+            generateGoalName(namingInput, PROJECT_ROOT, secrets.anthropicApiKey).then((name) => {
+              wsMgr.renameGoal(resultWsId, goalId, name)
+            }).catch(() => {})
+          }
           return
         }
 
