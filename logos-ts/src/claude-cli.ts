@@ -20,8 +20,8 @@ function envValue(name: string, defaultValue: string): string {
   return value ? value : defaultValue
 }
 
-const POISONED_ENV_PREFIXES = ["CLAUDE_CODE_", "CLAUDE_AGENT_SDK"]
-const POISONED_ENV_KEYS = ["CLAUDECODE", "AI_AGENT", "ANTHROPIC_API_KEY"]
+const POISONED_ENV_PREFIXES = ["CLAUDE_CODE_", "CLAUDE_AGENT_SDK", "ANTHROPIC_CUSTOM_MODEL_OPTION"]
+const POISONED_ENV_KEYS = ["CLAUDECODE", "AI_AGENT", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_EFFORT"]
 
 export function cleanEnvForClaude(anthropicApiKey?: string): NodeJS.ProcessEnv {
   const env = { ...process.env }
