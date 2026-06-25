@@ -307,7 +307,11 @@ export class RunManager {
           const trimmed = line.replace(ANSI_RE, "").trim()
           if (!trimmed) continue
           this.pushLog(id, trimmed)
-          if (isReadyLog(target, trimmed)) markReady()
+          if (isReadyLog(target, trimmed)) {
+            probe(url).then((ok) => {
+              if (ok) markReady()
+            }).catch(() => undefined)
+          }
         }
       }
 
@@ -465,7 +469,8 @@ function probe(url: string): Promise<boolean> {
   return new Promise((resolve_) => {
     const req = httpRequest(url, { method: "GET", timeout: 1000 }, (res) => {
       res.resume()
-      resolve_(res.statusCode != null)
+      const status = res.statusCode ?? 0
+      resolve_(status >= 200 && status < 400)
     })
     req.on("timeout", () => {
       req.destroy()

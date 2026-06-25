@@ -62,4 +62,52 @@ describe("RunManager", () => {
     expect(manager.state("ws-1", "root-app")).toMatchObject({ status: "ready" })
     manager.shutdownAll()
   }, 20_000)
+
+  it("does not mark a run ready while the app is still returning 404", async () => {
+    const root = makeTempDir()
+    mkdirSync(join(root, "scripts"), { recursive: true })
+    writeFileSync(join(root, "package.json"), JSON.stringify({
+      name: "slow-run-app",
+      private: true,
+      packageManager: "pnpm@11.8.0",
+      scripts: { dev: "node scripts/dev.mjs" },
+    }))
+    writeFileSync(join(root, "scripts/dev.mjs"), [
+      "import http from 'node:http'",
+      "const port = Number(process.env.PORT || '0')",
+      "const readyAt = Date.now() + 1500",
+      "const server = http.createServer((_req, res) => {",
+      "  if (Date.now() < readyAt) {",
+      "    res.writeHead(404, { 'content-type': 'text/plain' })",
+      "    res.end('not ready')",
+      "    return",
+      "  }",
+      "  res.end('ok')",
+      "})",
+      "server.listen(port, '127.0.0.1', () => {",
+      "  const address = server.address()",
+      "  console.log(`Local: http://127.0.0.1:${address.port}/`)",
+      "})",
+      "",
+    ].join("\n"))
+
+    const store = new LogosRuntimeStore(join(root, ".logos", "runtime.sqlite"))
+    const manager = new RunManager(store, root)
+    const target: RunTargetCaps = {
+      id: "root-app",
+      label: "App",
+      cwd: root,
+      command: "pnpm",
+      args: ["run", "dev"],
+      framework: "vite",
+    }
+
+    const startedAt = Date.now()
+    const url = await manager.ensure("ws-1", root, target)
+
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1400)
+    expect(await fetch(url).then((res) => res.text())).toBe("ok")
+    expect(manager.state("ws-1", "root-app")).toMatchObject({ status: "ready" })
+    manager.shutdownAll()
+  }, 20_000)
 })
