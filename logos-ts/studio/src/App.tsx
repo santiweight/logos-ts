@@ -461,6 +461,13 @@ export function App() {
     }
   }, [selection.view, selection.runTargetId, runTargets])
 
+  useEffect(() => {
+    if (selection.view === "run" || view.files.length === 0) return
+    if (selection.file && !view.files.some((f) => f.file === selection.file)) {
+      setSelection({ file: "", view: "run" })
+    }
+  }, [selection.view, selection.file, view.files])
+
   const startRun = useCallback(async (targetId: string, restart = false) => {
     if (!activeWorkspaceId) return
     try {
@@ -699,7 +706,18 @@ export function App() {
         setWorkspacesLoading(false)
         if (wsList.length > 0) {
           const latest = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
-          if (latest != null) await openWorkspace(latest.id)
+          if (latest != null) {
+            await openWorkspace(latest.id)
+            const targetsRes = await fetch("/api/run-targets").catch(() => null)
+            const targets = targetsRes?.ok ? ((await targetsRes.json()) as RunTarget[]) : []
+            if (targets.length > 0) {
+              fetch(`/api/workspaces/${latest.id}/runs/${encodeURIComponent(targets[0]!.id)}`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ restart: false }),
+              }).catch(() => {})
+            }
+          }
           for (const ws of wsList) {
             for (const goal of ws.goals ?? []) {
               if (goal.status === "running") {
