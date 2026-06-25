@@ -11,10 +11,10 @@ WORKDIR /app
 ENV PNPM_HOME=/usr/local/share/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml ./
+COPY pnpm-workspace.deploy.yaml ./pnpm-workspace.yaml
 COPY logos-ts/package.json ./logos-ts/
 COPY logos-ts/studio/package.json ./logos-ts/studio/
-COPY logos-ts/demos/hn-jobs/package.json ./logos-ts/demos/hn-jobs/
 COPY investment-portfolio/package.json ./investment-portfolio/
 COPY investment-portfolio/frontend/package.json ./investment-portfolio/frontend/
 COPY vinyl-collection/package.json ./vinyl-collection/
