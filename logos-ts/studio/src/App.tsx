@@ -1050,11 +1050,13 @@ export function App() {
     (goalId: string, text: string) => {
       if (!activeWorkspaceId) return
       setSelected({ type: "goal", id: goalId })
-      setGoalEvents((prev) => ({ ...prev, [goalId]: [] }))
       setRunningGoals((prev) => new Set(prev).add(goalId))
       setAgentGoalId(goalId)
       setAgentOpen(true)
       let closed = false
+      loadGoalSessionEvents(goalId).then((history) => {
+        if (history.length > 0) setGoalEvents((prev) => ({ ...prev, [goalId]: history }))
+      })
       fetch("/api/agent/continue", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1100,7 +1102,7 @@ export function App() {
         pump()
       })
     },
-    [activeWorkspaceId, refreshWorkspaces, refreshTests, refreshStorybooks, openWorkspace],
+    [activeWorkspaceId, refreshWorkspaces, refreshTests, refreshStorybooks, openWorkspace, loadGoalSessionEvents],
   )
 
   const addStoryWritingGoal = useCallback(
