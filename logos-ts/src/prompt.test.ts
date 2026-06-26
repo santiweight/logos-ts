@@ -3,6 +3,7 @@ import {
   buildArchImplementationPrompt,
   buildArchPrompt,
   buildImplPrompt,
+  isWebResearchRequest,
 } from "./prompt.js"
 
 describe("architecture prompt testing guidance", () => {
@@ -27,5 +28,18 @@ describe("architecture prompt testing guidance", () => {
     expect(prompts).not.toMatch(/\bsearch\b/i)
     expect(prompts).not.toMatch(/\bsubstring\b/i)
     expect(prompts).not.toMatch(/\btypo-tolerant\b/i)
+  })
+})
+
+describe("web research request detection", () => {
+  it("matches requests that need online research tools", () => {
+    expect(isWebResearchRequest("do research online before choosing a package")).toBe(true)
+    expect(isWebResearchRequest("browse the web for current docs")).toBe(true)
+    expect(isWebResearchRequest("look up the library API")).toBe(true)
+  })
+
+  it("does not match ordinary local code changes", () => {
+    expect(isWebResearchRequest("add search to the directory page")).toBe(false)
+    expect(isWebResearchRequest("fix the current component layout")).toBe(false)
   })
 })

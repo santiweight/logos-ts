@@ -7,6 +7,7 @@ export interface ClaudePrintArgsOptions {
   mcpConfigPath?: string
   extraArgs?: string[]
   noSessionPersistence?: boolean
+  enableWebTools?: boolean
 }
 
 function envFlag(name: string, defaultValue: boolean): boolean {
@@ -22,6 +23,7 @@ function envValue(name: string, defaultValue: string): string {
 
 const POISONED_ENV_PREFIXES = ["CLAUDE_CODE_", "CLAUDE_AGENT_SDK", "ANTHROPIC_CUSTOM_MODEL_OPTION"]
 const POISONED_ENV_KEYS = ["CLAUDECODE", "AI_AGENT", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_EFFORT"]
+const WEB_ENABLED_TOOLS = "Bash,Edit,Read,WebSearch,WebFetch"
 
 export function cleanEnvForClaude(anthropicApiKey?: string): NodeJS.ProcessEnv {
   const env = { ...process.env }
@@ -43,10 +45,11 @@ export function buildClaudePrintArgs(opts: ClaudePrintArgsOptions): string[] {
   const effort = envValue("LOGOS_CLAUDE_EFFORT", "low")
   if (effort !== "default") args.push("--effort", effort)
 
-  if (envFlag("LOGOS_CLAUDE_BARE", true)) args.push("--bare")
+  if (envFlag("LOGOS_CLAUDE_BARE", true) && !opts.enableWebTools) args.push("--bare")
   if (opts.noSessionPersistence) args.push("--no-session-persistence")
   if (opts.outputFormat) args.push("--output-format", opts.outputFormat)
   if (opts.verbose) args.push("--verbose")
+  if (opts.enableWebTools) args.push("--tools", WEB_ENABLED_TOOLS)
 
   args.push("--dangerously-skip-permissions")
 

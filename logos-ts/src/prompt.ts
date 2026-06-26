@@ -94,6 +94,10 @@ export function isStoryGenerationRequest(text: string): boolean {
   return /\bStorybook stories\b|\bstories for (?:this )?React component\b|\bcomponent stories\b/i.test(text)
 }
 
+export function isWebResearchRequest(text: string): boolean {
+  return /\b(?:web|internet|online|browser|browse|browsing|google|research)\b|\bsearch (?:the )?web\b|\blook(?:ed|ing)? up\b|\bwebsearch\b|\bwebfetch\b/i.test(text)
+}
+
 export function buildStoryGenerationSystemPrompt(): string {
   return [
     "When generating Storybook stories, keep component stories deterministic and self-contained.",

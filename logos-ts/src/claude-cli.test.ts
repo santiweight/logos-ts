@@ -117,6 +117,27 @@ describe("buildClaudePrintArgs", () => {
     ])
   })
 
+  it("enables web tools by leaving bare mode and constraining built-in tools", () => {
+    expect(buildClaudePrintArgs({
+      promptArg: "research online",
+      mcpConfigPath: "/tmp/logos.mcp.json",
+      enableWebTools: true,
+    })).toEqual([
+      "-p",
+      "research online",
+      "--model",
+      "sonnet",
+      "--effort",
+      "low",
+      "--tools",
+      "Bash,Edit,Read,WebSearch,WebFetch",
+      "--dangerously-skip-permissions",
+      "--mcp-config",
+      "/tmp/logos.mcp.json",
+      "--strict-mcp-config",
+    ])
+  })
+
   it("allows heavier runs through environment overrides", () => {
     vi.stubEnv("LOGOS_CLAUDE_MODEL", "opus")
     vi.stubEnv("LOGOS_CLAUDE_EFFORT", "default")
