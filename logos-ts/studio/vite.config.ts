@@ -51,6 +51,7 @@ type WorkspaceKind = import("../src/workspace-manager").WorkspaceKind
 type StudioRuntime = {
   demoId: DemoId | "custom"
   sourceProject: string
+  runtimeRoot: string
   projectRoot: string
   caps: ReturnType<DetectProject>
   tsx: string
@@ -156,13 +157,17 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   const portableStories = createPortableStoryResolver({
     projectRoot,
     storybook: caps.storybook,
+    storybookForRoot: (root) => {
+      const detected = detectProject(root)
+      return { projectRoot: detected.root, storybook: detected.storybook }
+    },
     workspaceRoot: (id) => {
       if (!id) return projectRoot
       return wsMgr.get(id)?.forkDir ?? null
     },
   })
 
-  return { demoId, sourceProject, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, runManager, secrets, wsMgr, portableStories }
+  return { demoId, sourceProject, runtimeRoot: runtimePaths.root, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, runManager, secrets, wsMgr, portableStories }
 }
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
@@ -784,20 +789,28 @@ function containsPath(root: string, file: string): boolean {
 }
 
 function resolveSourceAlias(root: string, source: string): string | null {
-  const base = resolve(root, source.slice(2))
-  const candidates = [
-    base,
-    `${base}.ts`,
-    `${base}.tsx`,
-    `${base}.js`,
-    `${base}.jsx`,
-    `${base}.json`,
-    join(base, "index.ts"),
-    join(base, "index.tsx"),
-    join(base, "index.js"),
-    join(base, "index.jsx"),
+  const aliasPath = source.slice(2)
+  const bases = [
+    resolve(root, aliasPath),
+    resolve(root, "src", aliasPath),
   ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  for (const base of bases) {
+    const candidates = [
+      base,
+      `${base}.ts`,
+      `${base}.tsx`,
+      `${base}.js`,
+      `${base}.jsx`,
+      `${base}.json`,
+      join(base, "index.ts"),
+      join(base, "index.tsx"),
+      join(base, "index.js"),
+      join(base, "index.jsx"),
+    ]
+    const found = candidates.find((candidate) => existsSync(candidate))
+    if (found) return found
+  }
+  return null
 }
 
 function workspaceAliasPlugin(runtime: StudioRuntime): Plugin {
@@ -902,6 +915,7 @@ export default defineConfig(async ({ command }) => {
       port: Number(process.env.PORT) || 0,
       strictPort: Boolean(process.env.PORT),
       hmr: process.env.LOGOS_DISABLE_HMR === "1" ? false : undefined,
+      fs: runtime ? { allow: [STUDIO, LOGOS_TS, runtime.runtimeRoot] } : undefined,
       watch: { ignored: ["**/.agent-runs/**"] },
     },
     resolve: {

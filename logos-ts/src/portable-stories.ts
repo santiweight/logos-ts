@@ -20,6 +20,11 @@ export interface PortableStoryResolver {
   clearCache(root?: string): void
 }
 
+interface StorybookResolution {
+  projectRoot: string
+  storybook: StorybookCaps | null | undefined
+}
+
 interface StoryCacheEntry {
   mtime: number
   entries: StoryEntry[]
@@ -95,12 +100,21 @@ export function storybookDirsForRoot(projectRoot: string, caps: StorybookCaps | 
 export function createPortableStoryResolver(opts: {
   projectRoot: string
   storybook: StorybookCaps | null | undefined
+  storybookForRoot?: (root: string) => StorybookResolution
   workspaceRoot: (id: string | null) => string | null
 }): PortableStoryResolver {
   const storyCache = new Map<string, StoryCacheEntry>()
 
+  const storybookDirs = (root: string): StorybookDirs | null => {
+    const resolved = opts.storybookForRoot?.(root) ?? {
+      projectRoot: opts.projectRoot,
+      storybook: opts.storybook,
+    }
+    return storybookDirsForRoot(resolved.projectRoot, resolved.storybook, root)
+  }
+
   const storiesFor = (root: string): StoryEntry[] => {
-    const dirs = storybookDirsForRoot(opts.projectRoot, opts.storybook, root)
+    const dirs = storybookDirs(root)
     if (!dirs) return []
     const mtime = storyFilesMtime(dirs.frontendDir)
     const cached = storyCache.get(root)
@@ -118,7 +132,7 @@ export function createPortableStoryResolver(opts: {
     const workspaceId = url.searchParams.get("workspaceId")
     const root = opts.workspaceRoot(workspaceId)
     if (!root) return errorModule(storyId, `workspace not found: ${workspaceId}`)
-    const dirs = storybookDirsForRoot(opts.projectRoot, opts.storybook, root)
+    const dirs = storybookDirs(root)
     if (!dirs) return errorModule(storyId, "Storybook is not configured for this project")
 
     const story = storiesFor(root).find((e) => e.id === storyId)

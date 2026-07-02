@@ -74,6 +74,33 @@ describe("portable story resolver", () => {
     }
   })
 
+  it("detects Storybook config added inside a workspace even when the base project has none", () => {
+    const root = mkdtempSync(join(tmpdir(), "logos-portable-stories-base-"))
+    const workspace = copyFixture()
+    try {
+      const resolver = createPortableStoryResolver({
+        projectRoot: root,
+        storybook: null,
+        storybookForRoot: (candidateRoot) => ({
+          projectRoot: candidateRoot,
+          storybook: {
+            frontendDir: candidateRoot,
+            configDir: join(candidateRoot, ".storybook"),
+          },
+        }),
+        workspaceRoot: (id) => id === "ws-test" ? workspace : root,
+      })
+
+      const mod = resolver.moduleFor("virtual:logos-portable-story?storyId=admin-page--default&workspaceId=ws-test")
+      expect(mod).toContain(`${workspace}/app/admin/page.stories.tsx`)
+      expect(mod).toContain(`${workspace}/.storybook/preview.ts`)
+      expect(mod).toContain('composed["Default"]')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
   it("ignores node_modules while checking story cache mtimes", () => {
     const root = copyFixture()
     try {
