@@ -603,6 +603,67 @@ describe("WorkspaceManager workspace kinds", () => {
     ])
   }, 20_000)
 
+  it("starts Storybook discovered only in the active workspace instance", async () => {
+    const ensured: { id: string; frontendDir: string }[] = []
+    const mgr = createManager({
+      sbManager: {
+        get: () => null,
+        shutdown: () => undefined,
+        prepare: () => undefined,
+        ensure: (id: string, frontendDir: string) => {
+          ensured.push({ id, frontendDir })
+          return Promise.resolve("")
+        },
+      },
+    })
+
+    const created = await mgr.create({ kind: "code" })
+    const state = mgr.get(created.id)!
+    mkdirSync(join(state.forkDir, ".storybook"), { recursive: true })
+    writeFileSync(join(state.forkDir, ".storybook", "main.ts"), "export default {}\n")
+
+    await mgr.ensureStorybook(created.id)
+
+    expect(ensured).toEqual([{ id: created.activeInstanceId, frontendDir: state.forkDir }])
+  }, 20_000)
+
+  it("uses the active workspace Storybook roots instead of stale source-project caps", async () => {
+    const ensured: { id: string; frontendDir: string }[] = []
+    const mgr = createManager({
+      setupProject(root) {
+        mkdirSync(join(root, ".storybook"), { recursive: true })
+        writeFileSync(join(root, ".storybook", "main.ts"), "export default {}\n")
+      },
+      caps: (root) => ({
+        storybook: { frontendDir: root, configDir: join(root, ".storybook") },
+      }),
+      sbManager: {
+        get: () => null,
+        shutdown: () => undefined,
+        prepare: () => undefined,
+        ensure: (id: string, frontendDir: string) => {
+          ensured.push({ id, frontendDir })
+          return Promise.resolve("")
+        },
+      },
+    })
+
+    const created = await mgr.create({ kind: "code" })
+    const state = mgr.get(created.id)!
+    ensured.splice(0)
+
+    rmSync(join(state.forkDir, ".storybook"), { recursive: true, force: true })
+    mkdirSync(join(state.forkDir, "app-preview", ".storybook"), { recursive: true })
+    writeFileSync(join(state.forkDir, "app-preview", ".storybook", "main.ts"), "export default {}\n")
+
+    await mgr.ensureStorybook(created.id)
+
+    expect(ensured).toEqual([{
+      id: `${created.activeInstanceId}:app-preview`,
+      frontendDir: join(state.forkDir, "app-preview"),
+    }])
+  }, 20_000)
+
   it("shuts down every path-scoped Storybook service when deleting a workspace", async () => {
     const shutdowns: string[] = []
     const mgr = createManager({
@@ -665,6 +726,28 @@ describe("WorkspaceManager workspace kinds", () => {
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
   }, 60_000)
 
+  it("writes story comment screenshots into the agent workspace and references them in the prompt", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    expectGoal(await mgr.addGoal(code.id, {
+      ...goal("screenshot-goal", "code"),
+      text: "Use the marked area",
+      screenshotDataUrl: "data:image/png;base64,ZmFrZQ==",
+    }))
+
+    mgr.processNext(code.id, () => {})
+
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    const screenshotPath = join(spawned[0]!.cwd, ".logos", "goal-screenshots", "screenshot-goal.png")
+    expect(existsSync(screenshotPath)).toBe(true)
+    expect(readFileSync(screenshotPath, "utf8")).toBe("fake")
+    expect(spawned[0]!.args[spawned[0]!.args.indexOf("-p") + 1]).toContain("screenshot: .logos/goal-screenshots/screenshot-goal.png")
+
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+  }, 60_000)
+
   it("strips Claude Code session vars from agent spawn env", async () => {
     vi.stubEnv("CLAUDE_CODE_CHILD_SESSION", "1")
     vi.stubEnv("CLAUDE_CODE_SESSION_ID", "parent-session")
@@ -714,6 +797,7 @@ describe("WorkspaceManager workspace kinds", () => {
     const prompt = args[args.indexOf("-p") + 1] ?? ""
     expect(args).toContain("--append-system-prompt")
     expect(args[args.indexOf("--append-system-prompt") + 1]).toContain("Use the project's existing Storybook style")
+    expect(args[args.indexOf("--append-system-prompt") + 1]).toContain("Do not mix Storybook major versions")
     expect(args[args.indexOf("--append-system-prompt") + 1]).toContain("Every file in the import chain from the stories file must be browser-safe")
     expect(prompt).toContain("Generate Storybook stories for `Thing`.")
     expect(prompt).not.toContain("Use the project's existing Storybook style")

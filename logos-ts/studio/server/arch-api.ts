@@ -633,6 +633,7 @@ async function handleArchApi(runtime: ArchApiRuntime, req: IncomingMessage, res:
           storyId: namingInput.storyId,
           selector: namingInput.selector,
           component: namingInput.component,
+          screenshotDataUrl: typeof body["screenshotDataUrl"] === "string" ? body["screenshotDataUrl"] : null,
         }, { fork: body["fork"] === true, autoMerge: body["autoMerge"] !== false })
         if ("error" in result) {
           json(res, { error: result.error }, result.status)

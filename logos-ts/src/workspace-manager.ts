@@ -14,7 +14,7 @@
 // Each architecture workspace runs at most one architecture agent at a time.
 
 import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync } from "node:fs"
-import { resolve, relative, join, basename, sep } from "node:path"
+import { resolve, relative, join, basename, dirname, sep } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
 import { promisify } from "node:util"
 
@@ -38,11 +38,22 @@ import type {
 import { ensureStoryCaptureHarnessForRoot, missingStorySnapshotDependencies } from "./story-snapshots.js"
 import { TsIndexCache } from "./ts-index-cache.js"
 import { PROJECT_SOURCE_EXCLUDES } from "./project.js"
+import { detectProject } from "./detect-project.js"
 
 export interface GoalReply {
   author: "agent" | "user"
   text: string
   createdAt: number
+}
+
+function parsePngDataUrl(dataUrl: string): Buffer | null {
+  const match = /^data:image\/png;base64,([a-zA-Z0-9+/=]+)$/.exec(dataUrl.trim())
+  if (!match?.[1]) return null
+  try {
+    return Buffer.from(match[1], "base64")
+  } catch {
+    return null
+  }
 }
 
 export interface Goal {
@@ -57,6 +68,7 @@ export interface Goal {
   component?: string | null
   appPath?: string | null
   runTargetId?: string | null
+  screenshotDataUrl?: string | null
   status: "pending" | "running" | "done" | "error"
   lifecycle: StoredGoalLifecycle
   mergePolicy: StoredGoalMergePolicy
@@ -201,6 +213,11 @@ interface ProjectCaps {
   tests?: { command: string[]; watchDirs: string[] }
   runs?: { id: string; label: string; cwd: string; command: string; args: string[]; framework: "vite" | "next"; env?: Record<string, string> }[]
   nodeModulesDirs: string[]
+}
+
+interface StorybookCapsResolution {
+  sourceRoot: string
+  storybooks: { configDir: string; frontendDir: string }[]
 }
 
 function defaultWorkspaceName(): string {
@@ -379,16 +396,14 @@ export class WorkspaceManager {
     return meta
   }
 
-  private storybookCaps(): { configDir: string; frontendDir: string }[] {
-    return this.caps.storybooks?.length
-      ? this.caps.storybooks
-      : this.caps.storybook
-        ? [this.caps.storybook]
-        : []
+  private storybookCapsForInstance(inst?: WorkspaceInstance): StorybookCapsResolution {
+    if (!inst) return { sourceRoot: this.projectRoot, storybooks: [] }
+    const detected = detectProject(inst.materializedRoot)
+    return { sourceRoot: inst.materializedRoot, storybooks: detected.storybooks }
   }
 
-  private storybookServiceId(inst: WorkspaceInstance, frontendDir: string): string {
-    const rel = relative(this.projectRoot, frontendDir).replace(/\\/g, "/")
+  private storybookServiceId(inst: WorkspaceInstance, frontendDir: string, sourceRoot = this.projectRoot): string {
+    const rel = relative(sourceRoot, frontendDir).replace(/\\/g, "/")
     return rel ? `${inst.id}:${rel}` : inst.id
   }
 
@@ -839,13 +854,13 @@ export class WorkspaceManager {
   }
 
   private startStorybooks(inst: WorkspaceInstance): Promise<string[]> {
-    const storybooks = this.storybookCaps()
+    const { sourceRoot, storybooks } = this.storybookCapsForInstance(inst)
     if (storybooks.length === 0) return Promise.reject(new Error("storybook is not configured for this project"))
     this.codeService.ensureCachedNodeModules(inst)
     return Promise.all(storybooks.map((storybook) => {
-      const wsFrontend = join(inst.materializedRoot, relative(this.projectRoot, storybook.frontendDir))
+      const wsFrontend = join(inst.materializedRoot, relative(sourceRoot, storybook.frontendDir))
       this.sbManager.prepare(wsFrontend)
-      return this.sbManager.ensure(this.storybookServiceId(inst, storybook.frontendDir), wsFrontend)
+      return this.sbManager.ensure(this.storybookServiceId(inst, storybook.frontendDir, sourceRoot), wsFrontend)
     }))
   }
 
@@ -1288,7 +1303,8 @@ export class WorkspaceManager {
     }
 
     const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
-    const goalLine = buildGoalLine(goal)
+    const screenshotPath = this.materializeGoalScreenshot(goal, dir)
+    const goalLine = buildGoalLine({ ...goal, screenshotPath })
     const prompt =
       mode === "arch"
         ? buildArchPrompt(context, sandbox, goalLine)
@@ -1474,13 +1490,10 @@ export class WorkspaceManager {
   }
 
   private storybookDirsForInstance(inst: WorkspaceInstance): { frontendDir: string; configDir?: string } | null {
-    if (!this.caps.storybook) return null
-    const frontendRel = relative(this.projectRoot, this.caps.storybook.frontendDir)
-    const configRel = relative(this.projectRoot, this.caps.storybook.configDir)
-    return {
-      frontendDir: frontendRel ? resolve(inst.materializedRoot, frontendRel) : inst.materializedRoot,
-      ...(configRel ? { configDir: resolve(inst.materializedRoot, configRel) } : { configDir: inst.materializedRoot }),
-    }
+    const detected = detectProject(inst.materializedRoot)
+    const storybook = detected.storybook
+    if (!storybook) return null
+    return storybook
   }
 
   private async runStorySnapshotAcceptance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
@@ -1522,21 +1535,23 @@ export class WorkspaceManager {
     if (!preserveIds.has(ws.id)) this.sbManager.shutdown(ws.id)
     for (const inst of Object.values(ws.instances)) {
       if (!preserveIds.has(inst.id)) this.sbManager.shutdown(inst.id)
-      for (const storybook of this.storybookCaps()) {
-        const id = this.storybookServiceId(inst, storybook.frontendDir)
+      const { sourceRoot, storybooks } = this.storybookCapsForInstance(inst)
+      for (const storybook of storybooks) {
+        const id = this.storybookServiceId(inst, storybook.frontendDir, sourceRoot)
         if (!preserveIds.has(id)) this.sbManager.shutdown(id)
       }
     }
   }
 
   private restartWorkspaceServices(ws: WorkspaceRecord, inst: WorkspaceInstance): void {
+    const { sourceRoot, storybooks } = this.storybookCapsForInstance(inst)
     const preservedStorybooks = new Set(
-      this.storybookCaps().map((storybook) => this.storybookServiceId(inst, storybook.frontendDir)),
+      storybooks.map((storybook) => this.storybookServiceId(inst, storybook.frontendDir, sourceRoot)),
     )
     this.shutdownWorkspaceStorybooks(ws, preservedStorybooks)
     this.runManager.shutdownWorkspace(ws.id)
     this.codeService.ensureCachedNodeModules(inst)
-    if (this.storybookCaps().length > 0) {
+    if (storybooks.length > 0) {
       this.startStorybooks(inst).catch((e: any) => {
         console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
       })
@@ -1799,6 +1814,17 @@ export class WorkspaceManager {
     const mcpConfigPath = resolve(this.runsDir, `${goalId}-${suffix}.mcp.json`)
     writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
     return mcpConfigPath
+  }
+
+  private materializeGoalScreenshot(goal: Goal, dir: string): string | null {
+    if (!goal.screenshotDataUrl) return null
+    const parsed = parsePngDataUrl(goal.screenshotDataUrl)
+    if (parsed == null) return null
+    const rel = join(".logos", "goal-screenshots", `${goal.id}.png`)
+    const abs = resolve(dir, rel)
+    mkdirSync(dirname(abs), { recursive: true })
+    writeFileSync(abs, parsed)
+    return rel.split(sep).join("/")
   }
 
   private resumeGoalInInstance(

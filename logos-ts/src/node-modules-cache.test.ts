@@ -437,6 +437,28 @@ describe("NodeModulesCache", () => {
     expect(readdirSync(cacheDir).length).toBe(1)
   })
 
+  it("normalizes pending pnpm build approval placeholders before install", () => {
+    const tmp = makeTempDir()
+    const project = makePnpmProject(join(tmp, "project"))
+    writeFileSync(join(project, "pnpm-workspace.yaml"), [
+      "allowBuilds:",
+      "  core-js-pure: set this to true or false",
+      "  esbuild: set this to true or false",
+      "  unknown-build-pkg: set this to true or false",
+      "",
+    ].join("\n"))
+
+    const cache = new NodeModulesCache({ cacheDir: join(tmp, "cache") })
+    cache.ensureFor(project)
+
+    expect(readFileSync(join(project, "pnpm-workspace.yaml"), "utf8").trimEnd()).toBe([
+      "allowBuilds:",
+      "  core-js-pure: true",
+      "  esbuild: true",
+      "  unknown-build-pkg: false",
+    ].join("\n"))
+  })
+
   it("does not crash on dependencies with unapproved build scripts", () => {
     const tmp = makeTempDir()
     const localPkg = join(tmp, "local-pkg")

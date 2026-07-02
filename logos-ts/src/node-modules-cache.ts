@@ -18,6 +18,7 @@ export interface NmCacheOptions {
 const DEFAULT_CACHE_DIR = join(homedir(), ".logos", "nm-cache")
 const DEFAULT_MAX_ENTRIES = 20
 const CACHE_FORMAT_VERSION = "pnpm-cache-v2"
+const LOGOS_ALLOWED_BUILD_PACKAGES = ["core-js-pure", "esbuild"]
 
 interface PnpmInstall {
   installArgs: string[]
@@ -36,6 +37,8 @@ export class NodeModulesCache {
     if (!existsSync(join(packageDir, "package.json"))) {
       return { cacheKey: "", nodeModulesPath: join(packageDir, "node_modules"), hit: false }
     }
+
+    this.normalizePnpmBuildApprovals(packageDir)
 
     const pnpmInstall = this.pnpmInstallFor(packageDir)
     if (pnpmInstall) return this.ensurePnpmInPlace(packageDir, pnpmInstall)
@@ -125,6 +128,7 @@ export class NodeModulesCache {
     if (!existsSync(join(packageDir, "package.json"))) return
     if (existsSync(join(packageDir, "node_modules"))) return
     console.log(`[logos] installing ${basename(packageDir)} (no lockfile, in-place)…`)
+    this.normalizePnpmBuildApprovals(packageDir)
     execFileSync("pnpm", ["install", "--no-lockfile", "--ignore-scripts"], {
       cwd: packageDir,
       stdio: "inherit",
@@ -141,6 +145,7 @@ export class NodeModulesCache {
 
     console.log(`[logos] pnpm install: ${basename(packageDir)}…`)
     this.removeNodeModules(nodeModulesPath)
+    this.normalizePnpmBuildApprovals(packageDir)
     execFileSync("pnpm", [...install.installArgs, "--ignore-scripts"], {
       cwd: packageDir,
       stdio: "inherit",
@@ -219,6 +224,21 @@ export class NodeModulesCache {
     }
   }
 
+  private normalizePnpmBuildApprovals(packageDir: string): void {
+    const file = nearestPnpmWorkspaceFile(packageDir)
+    if (file == null) return
+    const text = readFileSync(file, "utf8")
+    if (!text.includes("set this to true or false")) return
+    const normalized = text.replace(
+      /^(\s*)(['"]?)([^:'"\n]+)\2:\s*set this to true or false\s*$/gm,
+      (_line, indent: string, quote: string, name: string) => {
+        const pkg = name.trim()
+        return `${indent}${quote}${pkg}${quote}: ${LOGOS_ALLOWED_BUILD_PACKAGES.includes(pkg) ? "true" : "false"}`
+      },
+    )
+    if (normalized !== text) writeFileSync(file, normalized)
+  }
+
   private touchEntry(entryDir: string): void {
     const now = new Date()
     try { utimesSync(entryDir, now, now) } catch { /* best effort */ }
@@ -293,6 +313,17 @@ export class NodeModulesCache {
       console.log(`[logos] nm-cache evict: ${entry.name.slice(0, 12)}`)
       try { rmSync(full, { recursive: true, force: true }) } catch { /* best effort */ }
     }
+  }
+}
+
+function nearestPnpmWorkspaceFile(packageDir: string): string | null {
+  let dir = resolve(packageDir)
+  for (;;) {
+    const file = join(dir, "pnpm-workspace.yaml")
+    if (existsSync(file)) return file
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
   }
 }
 

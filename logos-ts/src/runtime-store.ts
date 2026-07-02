@@ -41,6 +41,7 @@ export interface StoredGoal {
   component?: string | null
   appPath?: string | null
   runTargetId?: string | null
+  screenshotDataUrl?: string | null
   status: "pending" | "running" | "done" | "error"
   lifecycle: StoredGoalLifecycle
   mergePolicy: StoredGoalMergePolicy
@@ -309,6 +310,7 @@ export class LogosRuntimeStore {
     this.addColumnIfMissing("goals", "merged_instance_id", "TEXT")
     this.addColumnIfMissing("goals", "app_path", "TEXT")
     this.addColumnIfMissing("goals", "run_target_id", "TEXT")
+    this.addColumnIfMissing("goals", "screenshot_data_url", "TEXT")
     this.addColumnIfMissing("runs", "framework", "TEXT NOT NULL DEFAULT 'vite'")
     this.migrateStorybookServiceTables()
   }
@@ -433,10 +435,10 @@ export class LogosRuntimeStore {
         this.db.prepare(`
           INSERT INTO goals (
             id, workspace_id, position_index, text, label, target, mode, created_at,
-            story_id, selector, component, app_path, run_target_id, status, lifecycle_json, auto_merge,
+            story_id, selector, component, app_path, run_target_id, screenshot_data_url, status, lifecycle_json, auto_merge,
             base_instance_id, working_instance_id, merged_instance_id, session_id
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           goal.id,
           ws.id,
@@ -451,6 +453,7 @@ export class LogosRuntimeStore {
           goal.component ?? null,
           goal.appPath ?? null,
           goal.runTargetId ?? null,
+          goal.screenshotDataUrl ?? null,
           goal.status,
           JSON.stringify(goal.lifecycle),
           goal.mergePolicy.autoMerge ? 1 : 0,
@@ -798,6 +801,7 @@ function mapGoal(row: Record<string, unknown>): StoredGoal {
     component: nullableString(row["component"]),
     appPath: nullableString(row["app_path"]),
     runTargetId: nullableString(row["run_target_id"]),
+    screenshotDataUrl: nullableString(row["screenshot_data_url"]),
     status,
     lifecycle: parseGoalLifecycle(row["lifecycle_json"], status),
     mergePolicy: { autoMerge: row["auto_merge"] !== 0 },

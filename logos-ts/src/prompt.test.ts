@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildArchImplementationPrompt,
   buildArchPrompt,
+  buildGoalLine,
   buildImplPrompt,
   isWebResearchRequest,
 } from "./prompt.js"
@@ -28,6 +29,14 @@ describe("architecture prompt testing guidance", () => {
     expect(prompts).not.toMatch(/\bsearch\b/i)
     expect(prompts).not.toMatch(/\bsubstring\b/i)
     expect(prompts).not.toMatch(/\btypo-tolerant\b/i)
+  })
+
+  it("includes a materialized screenshot path in goal context", () => {
+    expect(buildGoalLine({
+      label: "button",
+      text: "Use the marked area",
+      screenshotPath: ".logos/goal-screenshots/goal-1.png",
+    })).toContain("screenshot: .logos/goal-screenshots/goal-1.png")
   })
 })
 

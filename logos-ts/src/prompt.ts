@@ -6,15 +6,17 @@ export interface GoalFields {
   selector?: string | null
   appPath?: string | null
   runTargetId?: string | null
+  screenshotPath?: string | null
 }
 
-export function buildElementContext(goal: Pick<GoalFields, "component" | "storyId" | "selector" | "appPath" | "runTargetId">): string {
+export function buildElementContext(goal: Pick<GoalFields, "component" | "storyId" | "selector" | "appPath" | "runTargetId" | "screenshotPath">): string {
   return [
     goal.component && `component: ${goal.component}`,
     goal.appPath && `app path: ${goal.appPath}`,
     goal.runTargetId && `run target: ${goal.runTargetId}`,
     goal.storyId && `story: ${goal.storyId}`,
     goal.selector && `element: ${goal.selector}`,
+    goal.screenshotPath && `screenshot: ${goal.screenshotPath}`,
   ].filter(Boolean).join(", ")
 }
 
@@ -102,6 +104,7 @@ export function buildStoryGenerationSystemPrompt(): string {
   return [
     "When generating Storybook stories, keep component stories deterministic and self-contained.",
     "Use the project's existing Storybook style, imports, decorators, fixture patterns, and file naming.",
+    "If you add or change Storybook dependencies, use a compatible published version set. Do not mix Storybook major versions across `storybook`, framework packages, React packages, and addons; omit optional addons when no compatible release exists.",
     "If a colocated stories file already exists, improve it instead of duplicating stories.",
     "Cover the component's normal/default state, meaningful prop-driven variants, and any empty, loading, error, disabled, long-content, or interaction-relevant states that apply.",
     "Use small deterministic fixtures and generic sample data. Do not use network, database, timers, randomness, or production-only services.",

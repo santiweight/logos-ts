@@ -220,4 +220,50 @@ describe("StorybookCommentLayer", () => {
       })
     })
   })
+
+  it("opens a screenshot-backed draft after Alt-drag drawing", async () => {
+    vi.spyOn(window.parent, "postMessage").mockImplementation(() => {})
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      scale: vi.fn(),
+      set lineCap(_value: string) {},
+      set lineJoin(_value: string) {},
+      set lineWidth(_value: number) {},
+      set strokeStyle(_value: string) {},
+    } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,ZmFrZQ==")
+
+    render(
+      <StorybookCommentLayer storyId="jobcard--default" component="JobCard">
+        <section>
+          <button type="button">Apply</button>
+        </section>
+      </StorybookCommentLayer>
+    )
+
+    const button = screen.getByRole("button", { name: "Apply" })
+    fireEvent.mouseDown(button, { altKey: true, button: 0, clientX: 10, clientY: 10 })
+    fireEvent.mouseMove(document, { clientX: 50, clientY: 60 })
+    fireEvent.mouseUp(document, { clientX: 50, clientY: 60 })
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox")).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Use this marked area" } })
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+
+    await waitFor(() => {
+      expect(lastPosted("logos:story-comment")).toMatchObject({
+        storyId: "jobcard--default",
+        selector: ":scope > section > button",
+        text: "Use this marked area",
+        screenshotDataUrl: "data:image/png;base64,ZmFrZQ==",
+        htmlContext: expect.stringContaining("annotation: Alt-drag drawing"),
+      })
+    })
+  })
 })

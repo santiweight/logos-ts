@@ -1015,7 +1015,7 @@ export function App() {
   const addGoal = useCallback(
     async (
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
-      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; autoMerge?: boolean; goalName?: string; appPath?: string; runTargetId?: string },
+      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; autoMerge?: boolean; goalName?: string; appPath?: string; runTargetId?: string; screenshotDataUrl?: string },
     ) => {
       // 1. Code forks are created client-side. Arch isolation is owned by the backend.
       let wsId = fork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
@@ -1185,7 +1185,7 @@ export function App() {
       }
       if (e.data?.type !== "logos:story-comment") return
       if (!acceptStoryCommentEvent(e.data)) return
-      const { storyId, component, selector, label, text, mode, fork, autoMerge, htmlContext, appPath, runTargetId } = e.data
+      const { storyId, component, selector, label, text, mode, fork, autoMerge, htmlContext, appPath, runTargetId, screenshotDataUrl } = e.data
       if (typeof storyId === "string" && storyId) {
         setStoryCommentDrafts((current) => {
           const next = { ...current }
@@ -1210,6 +1210,7 @@ export function App() {
         htmlContext,
         appPath,
         runTargetId,
+        screenshotDataUrl,
         autoMerge: autoMerge !== false,
       })
     }

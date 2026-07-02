@@ -187,6 +187,9 @@ function runCommentScript(target: ProxyTarget): string {
   let popup = null;
   let hover = null;
   let altDown = false;
+  let drawing = null;
+  let annotationCanvas = null;
+  let suppressClickUntil = 0;
 
   const css = document.createElement("style");
   css.setAttribute("data-logos-run-comments", "");
@@ -278,6 +281,40 @@ function runCommentScript(target: ProxyTarget): string {
     return "selected: " + line + parent;
   }
 
+  function createDrawingCanvas() {
+    const canvas = document.createElement("canvas");
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.max(1, Math.round(window.innerWidth * dpr));
+    canvas.height = Math.max(1, Math.round(window.innerHeight * dpr));
+    canvas.style.cssText = "position:fixed;inset:0;width:" + window.innerWidth + "px;height:" + window.innerHeight + "px;z-index:2147483599;pointer-events:none";
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.scale(dpr, dpr);
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.lineWidth = 4;
+    context.strokeStyle = "#dc2626";
+    document.documentElement.appendChild(canvas);
+    return { canvas, context };
+  }
+
+  function screenshotDataUrl(canvas) {
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      return dataUrl.startsWith("data:image/png;base64,") ? dataUrl : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function annotationContext(baseContext, session) {
+    const left = Math.round(Math.min(session.startX, session.lastX));
+    const top = Math.round(Math.min(session.startY, session.lastY));
+    const width = Math.round(Math.abs(session.lastX - session.startX));
+    const height = Math.round(Math.abs(session.lastY - session.startY));
+    return baseContext + "\\nannotation: Alt-drag drawing from viewport (" + Math.round(session.startX) + ", " + Math.round(session.startY) + ") to (" + Math.round(session.lastX) + ", " + Math.round(session.lastY) + "); bounds " + left + "," + top + " " + width + "x" + height;
+  }
+
   function componentName(el) {
     const marked = el.closest?.("[data-logos-component]");
     const explicit = marked?.getAttribute?.("data-logos-component");
@@ -304,6 +341,11 @@ function runCommentScript(target: ProxyTarget): string {
     uiRoot.querySelector("[data-logos-run-comment-hover-label]")?.remove();
   }
 
+  function clearAnnotation() {
+    annotationCanvas?.remove();
+    annotationCanvas = null;
+  }
+
   function showHover(el) {
     clearHover();
     const rect = el.getBoundingClientRect();
@@ -322,7 +364,8 @@ function runCommentScript(target: ProxyTarget): string {
     uiRoot.append(hover, label);
   }
 
-  function openPopup(el, existing) {
+  function openPopup(el, existing, annotation) {
+    if (!annotation) clearAnnotation();
     popup?.remove();
     const rect = el.getBoundingClientRect();
     const selectedLabel = existing?.label || labelFor(el);
@@ -335,8 +378,8 @@ function runCommentScript(target: ProxyTarget): string {
     popup.style.top = Math.min(window.innerHeight - 190, Math.max(12, rect.bottom + 8)) + "px";
     popup.innerHTML = "<header><span></span><button type=\\"button\\" data-close>close</button></header><textarea data-logos-run-comment-textarea placeholder=\\"Comment...\\"></textarea><footer><button type=\\"button\\" data-cancel>Cancel</button><button type=\\"button\\" data-primary data-save>Save</button></footer>";
     popup.querySelector("span").textContent = selectedLabel;
-    popup.querySelector("[data-close]").addEventListener("click", () => popup?.remove());
-    popup.querySelector("[data-cancel]").addEventListener("click", () => popup?.remove());
+    popup.querySelector("[data-close]").addEventListener("click", () => { clearAnnotation(); popup?.remove(); popup = null; });
+    popup.querySelector("[data-cancel]").addEventListener("click", () => { clearAnnotation(); popup?.remove(); popup = null; });
     popup.querySelector("[data-save]").addEventListener("click", () => {
       const textarea = popup.querySelector("textarea");
       const text = textarea.value.trim();
@@ -349,7 +392,8 @@ function runCommentScript(target: ProxyTarget): string {
         appPath: appPath(),
         selector,
         label: selectedLabel,
-        htmlContext: htmlContext(el),
+        htmlContext: annotation?.htmlContext || htmlContext(el),
+        ...(annotation?.screenshotDataUrl ? { screenshotDataUrl: annotation.screenshotDataUrl } : {}),
         text,
         author: "you",
         mode: "code",
@@ -357,6 +401,7 @@ function runCommentScript(target: ProxyTarget): string {
         autoMerge: true,
         ...(component ? { component } : {}),
       }, "*");
+      clearAnnotation();
       popup.remove();
       popup = null;
     });
@@ -419,6 +464,18 @@ function runCommentScript(target: ProxyTarget): string {
     clearHover();
   });
   document.addEventListener("mousemove", (event) => {
+    if (drawing) {
+      event.preventDefault();
+      event.stopPropagation();
+      const dx = event.clientX - drawing.startX;
+      const dy = event.clientY - drawing.startY;
+      if (Math.hypot(dx, dy) >= 4) drawing.moved = true;
+      drawing.lastX = event.clientX;
+      drawing.lastY = event.clientY;
+      drawing.context.lineTo(event.clientX, event.clientY);
+      drawing.context.stroke();
+      return;
+    }
     if (!altDown) return;
     const target = event.target;
     if (!(target instanceof Element) || inUi(target)) {
@@ -427,8 +484,51 @@ function runCommentScript(target: ProxyTarget): string {
     }
     showHover(target);
   }, true);
+  document.addEventListener("mousedown", (event) => {
+    if (!event.altKey || event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof Element) || inUi(target)) return;
+    clearAnnotation();
+    const started = createDrawingCanvas();
+    if (!started) return;
+    started.context.beginPath();
+    started.context.moveTo(event.clientX, event.clientY);
+    drawing = {
+      canvas: started.canvas,
+      context: started.context,
+      target,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      moved: false,
+    };
+  }, true);
+  document.addEventListener("mouseup", (event) => {
+    if (!drawing) return;
+    const session = drawing;
+    drawing = null;
+    if (!session.moved) {
+      session.canvas.remove();
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    suppressClickUntil = Date.now() + 500;
+    clearHover();
+    annotationCanvas = session.canvas;
+    openPopup(session.target, null, {
+      htmlContext: annotationContext(htmlContext(session.target), session),
+      screenshotDataUrl: screenshotDataUrl(session.canvas),
+    });
+  }, true);
   document.addEventListener("click", (event) => {
     if (!event.altKey) return;
+    if (Date.now() < suppressClickUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const target = event.target;
     if (!(target instanceof Element) || inUi(target)) return;
     event.preventDefault();
@@ -452,7 +552,7 @@ function runCommentScript(target: ProxyTarget): string {
   window.addEventListener("popstate", () => setTimeout(() => { postReady(); renderPins(); }, 0));
   const toolbar = document.createElement("div");
   toolbar.className = "logos-run-comment-toolbar";
-  toolbar.textContent = "Alt-click to comment";
+  toolbar.textContent = "Alt-click or drag to comment";
   uiRoot.appendChild(toolbar);
   postReady();
 })();

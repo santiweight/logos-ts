@@ -464,6 +464,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
             component: body.component ?? null,
             appPath: body.appPath ?? null,
             runTargetId: body.runTargetId ?? null,
+            screenshotDataUrl: typeof body.screenshotDataUrl === "string" ? body.screenshotDataUrl : null,
           }, { fork: body.fork === true, autoMerge: body.autoMerge !== false })
           if ("error" in result) {
             res.statusCode = result.status

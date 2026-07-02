@@ -121,6 +121,7 @@ export interface Goal {
   component?: string | null
   appPath?: string | null
   runTargetId?: string | null
+  screenshotDataUrl?: string | null
   status: "pending" | "running" | "done" | "error"
   lifecycle?: GoalLifecycle
   mergePolicy?: GoalMergePolicy
