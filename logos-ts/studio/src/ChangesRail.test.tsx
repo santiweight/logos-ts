@@ -17,7 +17,7 @@ const baseProps = {
   onResetWorkspaces: noop,
   onOpenWorkspace: noop as (id: string) => void,
   onCreatePullRequest: noop as (id: string) => void,
-  onSelectGoal: noop as (id: string) => void,
+  onSelectGoal: noop as (workspaceId: string, goalId: string) => void,
   onDeleteWorkspace: noop as (id: string) => void,
   onDeleteGoal: noop as (wsId: string, goalId: string) => void,
   onAcceptGoal: noop as (goalId: string) => void,
@@ -49,6 +49,21 @@ describe("ChangesRail", () => {
     render(<ChangesRail {...baseProps} workspacesLoading={true} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
     expect(screen.getByText(/my-workspace/)).toBeInTheDocument()
+  })
+
+  it("renders child workspaces under their parent", () => {
+    const workspaces = [
+      { id: "ws-parent", name: "Scratch", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-child", name: "Generate Stories for JobCard", kind: "code" as const, parentId: "ws-parent", createdAt: 3000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} />)
+
+    const parent = screen.getByText("Scratch").closest(".rail-row")
+    const child = screen.getByText("Generate Stories for JobCard").closest(".rail-row")
+
+    expect(parent).not.toBeNull()
+    expect(child).not.toBeNull()
+    expect(parent!.compareDocumentPosition(child!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("collapsed rail does not show loading text", () => {
@@ -147,11 +162,11 @@ describe("ChangesRail", () => {
     expect(spinners).toHaveLength(1)
   })
 
-  it("shows only the generated summary for change rows", () => {
+  it("uses the workspace row as the thread row", () => {
     const workspaces = [
       {
         id: "ws-1",
-        name: "feature",
+        name: "Make Bold",
         kind: "code" as const,
         parentId: null,
         createdAt: 1000,
@@ -176,6 +191,70 @@ describe("ChangesRail", () => {
     expect(screen.getByText("Make Bold")).toBeInTheDocument()
     expect(screen.queryByText("make this bold")).not.toBeInTheDocument()
     expect(screen.queryByText("pending")).not.toBeInTheDocument()
+    expect(document.querySelector(".rail-row.comment")).toBeNull()
+  })
+
+  it("selects a workspace thread with its owning workspace id", () => {
+    const onSelectGoal = vi.fn()
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "Make Bold",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [
+          {
+            id: "g-1",
+            text: "make this bold",
+            label: "Make Bold",
+            target: "component:X",
+            mode: "code" as const,
+            createdAt: 1000,
+            status: "pending" as const,
+          },
+        ],
+      },
+    ]
+
+    render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" onSelectGoal={onSelectGoal} />)
+
+    fireEvent.click(screen.getByText("Make Bold"))
+
+    expect(onSelectGoal).toHaveBeenCalledWith("ws-1", "g-1")
+  })
+
+  it("does not render branch text for child workspaces", () => {
+    const workspaces = [
+      { id: "ws-parent", name: "Scratch", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-child", name: "Generate Stories for JobCard", kind: "code" as const, parentId: "ws-parent", createdAt: 3000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
+    ]
+
+    render(<ChangesRail {...baseProps} workspaces={workspaces} />)
+
+    expect(screen.queryByText(/branch/)).not.toBeInTheDocument()
+  })
+
+  it("throws when a workspace has more than one thread", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "Too Many Threads",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [
+          { id: "g-1", text: "first", label: "First", target: "component:X", mode: "code" as const, createdAt: 1000, status: "pending" as const },
+          { id: "g-2", text: "second", label: "Second", target: "component:Y", mode: "code" as const, createdAt: 1001, status: "pending" as const },
+        ],
+      },
+    ]
+
+    expect(() => render(<ChangesRail {...baseProps} workspaces={workspaces} />)).toThrow(/one thread per workspace/)
   })
 
   it("does not open a merge request context menu from workspace rows", () => {
@@ -300,6 +379,7 @@ describe("ChangesRail", () => {
     ]
     render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
 
+    expect(document.querySelector(".rail-row.comment")).toBeNull()
     expect(screen.queryByTitle("Delete change (⌘⌫)")).not.toBeInTheDocument()
   })
 })

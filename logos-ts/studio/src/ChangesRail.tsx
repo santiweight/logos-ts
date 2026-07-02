@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { type PointerEvent as ReactPointerEvent } from "react"
-import type { Goal, WorkspaceMeta } from "./types"
+import { type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+import type { WorkspaceMeta } from "./types"
 import { svgIcon } from "./icons"
 
 const listIcon = svgIcon("M5 7h14M5 12h14M5 17h14", 12)
@@ -21,6 +21,39 @@ function initializationStatusText(status: NonNullable<WorkspaceMeta["initializat
   }
 }
 
+interface WorkspaceTreeNode {
+  workspace: WorkspaceMeta
+  children: WorkspaceTreeNode[]
+}
+
+function workspaceTree(workspaces: WorkspaceMeta[]): WorkspaceTreeNode[] {
+  const nodes = new Map<string, WorkspaceTreeNode>()
+  for (const workspace of workspaces) nodes.set(workspace.id, { workspace, children: [] })
+  const roots: WorkspaceTreeNode[] = []
+  for (const node of nodes.values()) {
+    const parent = node.workspace.parentId ? nodes.get(node.workspace.parentId) : null
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+  }
+  const sortNodes = (items: WorkspaceTreeNode[]) => {
+    items.sort((a, b) => b.workspace.createdAt - a.workspace.createdAt)
+    for (const item of items) sortNodes(item.children)
+  }
+  sortNodes(roots)
+  return roots
+}
+
+function rowStyle(depth: number, baseMargin = 4): CSSProperties {
+  return { marginLeft: baseMargin + depth * 14 }
+}
+
+function workspaceThread(workspace: WorkspaceMeta) {
+  if (workspace.goals.length > 1) {
+    throw new Error(`Workspace "${workspace.name}" has ${workspace.goals.length} threads; the changes rail supports one thread per workspace.`)
+  }
+  return workspace.goals[0] ?? null
+}
+
 interface Props {
   open: boolean
   onToggle: () => void
@@ -32,7 +65,7 @@ interface Props {
   onResetWorkspaces: () => void
   onOpenWorkspace: (id: string) => void
   onCreatePullRequest: (id: string) => void
-  onSelectGoal: (id: string) => void
+  onSelectGoal: (workspaceId: string, goalId: string) => void
   onDeleteWorkspace: (id: string) => void
   onDeleteGoal: (wsId: string, goalId: string) => void
   onAcceptGoal: (goalId: string) => void
@@ -69,6 +102,143 @@ export function ChangesRail({
     )
   }
 
+  const renderWorkspace = (node: WorkspaceTreeNode, depth: number) => {
+    const w = node.workspace
+    const thread = workspaceThread(w)
+    const isActive = activeWorkspaceId === w.id
+    const wsSelected = selected?.type === "workspace" && selected.id === w.id
+    const threadSelected = selected?.type === "goal" && selected.id === thread?.id
+    const goals = w.goals
+    const canAccept = thread != null
+      && !runningGoals.has(thread.id)
+      && thread.lifecycle?.stage === "impl"
+      && thread.lifecycle.state === "ready_to_merge"
+    const hasUpdatesToPush = w.publication
+      ? goals.some((g) => g.createdAt > w.publication!.updatedAt)
+      : false
+    return (
+      <div key={w.id} className="rail-workspace-group">
+        <div
+          className={`rail-row ws ${isActive || wsSelected || threadSelected ? "active" : ""}`}
+          style={rowStyle(depth)}
+          title={thread ? `${w.name} (${thread.status})` : w.name}
+          onClick={() => {
+            if (thread) onSelectGoal(w.id, thread.id)
+            else onOpenWorkspace(w.id)
+          }}
+        >
+          <div className="rail-main">
+            <span className="rail-title">{w.name}</span>
+            {w.initialization?.status === "initializing" && <span className="rail-status"> · initializing</span>}
+            {w.initialization?.status === "error" && <span className="rail-status error"> · init failed</span>}
+          </div>
+          <div className="rail-actions">
+            {w.initialization?.status === "initializing" && (
+              <span className="rail-agent" title="Workspace initializing">
+                <span className="ag-spin">↻</span>
+              </span>
+            )}
+            {goals.some((g) => runningGoals.has(g.id)) && (
+              <span className="rail-agent" title="Agent running">
+                <span className="ag-spin">↻</span>
+              </span>
+            )}
+            {canAccept && (
+              <button
+                className="rail-merge"
+                title="Accept change"
+                aria-label={`Accept ${w.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onAcceptGoal(thread.id)
+                }}
+              >
+                {mergeIcon}
+              </button>
+            )}
+            {!w.publication && (
+              <button
+                className="rail-merge"
+                title="Make pull request"
+                aria-label={`Make pull request for ${w.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onCreatePullRequest(w.id)
+                }}
+              >
+                {mergeIcon}
+              </button>
+            )}
+            <button
+              className="rail-del"
+              title="Delete workspace (⌘⌫)"
+              aria-label={`Delete ${w.name}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onDeleteWorkspace(w.id)
+              }}
+            >
+              {trashIcon}
+            </button>
+          </div>
+        </div>
+
+        {isActive && w.initialization && w.initialization.status !== "ready" && (
+          <div className={`rail-initialization ${w.initialization.status}`} style={rowStyle(depth, 18)}>
+            {w.initialization.steps.map((step) => (
+              <div key={step.id} className={`rail-init-step ${step.status}`}>
+                <span className="rail-init-mark">
+                  {step.status === "running" ? <span className="ag-spin">↻</span> : step.status === "done" ? "✓" : step.status === "error" ? "!" : "·"}
+                </span>
+                <span className="rail-init-label">{step.label}</span>
+                <span className="rail-init-status">{initializationStatusText(step.status)}</span>
+                {step.error && <div className="rail-init-error" title={step.error}>{step.error}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isActive && w.publication && (
+          <div className="rail-publication" style={rowStyle(depth, 18)}>
+            <div className="rail-publication-main">
+              {w.publication.pullRequest?.url ? (
+                <a
+                  href={w.publication.pullRequest.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {w.publication.pullRequest.number ? `PR #${w.publication.pullRequest.number}` : "PR"}
+                </a>
+              ) : (
+                <span className="rail-publication-value">PR created</span>
+              )}
+            </div>
+            {hasUpdatesToPush ? (
+              <button
+                className="rail-push-updates"
+                title="Push updates to pull request"
+                aria-label={`Push updates for ${w.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onCreatePullRequest(w.id)
+                }}
+              >
+                {pushIcon}
+              </button>
+            ) : (
+              <button className="rail-push-updates disabled" title="Pull request is up to date" aria-label={`${w.name} pull request is up to date`} disabled>
+                {pushIcon}
+              </button>
+            )}
+          </div>
+        )}
+
+        {node.children.map((child) => renderWorkspace(child, depth + 1))}
+      </div>
+    )
+  }
+
   return (
     <div className="rail">
       <div className="rail-resize" title="Resize changes sidebar" onPointerDown={onResizeStart} />
@@ -94,161 +264,7 @@ export function ChangesRail({
         <div className="rail-empty muted small"></div>
       )}
 
-      {workspaces
-        .slice()
-        .sort((a, b) => b.createdAt - a.createdAt)
-        .map((w) => {
-          const isActive = activeWorkspaceId === w.id
-          const wsSelected = selected?.type === "workspace" && selected.id === w.id
-          const goals = w.goals
-          const hasUpdatesToPush = w.publication
-            ? goals.some((g) => g.createdAt > w.publication!.updatedAt)
-            : false
-          return (
-            <div key={w.id}>
-              <div
-                className={`rail-row ws ${isActive || wsSelected ? "active" : ""}`}
-                onClick={() => onOpenWorkspace(w.id)}
-              >
-                <div className="rail-main">
-                  <span className="rail-title">{w.name}</span>
-                  {w.parentId && <span className="rail-status"> · branch</span>}
-                  {w.initialization?.status === "initializing" && <span className="rail-status"> · initializing</span>}
-                  {w.initialization?.status === "error" && <span className="rail-status error"> · init failed</span>}
-                  {!isActive && goals.length > 0 && <span className="rail-status"> · {goals.length}</span>}
-                </div>
-                <div className="rail-actions">
-                  {w.initialization?.status === "initializing" && (
-                    <span className="rail-agent" title="Workspace initializing">
-                      <span className="ag-spin">↻</span>
-                    </span>
-                  )}
-                  {goals.some((g) => runningGoals.has(g.id)) && (
-                    <span className="rail-agent" title="Agent running">
-                      <span className="ag-spin">↻</span>
-                    </span>
-                  )}
-                  {!w.publication && (
-                    <button
-                      className="rail-merge"
-                      title="Make pull request"
-                      aria-label={`Make pull request for ${w.name}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onCreatePullRequest(w.id)
-                      }}
-                    >
-                      {mergeIcon}
-                    </button>
-                  )}
-                  <button
-                    className="rail-del"
-                    title="Delete workspace (⌘⌫)"
-                    aria-label={`Delete ${w.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDeleteWorkspace(w.id)
-                    }}
-                  >
-                    {trashIcon}
-                  </button>
-                </div>
-              </div>
-
-              {isActive && w.initialization && w.initialization.status !== "ready" && (
-                <div className={`rail-initialization ${w.initialization.status}`}>
-                  {w.initialization.steps.map((step) => (
-                    <div key={step.id} className={`rail-init-step ${step.status}`}>
-                      <span className="rail-init-mark">
-                        {step.status === "running" ? <span className="ag-spin">↻</span> : step.status === "done" ? "✓" : step.status === "error" ? "!" : "·"}
-                      </span>
-                      <span className="rail-init-label">{step.label}</span>
-                      <span className="rail-init-status">{initializationStatusText(step.status)}</span>
-                      {step.error && <div className="rail-init-error" title={step.error}>{step.error}</div>}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {isActive && w.publication && (
-                <div className="rail-publication">
-                  <div className="rail-publication-main">
-                    {w.publication.pullRequest?.url ? (
-                      <a
-                        href={w.publication.pullRequest.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {w.publication.pullRequest.number ? `PR #${w.publication.pullRequest.number}` : "PR"}
-                      </a>
-                    ) : (
-                      <span className="rail-publication-value">PR created</span>
-                    )}
-                  </div>
-                  {hasUpdatesToPush ? (
-                    <button
-                      className="rail-push-updates"
-                      title="Push updates to pull request"
-                      aria-label={`Push updates for ${w.name}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onCreatePullRequest(w.id)
-                      }}
-                    >
-                      {pushIcon}
-                    </button>
-                  ) : (
-                    <button className="rail-push-updates disabled" title="Pull request is up to date" aria-label={`${w.name} pull request is up to date`} disabled>
-                      {pushIcon}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {isActive &&
-                goals
-                  .slice()
-                  .reverse()
-                  .map((g) => {
-                    const gSelected = selected?.type === "goal" && selected.id === g.id
-                    const canAccept = !runningGoals.has(g.id)
-                      && g.lifecycle?.stage === "impl"
-                      && g.lifecycle.state === "ready_to_merge"
-                    return (
-                      <div
-                        key={g.id}
-                        className={`rail-row comment ${gSelected ? "active" : ""}`}
-                        title={`${g.label} (${g.status})`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onSelectGoal(g.id)
-                        }}
-                      >
-                        <div className="rail-main">
-                          <div className="rail-target">{g.label}</div>
-                        </div>
-                        <div className="rail-actions">
-                          {canAccept && (
-                            <button
-                              className="rail-merge"
-                              title="Accept change"
-                              aria-label={`Accept ${g.label}`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onAcceptGoal(g.id)
-                              }}
-                            >
-                              {mergeIcon}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-            </div>
-          )
-        })}
+      {workspaceTree(workspaces).map((node) => renderWorkspace(node, 0))}
     </div>
   )
 }

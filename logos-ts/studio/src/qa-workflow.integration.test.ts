@@ -236,7 +236,7 @@ class QaApi {
   demoPosts: string[] = []
   reindexCalls: string[] = []
   resetCount = 0
-  workspaceCreates: Array<{ fromWorkspaceId?: string; kind?: WorkspaceKind }> = []
+  workspaceCreates: Array<{ fromWorkspaceId?: string; kind?: WorkspaceKind; name?: string }> = []
   failDemoPosts = false
 
   constructor(options: { failedRuntimes?: boolean } = {}) {
@@ -419,11 +419,12 @@ class QaApi {
       const body = readBody()
       const fromWorkspaceId = typeof body["fromWorkspaceId"] === "string" ? body["fromWorkspaceId"] : undefined
       const kind = body["kind"] === "arch" ? "arch" : "code"
-      this.workspaceCreates.push({ ...(fromWorkspaceId ? { fromWorkspaceId } : {}), kind })
+      const name = typeof body["name"] === "string" ? body["name"] : undefined
+      this.workspaceCreates.push({ ...(fromWorkspaceId ? { fromWorkspaceId } : {}), kind, ...(name ? { name } : {}) })
       const n = this.workspaceCreates.length
       const meta: WorkspaceMeta = {
         id: `ws-created-${n}`,
-        name: fromWorkspaceId ? `Branch ${n}` : `Workspace ${n}`,
+        name: name ?? (fromWorkspaceId ? `Branch ${n}` : `Workspace ${n}`),
         kind,
         parentId: fromWorkspaceId ?? null,
         createdAt: 20 + n,
@@ -539,7 +540,7 @@ describe("Studio QA workflow", () => {
       await page.getByRole("textbox").fill("Make the title more specific and keep salary visible")
       await page.getByRole("button", { name: "Create Change" }).click()
       await waitFor(() => api.workspaceCreates.length === 1)
-      expect(api.workspaceCreates[0]).toEqual({ fromWorkspaceId: "ws-main", kind: "code" })
+      expect(api.workspaceCreates[0]).toEqual({ fromWorkspaceId: "ws-main", kind: "code", name: "JobCard" })
       await waitFor(() => api.createdGoals.length === 1)
       expect(api.createdGoals[0]).toMatchObject({
         workspaceId: "ws-created-1",
@@ -551,7 +552,7 @@ describe("Studio QA workflow", () => {
           fork: true,
         },
       })
-      await page.locator(".rail-row.comment[title^='JobCard (']").waitFor({ timeout: 15_000 })
+      await page.locator(".rail-row.ws[title^='JobCard (']").waitFor({ timeout: 15_000 })
 
       await page.evaluate(() => {
         window.postMessage({
@@ -567,7 +568,7 @@ describe("Studio QA workflow", () => {
         }, "*")
       })
       await waitFor(() => api.workspaceCreates.length === 2)
-      expect(api.workspaceCreates[1]).toEqual({ fromWorkspaceId: "ws-created-1", kind: "code" })
+      expect(api.workspaceCreates[1]).toEqual({ fromWorkspaceId: "ws-created-1", kind: "code", name: "strong Senior Platform Engineer" })
       await waitFor(() => api.createdGoals.length === 2)
       expect(api.createdGoals[1]).toMatchObject({
         workspaceId: "ws-created-2",

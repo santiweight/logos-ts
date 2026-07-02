@@ -1135,7 +1135,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(readFileSync(join(state.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
   }, 60_000)
 
-  it("pauses a completed code goal until it is accepted", async () => {
+  it("activates a completed code goal's working instance before it is accepted", async () => {
     const spawned: FakeAgentProcess[] = []
     const mgr = createManager({
       spawned,
@@ -1162,7 +1162,8 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(pausedGoal?.status).toBe("done")
     expect(pausedGoal?.baseInstanceId).toBe(baseInstanceId)
     expect(pausedGoal?.workingInstanceId).toBeTruthy()
-    expect(readFileSync(join(beforeMerge.forkDir, "thing.txt"), "utf8")).toBe("base\n")
+    expect(beforeMerge.activeInstanceId).toBe(pausedGoal?.workingInstanceId)
+    expect(readFileSync(join(beforeMerge.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
 
     const events: { type: string; message?: unknown; goalId?: unknown }[] = []
     expect(await mgr.mergeGoal(code.id, task.id, (event) => events.push(event))).toEqual({ ok: true, status: "completed" })

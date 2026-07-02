@@ -185,7 +185,8 @@ function runCommentScript(target: ProxyTarget): string {
   let goals = [];
   let pins = [];
   let hover = null;
-  let altDown = false;
+  let localAltDown = false;
+  let parentAltDown = false;
   let drawing = null;
   let annotationCanvas = null;
   let suppressClickUntil = 0;
@@ -335,6 +336,10 @@ function runCommentScript(target: ProxyTarget): string {
     annotationCanvas = null;
   }
 
+  function commentModifierDown(event) {
+    return event.altKey || localAltDown || parentAltDown;
+  }
+
   function showHover(el) {
     clearHover();
     const rect = el.getBoundingClientRect();
@@ -425,22 +430,27 @@ function runCommentScript(target: ProxyTarget): string {
       clearAnnotation();
       return;
     }
+    if (event.data?.type === "logos:run-comment-modifier") {
+      parentAltDown = event.data.active === true;
+      if (!parentAltDown && !localAltDown) clearHover();
+      return;
+    }
     if (event.data?.type !== "logos:story-goals") return;
     goals = Array.isArray(event.data.goals) ? event.data.goals : [];
     renderPins();
   });
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Alt") altDown = true;
+    if (event.key === "Alt") localAltDown = true;
   });
   window.addEventListener("keyup", (event) => {
     if (event.key === "Alt") {
-      altDown = false;
-      clearHover();
+      localAltDown = false;
+      if (!parentAltDown) clearHover();
     }
   });
   window.addEventListener("blur", () => {
-    altDown = false;
-    clearHover();
+    localAltDown = false;
+    if (!parentAltDown) clearHover();
   });
   document.addEventListener("mousemove", (event) => {
     if (drawing) {
@@ -455,7 +465,10 @@ function runCommentScript(target: ProxyTarget): string {
       drawing.context.stroke();
       return;
     }
-    if (!altDown) return;
+    if (!commentModifierDown(event)) {
+      clearHover();
+      return;
+    }
     const target = event.target;
     if (!(target instanceof Element) || inUi(target)) {
       clearHover();

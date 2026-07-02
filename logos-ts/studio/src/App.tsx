@@ -381,6 +381,17 @@ function clearRunCommentAnnotation(sourceWindow?: Window | null): void {
   } catch {}
 }
 
+function postRunCommentModifier(active: boolean, target?: Window | null): void {
+  const message = { type: "logos:run-comment-modifier", active }
+  if (target) {
+    try { target.postMessage(message, "*") } catch {}
+    return
+  }
+  document.querySelectorAll<HTMLIFrameElement>("iframe.story-frame").forEach((iframe) => {
+    try { iframe.contentWindow?.postMessage(message, "*") } catch {}
+  })
+}
+
 export function createStoryCommentEventDedupe(limit = 200): (data: unknown) => boolean {
   const seen = new Set<string>()
   const order: string[] = []
@@ -428,6 +439,7 @@ export function App() {
   const activeWorkspaceIdRef = useRef<string | null>(null)
   const openWorkspaceSeqRef = useRef(0)
   const openWorkspaceAbortRef = useRef<AbortController | null>(null)
+  const runCommentModifierActiveRef = useRef(false)
   const [openingWorkspaceId, setOpeningWorkspaceId] = useState<string | null>(null)
   const [workspaceViewState, setWorkspaceViewState] = useState<WorkspaceViewState | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
@@ -703,12 +715,12 @@ export function App() {
   }, [activeWorkspaceId, loadWorkspaceReviewBase, refreshWorkspaces])
 
   const createWorkspace = useCallback(
-    async (fromWorkspaceId?: string | null, kind: WorkspaceKind = "code"): Promise<string | null> => {
+    async (fromWorkspaceId?: string | null, kind: WorkspaceKind = "code", name?: string): Promise<string | null> => {
       try {
         const res = await fetch("/api/workspaces", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ fromWorkspaceId: fromWorkspaceId ?? undefined, kind }),
+          body: JSON.stringify({ fromWorkspaceId: fromWorkspaceId ?? undefined, kind, name }),
         })
         if (!res.ok) return null
         const meta = (await res.json()) as WorkspaceMeta
@@ -1108,19 +1120,21 @@ export function App() {
   const addGoal = useCallback(
     async (
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
-      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; goalName?: string; appPath?: string; runTargetId?: string; screenshotDataUrl?: string },
+      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; goalName?: string; workspaceName?: string; appPath?: string; runTargetId?: string; screenshotDataUrl?: string },
     ) => {
+      const { workspaceName: explicitWorkspaceName, ...goalExtra } = extra ?? {}
       // 1. Code forks are created client-side. Arch isolation is owned by the backend.
       const shouldFork = mode === "code" || fork
-      let wsId = shouldFork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
-      if (!wsId) wsId = await createWorkspace(null, "code")
+      const workspaceName = explicitWorkspaceName ?? goalExtra.goalName ?? label
+      let wsId = shouldFork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code", workspaceName) : activeWorkspaceId
+      if (!wsId) wsId = await createWorkspace(null, "code", workspaceName)
       if (!wsId) return
 
       // 2. Add change to workspace queue
       const goalRes = await fetch(`/api/workspaces/${wsId}/goals`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target, label, text, mode, fork: shouldFork, ...extra }),
+        body: JSON.stringify({ target, label, text, mode, fork: shouldFork, ...goalExtra }),
       })
       const result = await goalRes.json()
       if (!goalRes.ok) {
@@ -1132,7 +1146,7 @@ export function App() {
       const goalWsId = goal.workspaceId ?? wsId
       await refreshWorkspaces()
       setSelected({ type: "goal", id: goal.id })
-      if (goalWsId !== activeWorkspaceId) await openWorkspace(goalWsId, { goalId: goal.id })
+      await openWorkspace(goalWsId, { goalId: goal.id })
 
       // 3. Trigger agent to process the queue
       runAgent(goalWsId, goal.id)
@@ -1201,7 +1215,11 @@ export function App() {
 
   const addStoryWritingGoal = useCallback(
     (target: string, label: string) => {
-      addGoal(target, label, buildStoryWritingPrompt(label), "code", false, { component: label, goalName: `Code Gen Stories ${label}` })
+      addGoal(target, label, buildStoryWritingPrompt(label), "code", false, {
+        component: label,
+        goalName: `Generate Stories for ${label}`,
+        workspaceName: `Generate Stories for ${label}`,
+      })
     },
     [addGoal]
   )
@@ -1236,6 +1254,29 @@ export function App() {
       try { f.contentWindow?.postMessage(storyGoalsMessage, "*") } catch {}
     })
   }, [storyGoalsMessage])
+
+  useEffect(() => {
+    const setModifier = (active: boolean) => {
+      if (runCommentModifierActiveRef.current === active) return
+      runCommentModifierActiveRef.current = active
+      postRunCommentModifier(active)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Alt") setModifier(true)
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Alt") setModifier(false)
+    }
+    const onBlur = () => setModifier(false)
+    window.addEventListener("keydown", onKeyDown)
+    window.addEventListener("keyup", onKeyUp)
+    window.addEventListener("blur", onBlur)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("keyup", onKeyUp)
+      window.removeEventListener("blur", onBlur)
+    }
+  }, [])
 
   // Listen for story comments from Storybook iframe
   useEffect(() => {
@@ -1330,7 +1371,10 @@ export function App() {
   useEffect(() => {
     const onLoad = (e: Event) => {
       const iframe = e.target as HTMLIFrameElement
-      if (iframe.classList?.contains("story-frame")) postStoryGoals(iframe.contentWindow)
+      if (iframe.classList?.contains("story-frame")) {
+        postStoryGoals(iframe.contentWindow)
+        postRunCommentModifier(runCommentModifierActiveRef.current, iframe.contentWindow)
+      }
     }
     document.addEventListener("load", onLoad, true)
     return () => document.removeEventListener("load", onLoad, true)
@@ -1368,37 +1412,24 @@ export function App() {
   }, [view.files])
 
   const selectedGoal = selectedGoalId != null
-    ? activeGoals.find((goal) => goal.id === selectedGoalId) ?? null
+    ? activeGoals.find((goal) => goal.id === selectedGoalId)
+      ?? workspaces.flatMap((workspace) => workspace.goals).find((goal) => goal.id === selectedGoalId)
+      ?? null
     : null
   const goalEventsRef = useRef(goalEvents)
   goalEventsRef.current = goalEvents
-  const selectGoal = useCallback(async (id: string) => {
+  const selectGoal = useCallback(async (workspaceId: string, id: string) => {
     setSelected({ type: "goal", id })
-    const goal = activeGoals.find((candidate) => candidate.id === id)
+    const workspace = workspaces.find((candidate) => candidate.id === workspaceId)
+    const goal = workspace?.goals.find((candidate) => candidate.id === id)
+    await openWorkspace(workspaceId, { goalId: id })
     if (goal) navigateToGoal(goal)
-    if (activeWorkspaceId) {
-      try {
-        const res = await fetch(`/api/workspaces/${activeWorkspaceId}/reindex?goal=${encodeURIComponent(id)}`, { method: "POST" })
-        if (res.ok) {
-          const ws = (await res.json()) as Workspace
-          const reviewIndex = selectWorkspaceReviewIndex(ws, id)
-          const baselineIndex = await loadWorkspaceReviewBase(ws, id)
-          if (activeWorkspaceIdRef.current !== ws.id) return
-          setWorkspaceViewState({
-            workspaceId: ws.id,
-            index: ws.index,
-            reviewIndex,
-            baselineIndex,
-          })
-        }
-      } catch {}
-    }
     const existing = goalEventsRef.current[id]
     if (!existing || existing.length === 0) {
       const history = await loadGoalSessionEvents(id)
       if (history.length > 0) setGoalEvents((prev) => ({ ...prev, [id]: history }))
     }
-  }, [activeGoals, activeWorkspaceId, navigateToGoal, loadWorkspaceReviewBase, loadGoalSessionEvents])
+  }, [workspaces, openWorkspace, navigateToGoal, loadGoalSessionEvents])
 
   const nComps = view.files.reduce((n, f) => n + (f.components?.length ?? (f.component ? 1 : 0)), 0)
   const totalChanges = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)

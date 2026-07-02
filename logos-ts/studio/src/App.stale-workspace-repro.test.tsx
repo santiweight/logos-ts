@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { App } from "./App"
 import type { Goal, StudioIndex, Workspace, WorkspaceMeta } from "./types"
@@ -26,12 +26,6 @@ afterEach(() => {
 afterAll(() => {
   globalThis.ResizeObserver = originalResizeObserver
 })
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => { resolve = res })
-  return { promise, resolve }
-}
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -133,7 +127,7 @@ function workspace(id: string, name: string, createdAt: number, activeIndex: Stu
 }
 
 describe("App workspace switching", () => {
-  it("does not show a previous workspace's sidebar after its delayed reindex resolves", async () => {
+  it("opens the owning workspace when a change is selected", async () => {
     const oldGoal = goal("goal-old", "Old goal")
     const oldWorkspace = workspace(
       "ws-old",
@@ -142,10 +136,6 @@ describe("App workspace switching", () => {
       index("OldComponent", "export function OldComponent() { return <div>old</div> }"),
       [oldGoal],
     )
-    const oldReindexedWorkspace = {
-      ...oldWorkspace,
-      index: index("OldChangedComponent", "export function OldChangedComponent() { return <div>old changed</div> }"),
-    }
     const newWorkspace = workspace(
       "ws-new",
       "New Workspace",
@@ -153,7 +143,6 @@ describe("App workspace switching", () => {
       index("NewComponent", "export function NewComponent() { return <div>new</div> }"),
     )
     const parentWorkspace = workspace("ws-parent", "Parent Workspace", 0, index("BaseComponent", "export function BaseComponent() { return null }"))
-    const oldReindex = deferred<Response>()
 
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString()
@@ -167,7 +156,6 @@ describe("App workspace switching", () => {
       if (url === "/api/workspaces/ws-old") return jsonResponse(oldWorkspace)
       if (url === "/api/workspaces/ws-new") return jsonResponse(newWorkspace)
       if (url === "/api/workspaces/ws-parent") return jsonResponse(parentWorkspace)
-      if (url === "/api/workspaces/ws-old/reindex?goal=goal-old" && init?.method === "POST") return oldReindex.promise
       if (url === "/api/sessions?goal=goal-old") return jsonResponse({ events: [] })
       throw new Error(`unhandled fetch: ${url}`)
     }) as typeof fetch
@@ -176,24 +164,22 @@ describe("App workspace switching", () => {
 
     expect(await screen.findByText("OldComponent")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText("Old goal"))
+    const oldWorkspaceRow = screen.getAllByText("Old Workspace")
+      .find((el) => el.classList.contains("rail-title"))
+      ?.closest(".rail-row")
+    expect(oldWorkspaceRow).not.toBeNull()
+    fireEvent.click(oldWorkspaceRow!)
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith("/api/workspaces/ws-old/reindex?goal=goal-old", { method: "POST" })
+      expect(globalThis.fetch).toHaveBeenCalledWith("/api/workspaces/ws-old", expect.objectContaining({ cache: "no-store" }))
     })
+    expect(globalThis.fetch).not.toHaveBeenCalledWith("/api/workspaces/ws-old/reindex?goal=goal-old", { method: "POST" })
 
     fireEvent.click(screen.getByText("New Workspace"))
     expect(await screen.findByText("NewComponent")).toBeInTheDocument()
 
-    await act(async () => {
-      oldReindex.resolve(jsonResponse(oldReindexedWorkspace))
-      await oldReindex.promise
-      await Promise.resolve()
-    })
-
     await waitFor(() => {
       const activeWorkspace = screen.getAllByText("New Workspace")[0]?.closest(".rail-row")
       expect(activeWorkspace).toHaveClass("active")
-      expect(screen.queryByText("OldChangedComponent")).not.toBeInTheDocument()
       expect(within(document.querySelector(".sidebar") as HTMLElement).getByText("NewComponent")).toBeInTheDocument()
     })
   })

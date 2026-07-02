@@ -316,6 +316,7 @@ export class WorkspaceManager {
         }
       }
       if (WorkspaceManager.stripExcludedIndexFiles(ws)) dirty = true
+      if (this.activateSingleReadyWorkingInstance(ws, { restartServices: true })) dirty = true
       if (dirty) this.store.saveWorkspace(ws)
       this.workspaces.set(ws.id, ws)
       if (this.initializeWorkspaces && ws.initialization?.status === "initializing") {
@@ -1075,6 +1076,17 @@ export class WorkspaceManager {
     return ws.goals.find(isGoalReadyToMerge)
   }
 
+  private activateSingleReadyWorkingInstance(ws: WorkspaceRecord, opts: { restartServices?: boolean } = {}): boolean {
+    if (ws.goals.length !== 1) return false
+    const goal = ws.goals[0]!
+    if (!isGoalReadyToMerge(goal) || !goal.workingInstanceId) return false
+    const inst = ws.instances[goal.workingInstanceId]
+    if (!inst || ws.activeInstanceId === inst.id) return false
+    ws.activeInstanceId = inst.id
+    if (opts.restartServices) this.restartWorkspaceServices(ws, inst)
+    return true
+  }
+
   private processGoal(wsId: string, goalId: string | null, onEvent: AgentEventCallback): string | null {
     const ws = this.workspaces.get(wsId)
     if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return null }
@@ -1407,8 +1419,10 @@ export class WorkspaceManager {
       setGoalLifecycle(goal, { stage: "impl", state: "agent_finished" })
       this.save(ws)
       await this.captureReviewSnapshots(ws, goal, workingInst, recordAndEmit)
+      await this.reindexInstance(ws, workingInst)
       goal.status = "done"
       setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
+      this.activateSingleReadyWorkingInstance(ws, { restartServices: true })
       this.appendAgentSummary(goal, collectedEvents)
       this.save(ws)
       recordAndEmit({ type: "done", code })
@@ -1918,8 +1932,10 @@ export class WorkspaceManager {
       setGoalLifecycle(goal, { stage: "impl", state: "agent_finished" })
       this.save(ws)
       if (!opts?.continueMergeOnClose) {
+        await this.reindexInstance(ws, inst)
         goal.status = "done"
         setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
+        this.activateSingleReadyWorkingInstance(ws, { restartServices: true })
         this.appendAgentSummary(goal, collectedEvents)
         this.save(ws)
         recordAndEmit({ type: "done", code })

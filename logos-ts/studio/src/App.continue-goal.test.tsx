@@ -159,9 +159,10 @@ describe("continueGoal preserves session history", () => {
 
     render(<App />)
 
-    const cards = await screen.findAllByText("Card")
-    const goalRow = cards.find((el) => el.classList.contains("rail-target"))!
-    fireEvent.click(goalRow.closest(".rail-row")!)
+    const workspaces = await screen.findAllByText("Workspace")
+    const threadRow = workspaces.find((el) => el.classList.contains("rail-title"))?.closest(".rail-row")
+    expect(threadRow).not.toBeNull()
+    fireEvent.click(threadRow!)
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Continue the thread...")).toBeInTheDocument()

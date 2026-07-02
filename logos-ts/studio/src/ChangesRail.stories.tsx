@@ -60,13 +60,13 @@ const goalError: Goal = {
 
 const ws1: WorkspaceMeta = {
   id: "ws-1",
-  name: "workspace-1",
+  name: "loadProject",
   kind: "code",
   parentId: null,
   createdAt: Date.now() - 300_000,
   baseInstanceId: "inst-1",
   activeInstanceId: "inst-1",
-  goals: [goal1, goal2],
+  goals: [goal1],
 }
 
 const ws2: WorkspaceMeta = {
@@ -82,13 +82,13 @@ const ws2: WorkspaceMeta = {
 
 const wsArch: WorkspaceMeta = {
   id: "ws-arch",
-  name: "workspace-arch",
+  name: "StudioIndex",
   kind: "arch",
   parentId: null,
   createdAt: Date.now() - 180_000,
   baseInstanceId: "inst-arch",
   activeInstanceId: "inst-arch",
-  goals: [goal2, goalError],
+  goals: [goal2],
 }
 
 const baseArgs = {
@@ -105,6 +105,7 @@ const baseArgs = {
   onSelectGoal: noop,
   onDeleteWorkspace: noop,
   onDeleteGoal: noop,
+  onAcceptGoal: noop,
   runningGoals: new Set<string>(),
   onResizeStart: noop,
 }
@@ -166,7 +167,7 @@ export const GoalSelected: Story = {
     ...baseArgs,
     workspaces: [ws1, ws2],
     activeWorkspaceId: "ws-1",
-    selected: { type: "goal", id: "g-2" },
+    selected: { type: "goal", id: "g-1" },
   },
 }
 
@@ -174,10 +175,10 @@ export const AllGoalStatuses: Story = {
   args: {
     ...baseArgs,
     workspaces: [
-      {
-        ...ws1,
-        goals: [goal1, goal2, goalRunning, goalError],
-      },
+      ws1,
+      { ...ws2, id: "ws-status-pending", name: "StudioIndex", parentId: "ws-1", goals: [goal2] },
+      { ...ws2, id: "ws-status-running", name: "buildContext", parentId: "ws-1", goals: [goalRunning] },
+      { ...ws2, id: "ws-status-error", name: "extractArchitecture", parentId: "ws-1", goals: [goalError] },
     ],
     activeWorkspaceId: "ws-1",
     runningGoals: new Set(["g-3"]),
