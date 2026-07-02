@@ -119,6 +119,7 @@ describe("LogosRuntimeStore", () => {
       updatedAt: 1002,
       steps: [
         { id: "materialize", label: "Materialize workspace", status: "done" },
+        { id: "install_dependencies", label: "Install dependencies", status: "done" },
         { id: "story_snapshots", label: "Capture story snapshots", status: "running" },
         { id: "commit_baseline", label: "Commit snapshot baseline", status: "pending" },
         { id: "index", label: "Index workspace", status: "pending" },

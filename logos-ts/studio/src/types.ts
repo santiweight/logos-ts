@@ -148,7 +148,7 @@ export interface WorkspacePublication {
 }
 
 export interface WorkspaceInitializationStep {
-  id: "materialize" | "story_snapshots" | "commit_baseline" | "index"
+  id: "materialize" | "install_dependencies" | "story_snapshots" | "commit_baseline" | "index"
   label: string
   status: "pending" | "running" | "done" | "error"
   detail?: string

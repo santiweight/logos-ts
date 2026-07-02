@@ -429,6 +429,7 @@ export class WorkspaceManager {
       updatedAt: Date.now(),
       steps: [
         { id: "materialize", label: "Materialize workspace", status: "done" },
+        { id: "install_dependencies", label: "Install dependencies", status: "pending" },
         { id: "story_snapshots", label: "Capture story snapshots", status: "pending" },
         { id: "commit_baseline", label: "Commit snapshot baseline", status: "pending" },
         { id: "index", label: "Index workspace", status: "pending" },
@@ -481,8 +482,12 @@ export class WorkspaceManager {
       const inst = ws.instances[instanceId]
       if (!inst) return
 
-      this.setInitializationStep(ws, "story_snapshots", "running")
+      this.setInitializationStep(ws, "install_dependencies", "running")
       this.codeService.ensureNodeModules(inst)
+      if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
+      this.setInitializationStep(ws, "install_dependencies", "done")
+
+      this.setInitializationStep(ws, "story_snapshots", "running")
       const snapshots = await this.runStorySnapshotAcceptance(inst)
       if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
       if (!snapshots.ok) {

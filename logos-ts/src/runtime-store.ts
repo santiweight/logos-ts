@@ -77,7 +77,7 @@ export type StoredWorkspaceInitializationStatus = "initializing" | "ready" | "er
 export type StoredWorkspaceInitializationStepStatus = "pending" | "running" | "done" | "error"
 
 export interface StoredWorkspaceInitializationStep {
-  id: "materialize" | "story_snapshots" | "commit_baseline" | "index"
+  id: "materialize" | "install_dependencies" | "story_snapshots" | "commit_baseline" | "index"
   label: string
   status: StoredWorkspaceInitializationStepStatus
   detail?: string
@@ -718,6 +718,7 @@ function parseInitialization(value: unknown): StoredWorkspaceInitialization | un
       const candidate = step as Partial<StoredWorkspaceInitializationStep>
       if (
         candidate.id !== "materialize" &&
+        candidate.id !== "install_dependencies" &&
         candidate.id !== "story_snapshots" &&
         candidate.id !== "commit_baseline" &&
         candidate.id !== "index"

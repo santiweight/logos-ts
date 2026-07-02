@@ -297,12 +297,44 @@ describe("WorkspaceManager workspace kinds", () => {
 
     expect(mgr.get(code.id)?.initialization?.steps.map((step) => step.id)).toEqual([
       "materialize",
+      "install_dependencies",
       "story_snapshots",
       "commit_baseline",
       "index",
     ])
     await waitFor(() => expect(mgr.get(code.id)?.initialization?.status).toBe("ready"))
   })
+
+  it("installs dependencies before starting a queued agent for a new workspace", async () => {
+    const order: string[] = []
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ initializeWorkspaces: true, spawned })
+    ;(mgr as any).codeService.ensureNodeModules = () => {
+      order.push(`install:${spawned.length}`)
+    }
+    ;(mgr as any).runStorySnapshotAcceptance = async () => {
+      order.push(`snapshots:${spawned.length}`)
+      return { ok: true, output: "snapshots done" }
+    }
+
+    const code = await mgr.create({ kind: "code" })
+    expectGoal(await mgr.addGoal(code.id, goal("first", "code")))
+
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+    expect(mgr.processNext(code.id, (event) => events.push(event))).toBe("first")
+    expect(events[0]).toMatchObject({
+      type: "queued",
+      goalId: "first",
+      message: "goal queued behind workspace initialization",
+    })
+
+    await waitFor(() => expect(spawned).toHaveLength(1))
+
+    expect(order).toEqual(["install:0", "snapshots:0", "install:0"])
+    expect(mgr.get(code.id)?.initialization?.steps.find((step) => step.id === "install_dependencies")?.status).toBe("done")
+    spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+  }, 60_000)
 
   it("returns a workspace before slow snapshot initialization completes", async () => {
     const mgr = createManager({ initializeWorkspaces: true })
