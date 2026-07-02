@@ -313,7 +313,7 @@ describe("workspace + run integration", () => {
       const appFrame = page.frameLocator("iframe.story-frame[title='App']")
       await appFrame.locator("main[data-logos-component='RunSearchPanel']").waitFor({ timeout: 30_000 })
       await appFrame.locator("button", { hasText: "Search jobs" }).click({ modifiers: ["Alt"] })
-      await page.getByPlaceholder("Reply…").fill("Make this search typo tolerant.")
+      await page.getByPlaceholder("Add a comment…").fill("Make this search typo tolerant.")
       await page.keyboard.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter")
 
       const goal = await pollFor(async () => {
@@ -366,7 +366,7 @@ describe("workspace + run integration", () => {
       await appFrame.locator("a", { hasText: "Details" }).click()
       await appFrame.locator("main[data-app-path='/details']").waitFor({ timeout: 30_000 })
       await appFrame.locator("[data-plain-target]").click({ modifiers: ["Alt"] })
-      await page.getByPlaceholder("Reply…").fill("Tighten the details copy.")
+      await page.getByPlaceholder("Add a comment…").fill("Tighten the details copy.")
       await page.getByRole("button", { name: "Create Change" }).click()
 
       const goal = await pollFor(async () => {

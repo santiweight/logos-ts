@@ -82,9 +82,24 @@ export function CommentThread({
     onDraftChangeRef.current?.({ text, mode })
   }, [editingActive, mode, text])
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
+  const canReply = useCallback((c: CommentItem) =>
+    onReply != null
+      && (c.agentStatus === "done" || c.status === "done")
+      && ((c.agentId != null && c.agentId.length > 0) || (c.sessionId != null && c.sessionId.length > 0)), [onReply])
+
+  const composerReplyTarget = useMemo(
+    () => [...comments].reverse().find(canReply) ?? null,
+    [canReply, comments],
+  )
+
   const submit = () => {
     const t = text.trim()
     if (t.length === 0) return
+    if (composerReplyTarget != null && onReply != null) {
+      onReply({ goalId: composerReplyTarget.id, text: t })
+      setText("")
+      return
+    }
     onAdd({ text: t, mode })
     setText("")
   }
@@ -96,11 +111,6 @@ export function CommentThread({
     setReplyText("")
     setReplyGoalId(null)
   }
-
-  const canReply = (c: CommentItem) =>
-    onReply != null
-      && (c.agentStatus === "done" || c.status === "done")
-      && ((c.agentId != null && c.agentId.length > 0) || (c.sessionId != null && c.sessionId.length > 0))
 
   return (
     <>
@@ -188,16 +198,25 @@ export function CommentThread({
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit()
         }}
-        placeholder="Reply…"
+        placeholder={composerReplyTarget != null ? "Continue the conversation…" : "Add a comment…"}
         style={textareaStyle}
       />
-      <ModeBar
-        mode={mode}
-        setMode={setMode}
-        onSubmit={submit}
-        disabled={text.trim().length === 0}
-        workspaceKind={workspaceKind}
-      />
+      {composerReplyTarget != null ? (
+        <div style={actionsStyle}>
+          <div />
+          <button type="button" onClick={submit} style={primaryBtnStyle} disabled={text.trim().length === 0}>
+            Send
+          </button>
+        </div>
+      ) : (
+        <ModeBar
+          mode={mode}
+          setMode={setMode}
+          onSubmit={submit}
+          disabled={text.trim().length === 0}
+          workspaceKind={workspaceKind}
+        />
+      )}
     </>
   )
 }

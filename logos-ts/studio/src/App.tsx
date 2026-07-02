@@ -304,7 +304,7 @@ export function resolveAgentPanelGoalId(
 function storyCommentClientEventId(data: unknown): string | null {
   if (typeof data !== "object" || data == null) return null
   const record = data as Record<string, unknown>
-  if (record["type"] !== "logos:story-comment") return null
+  if (record["type"] !== "logos:story-comment" && record["type"] !== "logos:story-comment-reply") return null
   const clientEventId = record["clientEventId"]
   return typeof clientEventId === "string" && clientEventId.length > 0 ? clientEventId : null
 }
@@ -1235,6 +1235,7 @@ export function App() {
         runTargetId: g.runTargetId,
         mode: g.mode,
         status: g.status,
+        sessionId: g.sessionId,
         replies: g.replies,
       }))
     return { type: "logos:story-goals", goals: storyGoals, drafts: Object.values(storyCommentDrafts), workspaceKind: activeWs?.kind ?? "code" }
@@ -1323,6 +1324,13 @@ export function App() {
         })
         return
       }
+      if (e.data?.type === "logos:story-comment-reply") {
+        if (!acceptStoryCommentEvent(e.data)) return
+        const goalId = typeof e.data.goalId === "string" ? e.data.goalId : ""
+        const text = typeof e.data.text === "string" ? e.data.text : ""
+        if (goalId.length > 0 && text.trim().length > 0) continueGoal(goalId, text)
+        return
+      }
       if (e.data?.type !== "logos:story-comment") return
       if (!acceptStoryCommentEvent(e.data)) return
       const { storyId, component, selector, label, text, mode, htmlContext, appPath, runTargetId, screenshotDataUrl } = e.data
@@ -1355,7 +1363,7 @@ export function App() {
     }
     window.addEventListener("message", onMsg)
     return () => window.removeEventListener("message", onMsg)
-  }, [acceptStoryCommentEvent, addGoal, postStoryGoals])
+  }, [acceptStoryCommentEvent, addGoal, continueGoal, postStoryGoals])
 
   // Push goals to Storybook iframes so they can render pins
   useEffect(() => {

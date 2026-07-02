@@ -16,7 +16,7 @@ describe("CommentThread replies", () => {
       />
     )
 
-    fireEvent.change(screen.getByPlaceholderText("Reply…"), { target: { value: "make this bold" } })
+    fireEvent.change(screen.getByPlaceholderText("Add a comment…"), { target: { value: "make this bold" } })
     fireEvent.click(screen.getByText("Create Change"))
 
     expect(onAdd).toHaveBeenCalledWith({
@@ -83,6 +83,71 @@ describe("CommentThread replies", () => {
     expect(screen.getByText("make this bold")).toBeTruthy()
     expect(screen.getByText("Changed FactTable.tsx — wrapped in <strong>.")).toBeTruthy()
     expect(screen.getByText("agent")).toBeTruthy()
+  })
+
+  it("continues the latest completed comment from the main composer", () => {
+    const onAdd = vi.fn()
+    const onReply = vi.fn()
+    const comments: CommentItem[] = [
+      {
+        id: "goal-1",
+        text: "make this bold",
+        createdAt: 1000,
+        status: "done",
+        sessionId: "sess-123",
+      },
+    ]
+
+    render(
+      <CommentThread
+        label="FactTable"
+        comments={comments}
+        onAdd={onAdd}
+        onReply={onReply}
+        onClose={vi.fn()}
+      />
+    )
+
+    fireEvent.change(screen.getByPlaceholderText("Continue the conversation…"), { target: { value: "also fix the total" } })
+    fireEvent.click(screen.getByText("Send"))
+
+    expect(onReply).toHaveBeenCalledWith({
+      goalId: "goal-1",
+      text: "also fix the total",
+    })
+    expect(onAdd).not.toHaveBeenCalled()
+  })
+
+  it("creates a new change when the existing comment has no resumable session", () => {
+    const onAdd = vi.fn()
+    const onReply = vi.fn()
+    const comments: CommentItem[] = [
+      {
+        id: "goal-1",
+        text: "queued comment",
+        createdAt: 1000,
+        status: "pending",
+      },
+    ]
+
+    render(
+      <CommentThread
+        label="FactTable"
+        comments={comments}
+        onAdd={onAdd}
+        onReply={onReply}
+        onClose={vi.fn()}
+      />
+    )
+
+    fireEvent.change(screen.getByPlaceholderText("Add a comment…"), { target: { value: "make another change" } })
+    fireEvent.click(screen.getByText("Create Change"))
+
+    expect(onAdd).toHaveBeenCalledWith({
+      text: "make another change",
+      mode: "code",
+    })
+    expect(onReply).not.toHaveBeenCalled()
   })
 
   it("renders multiple replies in order", () => {

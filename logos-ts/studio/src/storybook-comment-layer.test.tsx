@@ -145,6 +145,55 @@ describe("StorybookCommentLayer", () => {
     })
   })
 
+  it("posts a reply event for a completed story comment with a session", async () => {
+    vi.spyOn(window.parent, "postMessage").mockImplementation(() => {})
+
+    render(
+      <StorybookCommentLayer storyId="jobcard--default" component="JobCard">
+        <section>
+          <button type="button">Apply</button>
+        </section>
+      </StorybookCommentLayer>
+    )
+
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "logos:story-goals",
+          workspaceKind: "code",
+          drafts: [],
+          goals: [{
+            id: "goal-1",
+            storyId: "jobcard--default",
+            selector: ":scope > section > button",
+            label: "button \"Apply\"",
+            text: "Make this clearer",
+            author: "you",
+            createdAt: 1000,
+            component: "JobCard",
+            status: "done",
+            sessionId: "session-1",
+          }],
+        },
+      }),
+    )
+
+    fireEvent.click(await screen.findByTitle("1 comment"))
+    fireEvent.change(screen.getByPlaceholderText("Continue the conversation…"), {
+      target: { value: "Also tighten the hover state" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+
+    await waitFor(() => {
+      expect(lastPosted("logos:story-comment-reply")).toMatchObject({
+        goalId: "goal-1",
+        text: "Also tighten the hover state",
+      })
+    })
+    expect(lastPosted("logos:story-comment")).toBeUndefined()
+  })
+
   it("attaches a submitted draft to the nearest surviving parent when the exact target disappears", async () => {
     vi.spyOn(window.parent, "postMessage").mockImplementation(() => {})
 

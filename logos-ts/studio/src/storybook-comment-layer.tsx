@@ -10,6 +10,7 @@ import {
   popoverPos,
   popoverShell,
   usePopoverDrag,
+  type ReplyPayload,
   type SubmitPayload,
 } from "./comment-ui"
 
@@ -26,6 +27,7 @@ export interface StoryComment {
   screenshotDataUrl?: string
   mode?: string
   status?: string
+  sessionId?: string | null
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
 }
 
@@ -109,6 +111,13 @@ function clientEventId(): string {
 function postStoryComment(comment: Omit<StoryComment, "id" | "createdAt">): void {
   try {
     const message = { type: "logos:story-comment", clientEventId: clientEventId(), ...comment }
+    window.parent.postMessage(message, "*")
+  } catch {}
+}
+
+function postStoryCommentReply(reply: ReplyPayload): void {
+  try {
+    const message = { type: "logos:story-comment-reply", clientEventId: clientEventId(), ...reply }
     window.parent.postMessage(message, "*")
   } catch {}
 }
@@ -671,6 +680,11 @@ export function StorybookCommentLayer({
                 comments={list}
                 onAdd={(p) => {
                   sendComment(selector, label, describeHtmlContext(nearest.element, root), undefined, p)
+                  clearCommentDraft()
+                  setDraft(null)
+                }}
+                onReply={(p) => {
+                  postStoryCommentReply(p)
                   clearCommentDraft()
                   setDraft(null)
                 }}
