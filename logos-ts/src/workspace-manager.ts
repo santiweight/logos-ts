@@ -1747,6 +1747,7 @@ export class WorkspaceManager {
         this.restartWorkspaceServices(targetWs, promotedInst)
         this.save(targetWs)
         await this.refreshChildWorkspaces(targetWs, ws.id)
+        await this.reparentChildWorkspaces(ws, targetWs)
       } else {
         await this.refreshChildWorkspaces(ws, null)
       }
@@ -1772,24 +1773,57 @@ export class WorkspaceManager {
   ): Promise<void> {
     for (const child of this.workspaces.values()) {
       if (child.parentId !== parentWs.id || child.id === skipChildId) continue
-      const activeInst = this.activeInstance(child)
-      const candidate = await this.createInstance(child.id, activeInst.materializedRoot, activeInst.index)
-      child.instances[candidate.id] = candidate
-      const rebase = await this.codeService.rebaseInstance({
-        workspaceId: child.id,
-        instance: candidate,
-        onto: this.activeInstance(parentWs),
-      })
-      if (rebase.status !== "clean") {
-        delete child.instances[candidate.id]
-        this.save(child)
-        continue
-      }
-      await this.reindexInstance(child, candidate)
-      child.activeInstanceId = candidate.id
-      this.restartWorkspaceServices(child, candidate)
-      this.save(child)
+      await this.retargetChildWorkspace(child, parentWs)
     }
+  }
+
+  private async reparentChildWorkspaces(fromParentWs: WorkspaceRecord, toParentWs: WorkspaceRecord): Promise<void> {
+    for (const child of this.workspaces.values()) {
+      if (child.parentId !== fromParentWs.id) continue
+      await this.retargetChildWorkspace(child, toParentWs, { parentId: toParentWs.id })
+    }
+  }
+
+  private async retargetChildWorkspace(
+    child: WorkspaceRecord,
+    parentWs: WorkspaceRecord,
+    opts?: { parentId?: string },
+  ): Promise<boolean> {
+    const parentInst = this.activeInstance(parentWs)
+    const activeInst = this.activeInstance(child)
+    const baseInst = await this.createInstance(child.id, parentInst.materializedRoot, parentInst.index)
+    const candidate = await this.createInstance(child.id, activeInst.materializedRoot, activeInst.index)
+    child.instances[baseInst.id] = baseInst
+    child.instances[candidate.id] = candidate
+    const rebase = await this.codeService.rebaseInstance({
+      workspaceId: child.id,
+      instance: candidate,
+      onto: baseInst,
+    })
+    if (rebase.status !== "clean") {
+      delete child.instances[baseInst.id]
+      delete child.instances[candidate.id]
+      this.save(child)
+      return false
+    }
+
+    const previousBaseId = child.baseInstanceId
+    const previousActiveId = activeInst.id
+    await this.reindexInstance(child, candidate)
+    child.baseInstanceId = baseInst.id
+    child.activeInstanceId = candidate.id
+    if (opts?.parentId) child.parentId = opts.parentId
+    for (const goal of child.goals) {
+      if (goal.lifecycle.stage === "merged" && goal.lifecycle.state === "complete") continue
+      if (goal.baseInstanceId === previousBaseId) goal.baseInstanceId = baseInst.id
+      if (goal.workingInstanceId === previousActiveId) {
+        goal.workingInstanceId = candidate.id
+        this.goalWorkingInstances.set(goal.id, candidate.id)
+      }
+    }
+    this.restartWorkspaceServices(child, candidate)
+    this.save(child)
+    return true
   }
 
   private writeMcpConfig(goalId: string, dir: string, suffix: string): string {

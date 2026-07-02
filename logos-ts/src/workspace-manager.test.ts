@@ -1190,9 +1190,12 @@ describe("WorkspaceManager workspace kinds", () => {
     const parent = await mgr.create({ kind: "code" })
     const childB = await mgr.create({ fromWorkspaceId: parent.id, kind: "code" })
     const childC = await mgr.create({ fromWorkspaceId: parent.id, kind: "code" })
+    const childD = await mgr.create({ fromWorkspaceId: childB.id, kind: "code" })
     const childCBefore = mgr.get(childC.id)
-    if (!childCBefore) throw new Error("missing child workspace")
+    const childDBefore = mgr.get(childD.id)
+    if (!childCBefore || !childDBefore) throw new Error("missing child workspace")
     writeFileSync(join(childCBefore.forkDir, "c-only.txt"), "from c\n")
+    writeFileSync(join(childDBefore.forkDir, "d-only.txt"), "from d\n")
 
     const task = expectGoal(await mgr.addGoal(childB.id, goal("edit", "code"))).goal
     const events: { type: string; message?: unknown; goalId?: unknown }[] = []
@@ -1210,12 +1213,23 @@ describe("WorkspaceManager workspace kinds", () => {
     const parentAfter = mgr.get(parent.id)
     const childBAfter = mgr.get(childB.id)
     const childCAfter = mgr.get(childC.id)
-    if (!parentAfter || !childBAfter || !childCAfter) throw new Error("missing workspace")
+    const childDAfter = mgr.get(childD.id)
+    if (!parentAfter || !childBAfter || !childCAfter || !childDAfter) throw new Error("missing workspace")
+    const childCBase = childCAfter.instances[childCAfter.baseInstanceId]
+    const childDBase = childDAfter.instances[childDAfter.baseInstanceId]
+    if (!childCBase || !childDBase) throw new Error("missing child base instance")
 
     expect(readFileSync(join(parentAfter.forkDir, "thing.txt"), "utf8")).toBe("from b\n")
     expect(readFileSync(join(childBAfter.forkDir, "thing.txt"), "utf8")).toBe("from b\n")
     expect(readFileSync(join(childCAfter.forkDir, "thing.txt"), "utf8")).toBe("from b\n")
     expect(readFileSync(join(childCAfter.forkDir, "c-only.txt"), "utf8")).toBe("from c\n")
+    expect(readFileSync(join(childCBase.materializedRoot, "thing.txt"), "utf8")).toBe("from b\n")
+    expect(existsSync(join(childCBase.materializedRoot, "c-only.txt"))).toBe(false)
+    expect(childDAfter.parentId).toBe(parent.id)
+    expect(readFileSync(join(childDAfter.forkDir, "thing.txt"), "utf8")).toBe("from b\n")
+    expect(readFileSync(join(childDAfter.forkDir, "d-only.txt"), "utf8")).toBe("from d\n")
+    expect(readFileSync(join(childDBase.materializedRoot, "thing.txt"), "utf8")).toBe("from b\n")
+    expect(existsSync(join(childDBase.materializedRoot, "d-only.txt"))).toBe(false)
     expect(events.some((event) => String(event.message ?? "").includes("accepted into parent"))).toBe(true)
   }, 15000)
 
