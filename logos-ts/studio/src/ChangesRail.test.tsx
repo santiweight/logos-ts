@@ -1,6 +1,7 @@
 import { render, screen, cleanup, fireEvent } from "@testing-library/react"
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { ChangesRail } from "./ChangesRail"
+import type { WorkspaceMeta } from "./types"
 
 afterEach(cleanup)
 
@@ -32,7 +33,7 @@ describe("ChangesRail", () => {
   })
 
   it("shows workspace list when loaded with workspaces", () => {
-    const workspaces = [
+    const workspaces: WorkspaceMeta[] = [
       { id: "ws-1", name: "feature-branch", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
       { id: "ws-2", name: "bugfix", kind: "code" as const, parentId: null, createdAt: 2000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
     ]
@@ -43,7 +44,7 @@ describe("ChangesRail", () => {
   })
 
   it("hides loading indicator once workspaces arrive", () => {
-    const workspaces = [
+    const workspaces: WorkspaceMeta[] = [
       { id: "ws-1", name: "my-workspace", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={true} workspaces={workspaces} />)
@@ -71,7 +72,7 @@ describe("ChangesRail", () => {
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
   })
 
-  it("shows spinner when a change is in runningGoals", () => {
+  it("marks the workspace row as running when a change is in runningGoals", () => {
     const workspaces = [
       {
         id: "ws-1",
@@ -94,7 +95,8 @@ describe("ChangesRail", () => {
         runningGoals={new Set(["g-1"])}
       />,
     )
-    expect(screen.getByTitle("Agent running")).toBeInTheDocument()
+    expect(screen.getByText("feature").closest(".rail-row")).toHaveClass("running")
+    expect(screen.queryByTitle("Agent running")).not.toBeInTheDocument()
   })
 
   it("does not show spinner when no goals are running", () => {
@@ -120,10 +122,11 @@ describe("ChangesRail", () => {
         runningGoals={new Set<string>()}
       />,
     )
+    expect(screen.getByText("feature").closest(".rail-row")).not.toHaveClass("running")
     expect(screen.queryByTitle("Agent running")).not.toBeInTheDocument()
   })
 
-  it("shows spinner only for workspace with a running change, not others", () => {
+  it("marks only the workspace with a running change", () => {
     const workspaces = [
       {
         id: "ws-1",
@@ -158,8 +161,41 @@ describe("ChangesRail", () => {
         runningGoals={new Set(["g-1"])}
       />,
     )
-    const spinners = screen.getAllByTitle("Agent running")
-    expect(spinners).toHaveLength(1)
+    expect(screen.getByText("active-ws").closest(".rail-row")).toHaveClass("running")
+    expect(screen.getByText("idle-ws").closest(".rail-row")).not.toHaveClass("running")
+    expect(screen.queryByTitle("Agent running")).not.toBeInTheDocument()
+  })
+
+  it("shows a single loading line instead of initialization sub-steps", () => {
+    const workspaces: WorkspaceMeta[] = [
+      {
+        id: "ws-1",
+        name: "loading-workspace",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [],
+        initialization: {
+          status: "initializing" as const,
+          updatedAt: 1000,
+          steps: [
+            { id: "materialize", label: "Materialize workspace", status: "done" as const },
+            { id: "story_snapshots", label: "Capture story snapshots", status: "running" as const },
+            { id: "commit_baseline", label: "Commit snapshot baseline", status: "pending" as const },
+            { id: "index", label: "Index workspace", status: "pending" as const },
+          ],
+        },
+      },
+    ]
+
+    render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
+
+    expect(screen.getByText("Loading workspace…")).toBeInTheDocument()
+    expect(screen.queryByText("Materialize workspace")).not.toBeInTheDocument()
+    expect(screen.queryByText("Capture story snapshots")).not.toBeInTheDocument()
+    expect(screen.getByTitle("Workspace initializing")).toBeInTheDocument()
   })
 
   it("uses the workspace row as the thread row", () => {

@@ -284,6 +284,14 @@ body.resizing-rail * {
   background: var(--panel);
   transform: translateY(-50%);
 }
+.rail-row.ws.running::before {
+  width: 9px;
+  height: 9px;
+  left: 8px;
+  border-color: rgba(144, 180, 214, 0.28);
+  border-top-color: var(--accent);
+  animation: spin 1s linear infinite;
+}
 .rail-row.ws::after {
   content: "";
   position: absolute;

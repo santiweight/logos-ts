@@ -113,13 +113,14 @@ export function ChangesRail({
       && !runningGoals.has(thread.id)
       && thread.lifecycle?.stage === "impl"
       && thread.lifecycle.state === "ready_to_merge"
+    const hasRunningGoal = goals.some((g) => runningGoals.has(g.id))
     const hasUpdatesToPush = w.publication
       ? goals.some((g) => g.createdAt > w.publication!.updatedAt)
       : false
     return (
       <div key={w.id} className="rail-workspace-group">
         <div
-          className={`rail-row ws ${isActive || wsSelected || threadSelected ? "active" : ""}`}
+          className={`rail-row ws ${isActive || wsSelected || threadSelected ? "active" : ""} ${hasRunningGoal ? "running" : ""}`}
           style={rowStyle(depth)}
           title={thread ? `${w.name} (${thread.status})` : w.name}
           onClick={() => {
@@ -135,11 +136,6 @@ export function ChangesRail({
           <div className="rail-actions">
             {w.initialization?.status === "initializing" && (
               <span className="rail-agent" title="Workspace initializing">
-                <span className="ag-spin">↻</span>
-              </span>
-            )}
-            {goals.some((g) => runningGoals.has(g.id)) && (
-              <span className="rail-agent" title="Agent running">
                 <span className="ag-spin">↻</span>
               </span>
             )}
@@ -183,7 +179,11 @@ export function ChangesRail({
           </div>
         </div>
 
-        {isActive && w.initialization && w.initialization.status !== "ready" && (
+        {isActive && w.initialization?.status === "initializing" && (
+          <div className="rail-loading muted small" style={rowStyle(depth, 18)}>Loading workspace…</div>
+        )}
+
+        {isActive && w.initialization && w.initialization.status === "error" && (
           <div className={`rail-initialization ${w.initialization.status}`} style={rowStyle(depth, 18)}>
             {w.initialization.steps.map((step) => (
               <div key={step.id} className={`rail-init-step ${step.status}`}>
