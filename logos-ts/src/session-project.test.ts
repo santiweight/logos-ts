@@ -39,7 +39,7 @@ describe("session project isolation", () => {
     expect(existsSync(join(session.root, ".logos", "runtime.db"))).toBe(false)
     expect(existsSync(join(session.root, ".hn-jobs-runtime"))).toBe(false)
     expect(existsSync(join(session.root, "prisma", "snapshot.db"))).toBe(false)
-    expect(lstatSync(join(session.root, "node_modules")).isSymbolicLink()).toBe(true)
+    expect(lstatSync(join(session.root, "node_modules")).isSymbolicLink()).toBe(false)
 
     writeFileSync(join(session.root, "app.ts"), "export const value = 'session'\n")
 

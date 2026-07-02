@@ -50,7 +50,7 @@ describe("StorybookCommentLayer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Apply" }), { altKey: true })
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Make this clearer" } })
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create Change" }))
 
     await waitFor(() => {
       expect(messages.filter((message) => message["type"] === "logos:story-comment")).toHaveLength(1)
@@ -79,7 +79,7 @@ describe("StorybookCommentLayer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Apply" }), { altKey: true })
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Make this clearer" } })
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create Change" }))
 
     await waitFor(() => {
       expect(messages.filter((message) => message["type"] === "logos:story-comment")).toHaveLength(1)
@@ -90,7 +90,7 @@ describe("StorybookCommentLayer", () => {
     })
   })
 
-  it("shows auto merge in the story comment composer and posts the selected policy", async () => {
+  it("creates a story change without posting an auto-merge policy", async () => {
     vi.spyOn(window.parent, "postMessage").mockImplementation(() => {})
 
     render(
@@ -102,18 +102,14 @@ describe("StorybookCommentLayer", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Apply" }), { altKey: true })
-    const autoMerge = screen.getByTitle("Auto merge into the parent workspace")
-    expect(autoMerge.getAttribute("aria-pressed")).toBe("true")
-
-    fireEvent.click(autoMerge)
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Make this clearer" } })
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create Change" }))
 
     await waitFor(() => {
       expect(lastPosted("logos:story-comment")).toMatchObject({
         text: "Make this clearer",
-        autoMerge: false,
       })
+      expect(lastPosted("logos:story-comment")).not.toHaveProperty("autoMerge")
     })
   })
 
@@ -139,7 +135,6 @@ describe("StorybookCommentLayer", () => {
           label: "button Apply",
           text: "Keep this text",
           mode: "code",
-          fork: false,
           kind: "new",
         }],
       },
@@ -170,7 +165,7 @@ describe("StorybookCommentLayer", () => {
       </StorybookCommentLayer>
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create Change" }))
 
     await waitFor(() => {
       expect(lastPosted("logos:story-comment")).toMatchObject({
@@ -209,7 +204,7 @@ describe("StorybookCommentLayer", () => {
     })
 
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Move only the box" } })
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create Change" }))
 
     await waitFor(() => {
       expect(lastPosted("logos:story-comment")).toMatchObject({

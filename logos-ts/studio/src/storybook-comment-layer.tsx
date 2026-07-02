@@ -24,8 +24,6 @@ export interface StoryComment {
   component?: string
   htmlContext?: string
   mode?: string
-  fork?: boolean
-  autoMerge?: boolean
   status?: string
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
 }
@@ -40,8 +38,6 @@ interface Draft {
   label: string
   text?: string
   mode?: "code" | "arch"
-  fork?: boolean
-  autoMerge?: boolean
   htmlContext?: string
   kind?: "new" | "reply"
 }
@@ -51,8 +47,6 @@ interface StoryDraft extends Draft {
   component?: string
   text: string
   mode: "code" | "arch"
-  fork: boolean
-  autoMerge: boolean
   kind: "new" | "reply"
 }
 
@@ -365,8 +359,6 @@ export function StorybookCommentLayer({
       text: p.text,
       author: "you",
       mode: p.mode,
-      fork: p.fork,
-      autoMerge: p.autoMerge,
     })
   }
 
@@ -393,8 +385,6 @@ export function StorybookCommentLayer({
       ...(draftUpdate.htmlContext != null ? { htmlContext: draftUpdate.htmlContext } : {}),
       text: p.text,
       mode: p.mode,
-      fork: p.fork,
-      autoMerge: p.autoMerge,
       kind: draftUpdate.kind ?? "new",
     })
     sendCommentEditing(true)

@@ -24,8 +24,6 @@ export interface CommentItem {
 export interface SubmitPayload {
   text: string
   mode: "code" | "arch"
-  fork: boolean
-  autoMerge: boolean
 }
 
 export type DraftPayload = SubmitPayload
@@ -72,8 +70,6 @@ export function CommentThread({
 }) {
   const [text, setText] = useState(initialDraft?.text ?? "")
   const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
-  const [fork, setFork] = useState(initialDraft?.fork ?? false)
-  const [autoMerge, setAutoMerge] = useState(initialDraft?.autoMerge ?? true)
   const [replyGoalId, setReplyGoalId] = useState<string | null>(null)
   const [replyText, setReplyText] = useState("")
   const onEditingChangeRef = useRef(onEditingChange)
@@ -83,13 +79,13 @@ export function CommentThread({
   const editingActive = text.trim().length > 0
   useEffect(() => {
     onEditingChangeRef.current?.(editingActive)
-    onDraftChangeRef.current?.({ text, mode, fork, autoMerge })
-  }, [autoMerge, editingActive, fork, mode, text])
+    onDraftChangeRef.current?.({ text, mode })
+  }, [editingActive, mode, text])
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
     if (t.length === 0) return
-    onAdd({ text: t, mode, fork, autoMerge })
+    onAdd({ text: t, mode })
     setText("")
   }
 
@@ -198,10 +194,6 @@ export function CommentThread({
       <ModeBar
         mode={mode}
         setMode={setMode}
-        fork={fork}
-        setFork={setFork}
-        autoMerge={autoMerge}
-        setAutoMerge={setAutoMerge}
         onSubmit={submit}
         disabled={text.trim().length === 0}
         workspaceKind={workspaceKind}
@@ -233,8 +225,6 @@ export function CommentComposer({
 }) {
   const [text, setText] = useState(initialDraft?.text ?? "")
   const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
-  const [fork, setFork] = useState(initialDraft?.fork ?? false)
-  const [autoMerge, setAutoMerge] = useState(initialDraft?.autoMerge ?? true)
   const onEditingChangeRef = useRef(onEditingChange)
   const onDraftChangeRef = useRef(onDraftChange)
   onEditingChangeRef.current = onEditingChange
@@ -242,12 +232,12 @@ export function CommentComposer({
   const editingActive = text.trim().length > 0
   useEffect(() => {
     onEditingChangeRef.current?.(editingActive)
-    onDraftChangeRef.current?.({ text, mode, fork, autoMerge })
-  }, [autoMerge, editingActive, fork, mode, text])
+    onDraftChangeRef.current?.({ text, mode })
+  }, [editingActive, mode, text])
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
-    if (t.length > 0) onSave({ text: t, mode, fork, autoMerge })
+    if (t.length > 0) onSave({ text: t, mode })
   }
 
   return (
@@ -266,10 +256,6 @@ export function CommentComposer({
       <ModeBar
         mode={mode}
         setMode={setMode}
-        fork={fork}
-        setFork={setFork}
-        autoMerge={autoMerge}
-        setAutoMerge={setAutoMerge}
         onSubmit={submit}
         disabled={text.trim().length === 0}
         workspaceKind={workspaceKind}
@@ -318,25 +304,16 @@ function Header({
 function ModeBar({
   mode,
   setMode,
-  fork,
-  setFork,
-  autoMerge,
-  setAutoMerge,
   onSubmit,
   disabled,
   workspaceKind,
 }: {
   mode: "code" | "arch"
   setMode: (m: "code" | "arch") => void
-  fork: boolean
-  setFork: (f: boolean) => void
-  autoMerge: boolean
-  setAutoMerge: (autoMerge: boolean) => void
   onSubmit: () => void
   disabled: boolean
   workspaceKind?: "code" | "arch" | undefined
 }) {
-  const forkForced = mode === "arch" && workspaceKind !== "arch"
   return (
     <div style={actionsStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -344,28 +321,9 @@ function ModeBar({
           <span style={segmentBtn(mode === "code")}>code</span>
           <span style={segmentBtn(mode === "arch")}>arch</span>
         </div>
-        <button
-          type="button"
-          style={{ ...forkBtn(fork || forkForced), cursor: forkForced ? "default" : "pointer" }}
-          onClick={() => { if (!forkForced) setFork(!fork) }}
-          title={forkForced ? "Architecture mode creates an architecture workspace" : "Fork a new workspace for this change"}
-        >
-          ⑂
-        </button>
-        {mode === "code" && (
-          <button
-            type="button"
-            aria-pressed={autoMerge}
-            onClick={() => setAutoMerge(!autoMerge)}
-            style={autoMergeBtn(autoMerge)}
-            title="Auto merge into the parent workspace"
-          >
-            Auto merge
-          </button>
-        )}
       </div>
       <button type="button" onClick={onSubmit} style={primaryBtnStyle} disabled={disabled}>
-        Comment
+        Create Change
       </button>
     </div>
   )
@@ -589,38 +547,6 @@ function segmentBtn(active: boolean): React.CSSProperties {
     fontWeight: active ? 600 : 400,
     boxShadow: active ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
     transition: "background 0.15s, color 0.15s, box-shadow 0.15s",
-  }
-}
-
-function forkBtn(active: boolean): React.CSSProperties {
-  return {
-    font: "inherit",
-    fontSize: 13,
-    width: 26,
-    height: 26,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 6,
-    border: `1px solid ${active ? "var(--accent, #3b82f6)" : "var(--border)"}`,
-    background: active ? "var(--accent, #3b82f6)" : "transparent",
-    color: active ? "var(--fg-on-accent, #fff)" : "var(--muted)",
-    cursor: "pointer",
-    padding: 0,
-  }
-}
-
-function autoMergeBtn(active: boolean): React.CSSProperties {
-  return {
-    font: "inherit",
-    fontSize: 11,
-    height: 26,
-    borderRadius: 6,
-    border: `1px solid ${active ? "var(--success, #16a34a)" : "var(--border)"}`,
-    background: "transparent",
-    color: active ? "var(--success, #16a34a)" : "var(--muted)",
-    cursor: "pointer",
-    padding: "0 7px",
   }
 }
 

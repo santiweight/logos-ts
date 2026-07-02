@@ -73,6 +73,10 @@ interface DemoOption {
   root: string
 }
 
+function projectNameFromPath(path: string): string {
+  return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "Custom"
+}
+
 function combineDiffStatus(
   current: DiffStatus | undefined,
   next: DiffStatus | undefined
@@ -319,13 +323,16 @@ export function App() {
   const [demoMenuOpen, setDemoMenuOpen] = useState(false)
   const [demos, setDemos] = useState<DemoOption[]>([])
   const [activeDemoId, setActiveDemoId] = useState<string>("")
+  const [sourceProject, setSourceProject] = useState<string>("")
   const [demoSwitching, setDemoSwitching] = useState<string | null>(null)
+  const topbarMenuRef = useRef<HTMLDivElement | null>(null)
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("main")
 
   // ---- workspaces (forks) ----
   const [railOpen, setRailOpen] = useState(true)
   const [railWidth, setRailWidth] = useState(280)
   const [commentWidth, setCommentWidth] = useState(320)
+  const [sidebarWidth, setSidebarWidth] = useState(260)
   const [sidebarFiltersByScope, setSidebarFiltersByScope] = useState<Record<string, SidebarFilters>>(() => readStoredSidebarFilters())
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
@@ -522,8 +529,9 @@ export function App() {
     try {
       const res = await fetch("/api/demos")
       if (!res.ok) return
-      const data = await res.json() as { active: string; demos: DemoOption[] }
+      const data = await res.json() as { active: string; sourceProject?: string; demos: DemoOption[] }
       setActiveDemoId(data.active)
+      setSourceProject(data.sourceProject ?? "")
       setDemos(data.demos)
     } catch {}
   }, [])
@@ -680,19 +688,6 @@ export function App() {
     [refreshWorkspaces]
   )
 
-  const updateGoalAutoMerge = useCallback(
-    async (goalId: string, autoMerge: boolean) => {
-      if (!activeWorkspaceId) return
-      await fetch(`/api/workspaces/${activeWorkspaceId}/goals/${encodeURIComponent(goalId)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ autoMerge }),
-      })
-      await refreshWorkspaces()
-    },
-    [activeWorkspaceId, refreshWorkspaces]
-  )
-
   // Boot
   const bootedRef = useRef(false)
   useEffect(() => {
@@ -766,6 +761,17 @@ export function App() {
       setDemoSwitching(null)
     }
   }, [activeDemoId, demoSwitching, demos])
+
+  useEffect(() => {
+    if (!demoMenuOpen) return
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && topbarMenuRef.current?.contains(target)) return
+      setDemoMenuOpen(false)
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown)
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown)
+  }, [demoMenuOpen])
 
   useEffect(() => {
     try {
@@ -905,7 +911,7 @@ export function App() {
       const history = await loadGoalSessionEvents(goalId)
       setGoalEvents((prev) => ({
         ...prev,
-        [goalId]: [...((prev[goalId]?.length ?? 0) > 0 ? prev[goalId]! : history), { type: "status", message: "manual merge started" }],
+        [goalId]: [...((prev[goalId]?.length ?? 0) > 0 ? prev[goalId]! : history), { type: "status", message: "accept started" }],
       }))
       setRunningGoals((prev) => new Set(prev).add(goalId))
       setAgentGoalId(goalId)
@@ -945,7 +951,7 @@ export function App() {
   const closeAgent = useCallback(() => setAgentOpen(false), [])
 
   const resetWorkspaces = useCallback(async () => {
-    if (!window.confirm("Delete all workspaces, goals, sessions, and generated forks, then start fresh?")) return
+    if (!window.confirm("Delete all workspaces, changes, sessions, and generated forks, then start fresh?")) return
     setBusy("resetting workspace state…")
     for (const es of esRefs.current.values()) es.close()
     esRefs.current.clear()
@@ -1015,22 +1021,23 @@ export function App() {
   const addGoal = useCallback(
     async (
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
-      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; autoMerge?: boolean; goalName?: string; appPath?: string; runTargetId?: string },
+      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; goalName?: string; appPath?: string; runTargetId?: string },
     ) => {
       // 1. Code forks are created client-side. Arch isolation is owned by the backend.
-      let wsId = fork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
+      const shouldFork = mode === "code" || fork
+      let wsId = shouldFork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code") : activeWorkspaceId
       if (!wsId) wsId = await createWorkspace(null, "code")
       if (!wsId) return
 
-      // 2. Add goal to workspace queue
+      // 2. Add change to workspace queue
       const goalRes = await fetch(`/api/workspaces/${wsId}/goals`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target, label, text, mode, fork, ...extra, autoMerge: extra?.autoMerge !== false }),
+        body: JSON.stringify({ target, label, text, mode, fork: shouldFork, ...extra }),
       })
       const result = await goalRes.json()
       if (!goalRes.ok) {
-        setGoalError(typeof result.error === "string" ? result.error : "failed to add goal")
+        setGoalError(typeof result.error === "string" ? result.error : "failed to add change")
         return
       }
       setGoalError(null)
@@ -1183,7 +1190,7 @@ export function App() {
       }
       if (e.data?.type !== "logos:story-comment") return
       if (!acceptStoryCommentEvent(e.data)) return
-      const { storyId, component, selector, label, text, mode, fork, autoMerge, htmlContext, appPath, runTargetId } = e.data
+      const { storyId, component, selector, label, text, mode, htmlContext, appPath, runTargetId } = e.data
       if (typeof storyId === "string" && storyId) {
         setStoryCommentDrafts((current) => {
           const next = { ...current }
@@ -1201,14 +1208,13 @@ export function App() {
         : typeof appPath === "string" && appPath.length > 0
           ? `app:${appPath}`
           : `story:${storyId}`
-      addGoal(target, label ?? storyId, text, mode ?? "code", fork ?? false, {
+      addGoal(target, label ?? storyId, text, mode ?? "code", true, {
         storyId,
         selector,
         component,
         htmlContext,
         appPath,
         runTargetId,
-        autoMerge: autoMerge !== false,
       })
     }
     window.addEventListener("message", onMsg)
@@ -1295,14 +1301,18 @@ export function App() {
   }, [activeGoals, activeWorkspaceId, navigateToGoal, loadWorkspaceReviewBase, loadGoalSessionEvents])
 
   const nComps = view.files.reduce((n, f) => n + (f.components?.length ?? (f.component ? 1 : 0)), 0)
-  const totalGoals = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
+  const totalChanges = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
   const reviewCount = reviewWorkspaceIndex ? reviewChangeCount(reviewBaseIndex, reviewWorkspaceIndex) : 0
   const mainChrome = mainChromeState({ selection, currentFile, runTarget, reviewOpen, reviewCount })
   const activeProject = demos.find((d) => d.id === activeDemoId)
   const projectLabel = demoSwitching
     ? `Opening project: ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
-    : `Project: ${activeProject?.name ?? "Custom"}`
-  const studioStyle = { "--rail-width": `${railWidth}px`, "--comment-width": `${commentWidth}px` } as CSSProperties
+    : activeProject?.name ?? projectNameFromPath(sourceProject)
+  const studioStyle = {
+    "--rail-width": `${railWidth}px`,
+    "--comment-width": `${commentWidth}px`,
+    "--sidebar-width": `${sidebarWidth}px`,
+  } as CSSProperties
   const startRailResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     const startX = e.clientX
@@ -1337,10 +1347,27 @@ export function App() {
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", onUp)
   }, [commentWidth])
+  const startSidebarResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = sidebarWidth
+    document.body.classList.add("resizing-sidebar")
+    const onMove = (move: PointerEvent) => {
+      const next = startWidth + move.clientX - startX
+      setSidebarWidth(Math.min(520, Math.max(180, next)))
+    }
+    const onUp = () => {
+      document.body.classList.remove("resizing-sidebar")
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }, [sidebarWidth])
 
   const renderTopbar = () => (
     <header className="topbar">
-      <div className="topbar-menu">
+      <div className="topbar-menu" ref={topbarMenuRef}>
         <button
           className={`topbar-trigger ${demoMenuOpen ? "active" : ""}`}
           onClick={() => setDemoMenuOpen((o) => !o)}
@@ -1438,6 +1465,7 @@ export function App() {
         onSelectGoal={selectGoal}
         onDeleteWorkspace={deleteWorkspace}
         onDeleteGoal={deleteGoal}
+        onAcceptGoal={mergeGoal}
         runningGoals={effectiveRunningGoals}
         onResizeStart={startRailResize}
       />
@@ -1447,12 +1475,12 @@ export function App() {
         running={selectedGoal != null && effectiveRunningGoals.has(selectedGoal.id)}
         onNavigate={navigateToGoal}
         onReply={continueGoal}
-        onToggleAutoMerge={updateGoalAutoMerge}
         onMerge={mergeGoal}
         onResizeStart={startCommentResize}
       />
 
       <aside className="sidebar">
+        <div className="sidebar-resize" onPointerDown={startSidebarResize} />
         <div className="sidebar-toolbar">
           <button
             className={`sidebar-filter fn ${sidebarFilters.functions ? "active" : ""}`}
@@ -1622,10 +1650,10 @@ export function App() {
             </span>
           )}
           {"   "}
-          {goalError ? <span className="status-error">goal error: {goalError}</span> :
+          {goalError ? <span className="status-error">change error: {goalError}</span> :
             publishError ? <span className="status-error">{publishError}</span> :
             busy ? busy :
-            `${view.files.length} files · ${nComps} components · ${totalGoals} goals · ${workspaces.length} workspaces`}
+            `${view.files.length} files · ${nComps} components · ${totalChanges} changes · ${workspaces.length} workspaces`}
         </span>
       </footer>
 
@@ -1636,7 +1664,7 @@ export function App() {
           label={popup.label}
           goals={goalsByTarget[popup.target] ?? []}
           workspaceKind={activeWs?.kind}
-          onAdd={(text, mode, fork, autoMerge) => { addGoal(popup.target, popup.label, text, mode, fork, { autoMerge }); setPopup(null) }}
+          onAdd={(text, mode) => { addGoal(popup.target, popup.label, text, mode, true); setPopup(null) }}
           onReply={(goalId, text) => { continueGoal(goalId, text) }}
           onClose={() => setPopup(null)}
         />

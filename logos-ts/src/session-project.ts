@@ -1,7 +1,7 @@
 import { constants as fsConstants, cpSync, existsSync, mkdirSync, mkdtempSync } from "node:fs"
 import { basename, join, relative, resolve } from "node:path"
 import { gcDevSessions, writeDevSessionPid } from "./dev-session-gc.js"
-import { NodeModulesCache, findPackageDirs } from "./node-modules-cache.js"
+import { NodeModulesInstaller, findPackageDirs } from "./node-modules-installer.js"
 
 export interface SessionProject {
   root: string
@@ -64,12 +64,9 @@ export function createSessionProject(sourceRoot: string, preferredSessionsDir: s
 
   writeDevSessionPid(root)
 
-  const nmCache = new NodeModulesCache()
+  const nodeModules = new NodeModulesInstaller()
   for (const pkgDir of findPackageDirs(root)) {
-    const result = nmCache.ensureFor(pkgDir)
-    const rel = relative(root, pkgDir)
-    const target = join(root, rel, "node_modules")
-    if (resolve(result.nodeModulesPath) !== resolve(target)) nmCache.linkTo(result.nodeModulesPath, target)
+    nodeModules.ensureFor(pkgDir)
   }
 
   console.log(`[logos] session: ${id}`)

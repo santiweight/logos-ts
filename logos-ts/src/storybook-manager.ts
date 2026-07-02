@@ -205,9 +205,7 @@ export class StorybookManager {
     const promise = new Promise<string>((resolve_, reject) => {
       this.prepareCommentBridge(frontendDir)
       const storybookBin = resolve(frontendDir, "node_modules/.bin/storybook")
-      // node_modules is symlinked to the shared install, so Vite's default
-      // cacheDir (node_modules/.vite) would be shared by every concurrent
-      // instance — point each instance at its own cache inside the fork.
+      // Keep each Storybook instance on its own Vite cache inside the fork.
       const cacheDir = resolve(frontendDir, ".vite-logos")
       const child = spawn(storybookBin, ["dev", "--ci", "--no-open", "--host", "127.0.0.1"], {
         cwd: frontendDir,
@@ -394,7 +392,6 @@ export interface StoryComment {
   component?: string
   htmlContext?: string
   mode?: string
-  autoMerge?: boolean
   status?: string
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
 }
@@ -406,7 +403,7 @@ function clientEventId(): string {
     : "logos-story-comment-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)
 }
 
-export function postComment(comment: Omit<StoryComment, "id" | "createdAt"> & { fork?: boolean }): void {
+export function postComment(comment: Omit<StoryComment, "id" | "createdAt">): void {
   try {
     window.parent?.postMessage({ type: "logos:story-comment", clientEventId: clientEventId(), ...comment }, "*")
   } catch {}
@@ -424,7 +421,7 @@ export function postCommentEditing(storyId: string, active: boolean): void {
   } catch {}
 }
 
-export function postCommentDraft(draft: (Omit<StoryComment, "id" | "createdAt" | "author" | "status"> & { text: string; mode: "code" | "arch"; fork: boolean; autoMerge: boolean; kind: "new" | "reply" }) | { storyId: string; active: false }): void {
+export function postCommentDraft(draft: (Omit<StoryComment, "id" | "createdAt" | "author" | "status"> & { text: string; mode: "code" | "arch"; kind: "new" | "reply" }) | { storyId: string; active: false }): void {
   try {
     window.parent?.postMessage({ type: "logos:story-comment-draft", ...draft }, "*")
   } catch {}
@@ -543,8 +540,6 @@ interface Draft {
   label: string
   text?: string
   mode?: "code" | "arch"
-  fork?: boolean
-  autoMerge?: boolean
   htmlContext?: string
   kind?: "new" | "reply"
 }
@@ -732,8 +727,6 @@ export function CommentLayer({
       text: payload.text,
       author: "you",
       mode: payload.mode,
-      fork: payload.fork,
-      autoMerge: payload.autoMerge,
     })
   }
 
@@ -760,8 +753,6 @@ export function CommentLayer({
       ...(draftUpdate.htmlContext ? { htmlContext: draftUpdate.htmlContext } : {}),
       text: payload.text,
       mode: payload.mode,
-      fork: payload.fork,
-      autoMerge: payload.autoMerge,
       kind: draftUpdate.kind ?? "new",
     })
     sendCommentEditing(true)

@@ -25,7 +25,6 @@ function renderPanel({
   running = false,
   onNavigate = vi.fn(),
   onReply = vi.fn(),
-  onToggleAutoMerge = vi.fn(),
   onMerge = vi.fn(),
   onResizeStart = vi.fn(),
 }: {
@@ -33,7 +32,6 @@ function renderPanel({
   running?: boolean
   onNavigate?: (goal: Goal) => void
   onReply?: (goalId: string, text: string) => void
-  onToggleAutoMerge?: (goalId: string, autoMerge: boolean) => void
   onMerge?: (goalId: string) => void
   onResizeStart?: () => void
 } = {}) {
@@ -43,19 +41,18 @@ function renderPanel({
       running={running}
       onNavigate={onNavigate}
       onReply={onReply}
-      onToggleAutoMerge={onToggleAutoMerge}
       onMerge={onMerge}
       onResizeStart={onResizeStart}
     />
   )
-  return { onNavigate, onReply, onToggleAutoMerge, onMerge }
+  return { onNavigate, onReply, onMerge }
 }
 
 describe("CommentSidebar", () => {
   it("shows an empty state when no goal is selected", () => {
     renderPanel({ selectedGoal: null })
 
-    expect(screen.getByText("Select a goal from a workspace.")).toBeInTheDocument()
+    expect(screen.getByText("Select a Change from the rail.")).toBeInTheDocument()
   })
 
   it("renders exactly the selected goal thread", () => {
@@ -93,16 +90,7 @@ describe("CommentSidebar", () => {
     expect(screen.getByText("Send")).toBeDisabled()
   })
 
-  it("toggles auto merge from the thread header", () => {
-    const onToggleAutoMerge = vi.fn()
-    renderPanel({ onToggleAutoMerge })
-
-    fireEvent.click(screen.getByTitle("Auto merge into the parent workspace"))
-
-    expect(onToggleAutoMerge).toHaveBeenCalledWith("goal-1", false)
-  })
-
-  it("starts manual merge when implementation is ready", () => {
+  it("accepts a change when implementation is ready", () => {
     const onMerge = vi.fn()
     renderPanel({
       onMerge,
@@ -112,7 +100,7 @@ describe("CommentSidebar", () => {
       }),
     })
 
-    fireEvent.click(screen.getByText("Merge"))
+    fireEvent.click(screen.getByText("Accept"))
 
     expect(onMerge).toHaveBeenCalledWith("goal-1")
   })

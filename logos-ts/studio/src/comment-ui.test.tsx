@@ -5,7 +5,7 @@ import { CommentComposer, CommentThread, type CommentItem } from "./comment-ui"
 afterEach(cleanup)
 
 describe("CommentThread replies", () => {
-  it("shows auto merge while creating a code comment and submits the selected policy", () => {
+  it("creates a change from a code comment", () => {
     const onAdd = vi.fn()
     render(
       <CommentThread
@@ -16,19 +16,12 @@ describe("CommentThread replies", () => {
       />
     )
 
-    const autoMerge = screen.getByTitle("Auto merge into the parent workspace")
-    expect(autoMerge).toBeTruthy()
-    expect(autoMerge.getAttribute("aria-pressed")).toBe("true")
-
-    fireEvent.click(autoMerge)
     fireEvent.change(screen.getByPlaceholderText("Reply…"), { target: { value: "make this bold" } })
-    fireEvent.click(screen.getByText("Comment"))
+    fireEvent.click(screen.getByText("Create Change"))
 
     expect(onAdd).toHaveBeenCalledWith({
       text: "make this bold",
       mode: "code",
-      fork: false,
-      autoMerge: false,
     })
   })
 

@@ -35,6 +35,7 @@ interface Props {
   onSelectGoal: (id: string) => void
   onDeleteWorkspace: (id: string) => void
   onDeleteGoal: (wsId: string, goalId: string) => void
+  onAcceptGoal: (goalId: string) => void
   runningGoals: Set<string>
   onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
 }
@@ -53,13 +54,14 @@ export function ChangesRail({
   onSelectGoal,
   onDeleteWorkspace,
   onDeleteGoal,
+  onAcceptGoal,
   runningGoals,
   onResizeStart,
 }: Props) {
   if (!open) {
     return (
       <div className="rail collapsed">
-        <button className="rail-toggle" onClick={onToggle} title="Workspaces" aria-label="Open workspaces">
+        <button className="rail-toggle" onClick={onToggle} title="Changes" aria-label="Open changes">
           {listIcon}
         </button>
         {workspaces.length > 0 && <div className="rail-count">{workspaces.length}</div>}
@@ -79,7 +81,7 @@ export function ChangesRail({
           <button className="rail-toggle" onClick={onResetWorkspaces} title="Reset all workspaces" aria-label="Reset all workspaces">
             {resetIcon}
           </button>
-          <button className="rail-toggle" onClick={onToggle} title="Collapse" aria-label="Collapse workspaces">
+          <button className="rail-toggle" onClick={onToggle} title="Collapse" aria-label="Collapse changes">
             {collapseIcon}
           </button>
         </span>
@@ -210,6 +212,9 @@ export function ChangesRail({
                   .reverse()
                   .map((g) => {
                     const gSelected = selected?.type === "goal" && selected.id === g.id
+                    const canAccept = !runningGoals.has(g.id)
+                      && g.lifecycle?.stage === "impl"
+                      && g.lifecycle.state === "ready_to_merge"
                     return (
                       <div
                         key={g.id}
@@ -222,6 +227,21 @@ export function ChangesRail({
                       >
                         <div className="rail-main">
                           <div className="rail-target">{g.label}</div>
+                        </div>
+                        <div className="rail-actions">
+                          {canAccept && (
+                            <button
+                              className="rail-merge"
+                              title="Accept change"
+                              aria-label={`Accept ${g.label}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onAcceptGoal(g.id)
+                              }}
+                            >
+                              {mergeIcon}
+                            </button>
+                          )}
                         </div>
                       </div>
                     )

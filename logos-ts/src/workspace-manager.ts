@@ -158,7 +158,7 @@ type AgentSpawner = (command: string, args: string[], options: NonNullable<Param
 type RunManagerLike = Pick<RunManager, "ensure" | "restart" | "shutdownWorkspace" | "shutdownAll">
 const MAX_ACCEPTANCE_REPAIR_ATTEMPTS = 1
 const INDEX_MAX_BUFFER = 128 * 1024 * 1024
-const DEFAULT_MERGE_POLICY: GoalMergePolicy = { autoMerge: true }
+const DEFAULT_MERGE_POLICY: GoalMergePolicy = { autoMerge: false }
 const storyGenerationSystemArgs = () => ["--append-system-prompt", buildStoryGenerationSystemPrompt()]
 
 const noopRunManager: RunManagerLike = {
@@ -260,7 +260,7 @@ export class WorkspaceManager {
     getIndex?: () => Promise<unknown>
     spawnAgent?: AgentSpawner
     initializeWorkspaces?: boolean
-    cacheNodeModules?: boolean
+    installNodeModules?: boolean
   }) {
     this.store = opts.store
     this.runsDir = opts.runsDir
@@ -282,7 +282,7 @@ export class WorkspaceManager {
       runsDir: this.runsDir,
       projectRoot: this.projectRoot,
       nodeModulesDirs: this.caps.nodeModulesDirs,
-      ...(opts.cacheNodeModules === undefined ? {} : { cacheNodeModules: opts.cacheNodeModules }),
+      ...(opts.installNodeModules === undefined ? {} : { installNodeModules: opts.installNodeModules }),
     })
 
     this.loadAll()
@@ -466,7 +466,7 @@ export class WorkspaceManager {
       if (!inst) return
 
       this.setInitializationStep(ws, "story_snapshots", "running")
-      this.codeService.ensureCachedNodeModules(inst)
+      this.codeService.ensureNodeModules(inst)
       const snapshots = await this.runStorySnapshotAcceptance(inst)
       if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
       if (!snapshots.ok) {
@@ -841,7 +841,7 @@ export class WorkspaceManager {
   private startStorybooks(inst: WorkspaceInstance): Promise<string[]> {
     const storybooks = this.storybookCaps()
     if (storybooks.length === 0) return Promise.reject(new Error("storybook is not configured for this project"))
-    this.codeService.ensureCachedNodeModules(inst)
+    this.codeService.ensureNodeModules(inst)
     return Promise.all(storybooks.map((storybook) => {
       const wsFrontend = join(inst.materializedRoot, relative(this.projectRoot, storybook.frontendDir))
       this.sbManager.prepare(wsFrontend)
@@ -862,7 +862,7 @@ export class WorkspaceManager {
     const target = (this.caps.runs ?? []).find((candidate) => candidate.id === targetId)
     if (!target) return Promise.reject(new Error("run target not found"))
     const inst = this.activeInstance(ws)
-    this.codeService.ensureCachedNodeModules(inst)
+    this.codeService.ensureNodeModules(inst)
     const root = inst.materializedRoot
     return opts?.restart
       ? this.runManager.restart(wsId, root, target)
@@ -914,7 +914,7 @@ export class WorkspaceManager {
   async addGoal(
     wsId: string,
     goal: Omit<Goal, "status" | "lifecycle" | "mergePolicy" | "workingInstanceId" | "mergedInstanceId">,
-    opts?: { fork?: boolean; autoMerge?: boolean },
+    opts?: { fork?: boolean },
   ): Promise<AddGoalResult> {
     let ws = this.workspaces.get(wsId)
     if (!ws) return { error: "workspace not found", status: 404 }
@@ -961,7 +961,7 @@ export class WorkspaceManager {
       ...goal,
       status: "pending",
       lifecycle: { stage: "initializing", state: "creating_goal" },
-      mergePolicy: { autoMerge: opts?.autoMerge ?? DEFAULT_MERGE_POLICY.autoMerge },
+      mergePolicy: DEFAULT_MERGE_POLICY,
       baseInstanceId: null,
       workingInstanceId: null,
       mergedInstanceId: null,
@@ -977,16 +977,6 @@ export class WorkspaceManager {
     const goal = ws.goals.find((g) => g.id === goalId)
     if (!goal) return null
     goal.label = label
-    this.save(ws)
-    return goal
-  }
-
-  setGoalAutoMerge(wsId: string, goalId: string, autoMerge: boolean): Goal | null {
-    const ws = this.workspaces.get(wsId)
-    if (!ws) return null
-    const goal = ws.goals.find((g) => g.id === goalId)
-    if (!goal) return null
-    goal.mergePolicy = { autoMerge }
     this.save(ws)
     return goal
   }
@@ -1399,22 +1389,13 @@ export class WorkspaceManager {
 
       setGoalLifecycle(goal, { stage: "impl", state: "agent_finished" })
       this.save(ws)
-      if (!goal.mergePolicy.autoMerge) {
-        await this.captureReviewSnapshots(ws, goal, workingInst, recordAndEmit)
-        goal.status = "done"
-        setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
-        this.appendAgentSummary(goal, collectedEvents)
-        this.save(ws)
-        recordAndEmit({ type: "done", code })
-        return
-      }
-
-      const accepted = await this.acceptCodeGoalResult(ws, goal, workingInst, recordAndEmit, { externalOnEvent: onEvent })
-      if (accepted) {
-        this.appendAgentSummary(goal, collectedEvents)
-        recordAndEmit({ type: "done", code })
-        this.maybeStartNextQueued(ws.id)
-      }
+      await this.captureReviewSnapshots(ws, goal, workingInst, recordAndEmit)
+      goal.status = "done"
+      setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
+      this.appendAgentSummary(goal, collectedEvents)
+      this.save(ws)
+      recordAndEmit({ type: "done", code })
+      return
     })
   }
 
@@ -1534,7 +1515,7 @@ export class WorkspaceManager {
     )
     this.shutdownWorkspaceStorybooks(ws, preservedStorybooks)
     this.runManager.shutdownWorkspace(ws.id)
-    this.codeService.ensureCachedNodeModules(inst)
+    this.codeService.ensureNodeModules(inst)
     if (this.storybookCaps().length > 0) {
       this.startStorybooks(inst).catch((e: any) => {
         console.error(`[workspace] storybook for ${ws.id} failed to restart:`, e.message)
@@ -1908,7 +1889,7 @@ export class WorkspaceManager {
 
       setGoalLifecycle(goal, { stage: "impl", state: "agent_finished" })
       this.save(ws)
-      if (!goal.mergePolicy.autoMerge && !opts?.continueMergeOnClose) {
+      if (!opts?.continueMergeOnClose) {
         goal.status = "done"
         setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
         this.appendAgentSummary(goal, collectedEvents)

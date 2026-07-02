@@ -204,12 +204,6 @@ export function buildData(
       const componentNode = (comp: ComponentEntry): SNode => {
       const compTarget = `component:${comp.name}`
       const componentStatus = diff[compTarget] ?? (comp.propsName ? diff[`props:${comp.propsName}`] : undefined)
-      const codeNode: SNode = {
-        id: `code:${f.file}:${comp.name}`,
-        name: "code",
-        kind: "code" as Kind,
-        sel: { file: f.file, component: comp.name, view: "code" },
-      }
       const storyNodes: SNode[] = comp.stories.map((s) => {
         const sc = storyCount(s.id)
         return {
@@ -220,7 +214,7 @@ export function buildData(
           sel: { file: f.file, component: comp.name, view: "story" as View, storyId: s.id },
         }
       })
-      const children = [codeNode, ...storyNodes]
+      const children = storyNodes
       const totalComments = rollUpComments(storyNodes)
       const defaultSel = comp.stories.length > 0
         ? { file: f.file, component: comp.name, view: "story" as View, storyId: comp.stories[0]!.id }
@@ -533,13 +527,11 @@ export function SidebarTree({
       ? `story:${selection.storyId}`
       : (() => {
           const fe = files.find((f) => f.file === selection.file)
-          if (fe && selection.component && selection.view === "code") return `code:${fe.file}:${selection.component}`
           if (fe && selection.component) return `comp:${fe.file}:${selection.component}`
           if (fe && componentsOf(fe).length === 1) {
             const component = componentsOf(fe)[0]!
             const others = fe.items.filter((it) => it.name !== component.name)
             if (others.length === 0) {
-              if (selection.view === "code") return `code:${fe.file}:${component.name}`
               return `comp:${component.name}`
             }
           }

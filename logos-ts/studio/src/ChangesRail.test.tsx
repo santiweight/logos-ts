@@ -20,6 +20,7 @@ const baseProps = {
   onSelectGoal: noop as (id: string) => void,
   onDeleteWorkspace: noop as (id: string) => void,
   onDeleteGoal: noop as (wsId: string, goalId: string) => void,
+  onAcceptGoal: noop as (goalId: string) => void,
   runningGoals: new Set<string>(),
   onResizeStart: noop,
 }
@@ -55,7 +56,7 @@ describe("ChangesRail", () => {
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
   })
 
-  it("shows spinner when a goal is in runningGoals", () => {
+  it("shows spinner when a change is in runningGoals", () => {
     const workspaces = [
       {
         id: "ws-1",
@@ -107,7 +108,7 @@ describe("ChangesRail", () => {
     expect(screen.queryByTitle("Agent running")).not.toBeInTheDocument()
   })
 
-  it("shows spinner only for workspace with running goal, not others", () => {
+  it("shows spinner only for workspace with a running change, not others", () => {
     const workspaces = [
       {
         id: "ws-1",
@@ -146,7 +147,7 @@ describe("ChangesRail", () => {
     expect(spinners).toHaveLength(1)
   })
 
-  it("shows only the generated summary for goal rows", () => {
+  it("shows only the generated summary for change rows", () => {
     const workspaces = [
       {
         id: "ws-1",
@@ -282,7 +283,7 @@ describe("ChangesRail", () => {
     expect(onCreatePullRequest).toHaveBeenCalledWith("ws-1")
   })
 
-  it("does not show visible trash controls on goal rows", () => {
+  it("does not show visible trash controls on change rows", () => {
     const workspaces = [
       {
         id: "ws-1",
@@ -299,6 +300,6 @@ describe("ChangesRail", () => {
     ]
     render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
 
-    expect(screen.queryByTitle("Delete goal (⌘⌫)")).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Delete change (⌘⌫)")).not.toBeInTheDocument()
   })
 })

@@ -4,6 +4,7 @@ import { execFile, execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, watch } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve, join, relative, sep } from "node:path"
+import { homedir } from "node:os"
 import type { StudioIndex } from "./src/types"
 import { authPlugin } from "./server/auth"
 import { createArchApi } from "./server/arch-api"
@@ -26,6 +27,7 @@ const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
 const STUDIO_RUNTIME_DIR = resolve(process.env.LOGOS_STUDIO_RUNTIME_DIR ?? defaultLogosRuntimeDir(LOGOS_TS))
 const DEMO_STATE_FILE = resolve(STUDIO_RUNTIME_DIR, "active-demo.json")
+const DEFAULT_SOURCE_PROJECT = resolve(homedir(), "projects/santiweightdotcom")
 const EMBEDDED_HN_JOBS = resolve(LOGOS_TS, "demos/hn-jobs")
 const DEMOS = [
   { id: "hn-jobs", name: "HN Jobs", root: EMBEDDED_HN_JOBS },
@@ -86,6 +88,9 @@ function sourceProjectForStartup(): { demoId: DemoId | "custom"; sourceProject: 
     return { demoId: demoIdForSource(sourceProject), sourceProject }
   }
   const stored = demoById(storedDemoId())
+  if (!stored && existsSync(DEFAULT_SOURCE_PROJECT)) {
+    return { demoId: "custom", sourceProject: DEFAULT_SOURCE_PROJECT }
+  }
   const demo = stored ?? DEMOS[0]
   return { demoId: demo.id, sourceProject: demo.root }
 }
@@ -464,7 +469,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
             component: body.component ?? null,
             appPath: body.appPath ?? null,
             runTargetId: body.runTargetId ?? null,
-          }, { fork: body.fork === true, autoMerge: body.autoMerge !== false })
+          }, { fork: body.fork === true })
           if ("error" in result) {
             res.statusCode = result.status
             res.end(JSON.stringify({ error: result.error }))
@@ -489,18 +494,6 @@ function studioApi(runtime: StudioRuntime): Plugin {
           const result = await wsMgr.mergeGoal(wsId, goalId, (event) => events.push(event))
           res.statusCode = result.ok ? 200 : 400
           res.end(JSON.stringify({ ...result, events }))
-          return
-        }
-
-        // PATCH /api/workspaces/:id/goals/:goalId — update goal controls such as auto-merge
-        const updateGoalMatch = sub.match(/^([^/]+)\/goals\/([^/]+)$/)
-        if (req.method === "PATCH" && updateGoalMatch?.[1] && updateGoalMatch[2]) {
-          const wsId = updateGoalMatch[1]
-          const goalId = decodeURIComponent(updateGoalMatch[2])
-          const body = JSON.parse((await readBody(req)) || "{}")
-          const goal = wsMgr.setGoalAutoMerge(wsId, goalId, body.autoMerge !== false)
-          if (!goal) { res.statusCode = 404; res.end(JSON.stringify({ error: "goal not found" })); return }
-          res.end(JSON.stringify(goal))
           return
         }
 

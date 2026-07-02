@@ -1,7 +1,7 @@
 import { constants as fsConstants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { execFile, execFileSync } from "node:child_process"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
-import { NodeModulesCache, findPackageDirs } from "./node-modules-cache.js"
+import { NodeModulesInstaller, findPackageDirs } from "./node-modules-installer.js"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
@@ -48,7 +48,7 @@ export interface WorkspaceCodeServiceOptions {
   runsDir: string
   projectRoot: string
   nodeModulesDirs: string[]
-  cacheNodeModules?: boolean
+  installNodeModules?: boolean
 }
 
 function isSubpath(parent: string, child: string): boolean {
@@ -89,14 +89,11 @@ export class WorkspaceCodeService {
     return this.commitWorkingTree(instance.materializedRoot, message)
   }
 
-  ensureCachedNodeModules(instance: CodeWorkspaceInstance): void {
-    if (this.opts.cacheNodeModules === false) return
-    const nmCache = new NodeModulesCache()
-    for (const pkgDir of this.packageDirsToCache(instance.materializedRoot)) {
-      const result = nmCache.ensureFor(pkgDir)
-      const rel = relative(instance.materializedRoot, pkgDir)
-      const target = join(instance.materializedRoot, rel, "node_modules")
-      if (resolve(result.nodeModulesPath) !== resolve(target)) nmCache.relinkTo(result.nodeModulesPath, target)
+  ensureNodeModules(instance: CodeWorkspaceInstance): void {
+    if (this.opts.installNodeModules === false) return
+    const nodeModules = new NodeModulesInstaller()
+    for (const pkgDir of this.packageDirsToInstall(instance.materializedRoot)) {
+      nodeModules.ensureFor(pkgDir)
     }
   }
 
@@ -191,20 +188,17 @@ export class WorkspaceCodeService {
         },
       })
       if (opts.installNodeModules !== false) {
-        const nmCache = new NodeModulesCache()
-        for (const pkgDir of this.packageDirsToCache(dir)) {
-          const result = nmCache.ensureFor(pkgDir)
-          const rel = relative(dir, pkgDir)
-          const target = join(dir, rel, "node_modules")
-          if (resolve(result.nodeModulesPath) !== resolve(target)) nmCache.linkTo(result.nodeModulesPath, target)
+        const nodeModules = new NodeModulesInstaller()
+        for (const pkgDir of this.packageDirsToInstall(dir)) {
+          nodeModules.ensureFor(pkgDir)
         }
       }
     }
     return dir
   }
 
-  private packageDirsToCache(sourceRoot: string): string[] {
-    if (this.opts.cacheNodeModules === false) return []
+  private packageDirsToInstall(sourceRoot: string): string[] {
+    if (this.opts.installNodeModules === false) return []
     return findPackageDirs(sourceRoot)
   }
 

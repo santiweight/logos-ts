@@ -206,7 +206,7 @@ function doneGoal(id: string, label: string, target: string, extra: Partial<Goal
     mode: "code",
     createdAt: Date.now(),
     status: "done",
-    mergePolicy: { autoMerge: true },
+    mergePolicy: { autoMerge: false },
     replies: [],
     ...extra,
   }
@@ -349,15 +349,19 @@ class QaApi {
       const workspaceId = decodeURIComponent(goalPost[1])
       const body = readBody()
       this.createdGoals.push({ workspaceId, body })
+      const ws = this.workspaces.get(workspaceId)
       const goal = doneGoal(`goal-${this.createdGoals.length}`, String(body["goalName"] ?? body["label"] ?? "QA goal"), String(body["target"] ?? ""), {
         text: String(body["text"] ?? ""),
         mode: body["mode"] === "arch" ? "arch" : "code",
         storyId: typeof body["storyId"] === "string" ? body["storyId"] : null,
         selector: typeof body["selector"] === "string" ? body["selector"] : null,
         component: typeof body["component"] === "string" ? body["component"] : null,
-        mergePolicy: { autoMerge: body["autoMerge"] !== false },
+        mergePolicy: { autoMerge: false },
+        lifecycle: { stage: "impl", state: "ready_to_merge" },
+        baseInstanceId: ws?.baseInstanceId ?? null,
+        workingInstanceId: ws?.activeInstanceId ?? null,
       })
-      this.workspaces.get(workspaceId)?.goals.push(goal)
+      ws?.goals.push(goal)
       return json({ ...goal, workspaceId })
     }
 
@@ -398,17 +402,6 @@ class QaApi {
       const workspaceId = decodeURIComponent(reindexPost[1])
       this.reindexCalls.push(workspaceId)
       return json(this.workspaces.get(workspaceId) ?? {})
-    }
-
-    const goalPatch = sub.match(/^([^/]+)\/goals\/([^/]+)$/)
-    if (request.method() === "PATCH" && goalPatch?.[1] && goalPatch[2]) {
-      const workspaceId = decodeURIComponent(goalPatch[1])
-      const goalId = decodeURIComponent(goalPatch[2])
-      const body = readBody()
-      const goal = this.workspaces.get(workspaceId)?.goals.find((candidate) => candidate.id === goalId)
-      if (!goal) return json({ error: "goal not found" }, 404)
-      goal.mergePolicy = { autoMerge: body["autoMerge"] !== false }
-      return json(goal)
     }
 
     const goalDelete = sub.match(/^([^/]+)\/goals\/([^/]+)$/)
@@ -544,17 +537,18 @@ describe("Studio QA workflow", () => {
 
       await page.locator(".sidebar-tree .anode.comp", { hasText: "JobCard" }).click({ modifiers: ["Alt"] })
       await page.getByRole("textbox").fill("Make the title more specific and keep salary visible")
-      await page.getByRole("button", { name: "Comment" }).click()
+      await page.getByRole("button", { name: "Create Change" }).click()
+      await waitFor(() => api.workspaceCreates.length === 1)
+      expect(api.workspaceCreates[0]).toEqual({ fromWorkspaceId: "ws-main", kind: "code" })
       await waitFor(() => api.createdGoals.length === 1)
       expect(api.createdGoals[0]).toMatchObject({
-        workspaceId: "ws-main",
+        workspaceId: "ws-created-1",
         body: {
           target: "component:JobCard",
           label: "JobCard",
           text: "Make the title more specific and keep salary visible",
           mode: "code",
-          fork: false,
-          autoMerge: true,
+          fork: true,
         },
       })
       await page.locator(".rail-row.comment[title^='JobCard (']").waitFor({ timeout: 15_000 })
@@ -569,14 +563,14 @@ describe("Studio QA workflow", () => {
           label: "strong Senior Platform Engineer",
           text: "Check that the story comment creates a targeted goal",
           mode: "code",
-          fork: false,
-          autoMerge: false,
           htmlContext: "selected: <strong>Senior Platform Engineer</strong>",
         }, "*")
       })
+      await waitFor(() => api.workspaceCreates.length === 2)
+      expect(api.workspaceCreates[1]).toEqual({ fromWorkspaceId: "ws-created-1", kind: "code" })
       await waitFor(() => api.createdGoals.length === 2)
       expect(api.createdGoals[1]).toMatchObject({
-        workspaceId: "ws-main",
+        workspaceId: "ws-created-2",
         body: {
           target: "component:JobCard",
           label: "strong Senior Platform Engineer",
@@ -585,11 +579,12 @@ describe("Studio QA workflow", () => {
           selector: ":scope > article > strong",
           component: "JobCard",
           htmlContext: "selected: <strong>Senior Platform Engineer</strong>",
-          autoMerge: false,
+          fork: true,
         },
       })
 
-      await page.getByRole("tab", { name: /Changes 2/ }).click()
+      await page.getByRole("tab", { name: /Changes/ }).click()
+      await page.getByRole("button", { name: /Snapshots/ }).click()
       await page.getByRole("button", { name: "Snapshot diff" }).click()
       const reviewText = await page.locator(".review-panel").innerText()
       expect(reviewText).toContain("JobCard / Default")
@@ -597,16 +592,12 @@ describe("Studio QA workflow", () => {
       expect(reviewText).toContain("Platform Engineer")
 
       await page.locator(".refresh-btn", { hasText: "↻" }).click()
-      await waitFor(() => api.reindexCalls.includes("ws-main"))
+      await waitFor(() => api.reindexCalls.includes("ws-created-2"))
 
       await page.locator("button[title='New workspace']").click()
-      await waitFor(() => api.workspaceCreates.length === 1)
-      expect(api.workspaceCreates[0]).toEqual({ kind: "code" })
-      await page.locator(".rail-row.ws", { hasText: "Workspace 1" }).waitFor({ timeout: 15_000 })
-
-      await page.locator("button[title='Fork workspace']").click()
-      await waitFor(() => api.workspaceCreates.length === 2)
-      expect(api.workspaceCreates[1]).toEqual({ fromWorkspaceId: "ws-created-1", kind: "code" })
+      await waitFor(() => api.workspaceCreates.length === 3)
+      expect(api.workspaceCreates[2]).toEqual({ kind: "code" })
+      await page.locator(".rail-row.ws", { hasText: "Workspace 3" }).waitFor({ timeout: 15_000 })
 
       await page.locator("button[title='Reset all workspaces']").click()
       await waitFor(() => api.resetCount === 1)

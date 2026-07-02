@@ -132,7 +132,7 @@ describe("WorkspaceCodeService", () => {
     expect(git(instance.materializedRoot, ["ls-files"])).not.toContain(".agent-runs")
   })
 
-  it("provides node_modules via cache and excludes them from git", () => {
+  it("provides local pnpm node_modules and excludes them from git", () => {
     const { projectRoot, runsDir } = createService()
     writeFileSync(join(projectRoot, ".gitignore"), "node_modules\n")
     const service = new WorkspaceCodeService({ runsDir, projectRoot, nodeModulesDirs: [] })
@@ -140,7 +140,7 @@ describe("WorkspaceCodeService", () => {
     const instance = service.createInstance("ws", projectRoot, {})
 
     expect(existsSync(join(instance.materializedRoot, "node_modules"))).toBe(true)
-    expect(lstatSync(join(instance.materializedRoot, "node_modules")).isSymbolicLink()).toBe(true)
+    expect(lstatSync(join(instance.materializedRoot, "node_modules")).isSymbolicLink()).toBe(false)
     expect(git(instance.materializedRoot, ["status", "--porcelain"])).toBe("")
     expect(git(instance.materializedRoot, ["ls-files"])).not.toContain("node_modules")
   })
@@ -152,7 +152,7 @@ describe("WorkspaceCodeService", () => {
     const instance = service.createInstance("ws", projectRoot, {}, { installNodeModules: false })
 
     expect(existsSync(join(instance.materializedRoot, "node_modules"))).toBe(false)
-    service.ensureCachedNodeModules(instance)
+    service.ensureNodeModules(instance)
     expect(existsSync(join(instance.materializedRoot, "node_modules"))).toBe(true)
   })
 

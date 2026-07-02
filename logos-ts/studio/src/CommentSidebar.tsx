@@ -37,7 +37,7 @@ function lifecycleFromStatus(status: Goal["status"] | "idle"): GoalLifecycle | n
 
 function lifecycleLabel(lifecycle: GoalLifecycle | null): string {
   if (!lifecycle) return "Idle"
-  if (lifecycle.stage === "impl" && lifecycle.state === "ready_to_merge") return "Ready to merge"
+  if (lifecycle.stage === "impl" && lifecycle.state === "ready_to_merge") return "Ready to accept"
   return lifecycle.stage
 }
 
@@ -72,7 +72,6 @@ export function CommentSidebar({
   running,
   onNavigate,
   onReply,
-  onToggleAutoMerge,
   onMerge,
   onResizeStart,
 }: {
@@ -80,14 +79,12 @@ export function CommentSidebar({
   running: boolean
   onNavigate: (goal: Goal) => void
   onReply: (goalId: string, text: string) => void
-  onToggleAutoMerge: (goalId: string, autoMerge: boolean) => void
   onMerge: (goalId: string) => void
   onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
 }) {
   const [reply, setReply] = useState("")
   const status = displayStatus(goal, running)
   const lifecycle = goal?.lifecycle ?? lifecycleFromStatus(goal?.status ?? "idle")
-  const autoMerge = goal?.mergePolicy?.autoMerge ?? true
   const canMerge = goal != null
     && !running
     && goal.lifecycle?.stage === "impl"
@@ -114,12 +111,12 @@ export function CommentSidebar({
     <aside className="comment-sidebar">
       <div className="comment-resize" title="Resize thread panel" onPointerDown={onResizeStart} />
       <div className="cs-header">
-        <span className="cs-title">Thread</span>
+        <span className="cs-title">Change</span>
       </div>
 
       {goal == null ? (
         <div className="cs-empty">
-          Select a goal from a workspace.
+          Select a Change from the rail.
         </div>
       ) : (
         <>
@@ -136,22 +133,13 @@ export function CommentSidebar({
               {lifecycleDetail(lifecycle) && <span>{lifecycleDetail(lifecycle)}</span>}
             </div>
             <div className="cs-actions">
-              <button
-                className={`cs-auto-merge ${autoMerge ? "active" : ""}`}
-                type="button"
-                aria-pressed={autoMerge}
-                title="Auto merge into the parent workspace"
-                onClick={() => onToggleAutoMerge(goal.id, !autoMerge)}
-              >
-                Auto merge
-              </button>
               {canMerge && (
                 <button
                   className="cs-merge"
                   type="button"
                   onClick={() => onMerge(goal.id)}
                 >
-                  Merge
+                  Accept
                 </button>
               )}
               <button className="cs-target-link" type="button" onClick={() => onNavigate(goal)}>

@@ -70,7 +70,7 @@ function createManager(opts?: {
   setupProject?: (projectRoot: string) => void
   caps?: Record<string, unknown> | ((projectRoot: string) => Record<string, unknown>)
   initializeWorkspaces?: boolean
-  cacheNodeModules?: boolean
+  installNodeModules?: boolean
   tsx?: string
 }): WorkspaceManager {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
@@ -97,7 +97,7 @@ function createManager(opts?: {
     tsx: opts?.tsx ?? TSX,
     getIndex: async () => ({ root: projectRoot, files: [] }),
     initializeWorkspaces: opts?.initializeWorkspaces ?? false,
-    cacheNodeModules: opts?.cacheNodeModules ?? false,
+    installNodeModules: opts?.installNodeModules ?? false,
     ...(opts?.spawned
       ? {
           spawnAgent: (_command, args, options) => {
@@ -347,7 +347,7 @@ describe("WorkspaceManager workspace kinds", () => {
 
   it("forks dependency folders from the parent workspace instance", async () => {
     const mgr = createManager({
-      cacheNodeModules: true,
+      installNodeModules: true,
       setupProject: (projectRoot) => {
         writeFileSync(join(projectRoot, "package.json"), JSON.stringify({
           name: `dependency-fork-${Date.now()}`,
@@ -371,7 +371,9 @@ describe("WorkspaceManager workspace kinds", () => {
     const childState = mgr.get(child.id)
     if (!childState) throw new Error("missing child workspace")
 
-    expect(readFileSync(join(childState.forkDir, "node_modules", ".bin", "storybook"), "utf8")).toBe("storybook bin")
+    const storybookBin = readFileSync(join(childState.forkDir, "node_modules", ".bin", "storybook"), "utf8")
+    expect(storybookBin).toContain("cmd-shim-target=")
+    expect(storybookBin).toContain("local-storybook")
   })
 
   function expectGoal(result: AddGoalResult): { goal: Goal; workspaceId: string } {
@@ -846,6 +848,8 @@ describe("WorkspaceManager workspace kinds", () => {
 
     spawned[1]!.emit("close", 0)
     await waitFor(() => expect(mgr.goalsForWorkspace(arch.id)[0]?.status).toBe("done"), 60_000)
+    expect(mgr.goalsForWorkspace(arch.id)[0]?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" })
+    expect(await mgr.mergeGoal(arch.id, "arch-change", (event) => events.push(event))).toEqual({ ok: true, status: "completed" })
     expect(mgr.goalsForWorkspace(arch.id)[0]?.lifecycle).toEqual({ stage: "merged", state: "complete" })
   }, 90_000)
 
@@ -998,9 +1002,12 @@ describe("WorkspaceManager workspace kinds", () => {
     writeFileSync(join(spawned[1]!.cwd, "thing.txt"), "second\n")
 
     spawned[0]!.emit("close", 0)
-    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === first.id)?.status).toBe("done"))
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === first.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" }))
+    expect(await mgr.mergeGoal(code.id, first.id, () => undefined)).toEqual({ ok: true, status: "completed" })
 
     spawned[1]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === second.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" }))
+    expect(await mgr.mergeGoal(code.id, second.id, (event) => secondEvents.push(event))).toEqual({ ok: true, status: "resumed" })
     await waitFor(() => expect(spawned).toHaveLength(3))
 
     expect(spawned[2]!.cwd).toBe(spawned[1]!.cwd)
@@ -1036,6 +1043,7 @@ describe("WorkspaceManager workspace kinds", () => {
     spawned[0]!.emit("close", 0)
 
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("done"))
+    expect(await mgr.mergeGoal(code.id, task.id, (event) => events.push(event))).toEqual({ ok: true, status: "completed" })
     expect(spawned).toHaveLength(1)
     expect(events.some((event) => String(event.message ?? "").includes("rebase needs agent attention"))).toBe(false)
     const state = mgr.get(code.id)
@@ -1043,7 +1051,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(readFileSync(join(state.forkDir, "thing.txt"), "utf8")).toBe("edited\n")
   }, 60_000)
 
-  it("pauses a completed code goal for manual merge when auto-merge is disabled", async () => {
+  it("pauses a completed code goal until it is accepted", async () => {
     const spawned: FakeAgentProcess[] = []
     const mgr = createManager({
       spawned,
@@ -1053,7 +1061,7 @@ describe("WorkspaceManager workspace kinds", () => {
     })
     const code = await mgr.create({ kind: "code" })
     const baseInstanceId = code.activeInstanceId
-    const task = expectGoal(await mgr.addGoal(code.id, goal("edit", "code"), { autoMerge: false })).goal
+    const task = expectGoal(await mgr.addGoal(code.id, goal("edit", "code"))).goal
 
     expect(mgr.processById(code.id, task.id, () => undefined)).toBe(task.id)
     await waitFor(() => expect(spawned).toHaveLength(1))
@@ -1086,7 +1094,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(events.some((event) => String(event.message ?? "").includes("workspace instance accepted"))).toBe(true)
   }, 60_000)
 
-  it("auto-merges child workspace code goals into the parent and refreshes siblings", async () => {
+  it("accepts child workspace code goals into the parent and refreshes siblings", async () => {
     const spawned: FakeAgentProcess[] = []
     const mgr = createManager({
       spawned,
@@ -1111,8 +1119,9 @@ describe("WorkspaceManager workspace kinds", () => {
     spawned[0]!.emit("close", 0)
 
     await waitFor(() => {
-      expect(mgr.goalsForWorkspace(childB.id).find((g) => g.id === task.id)?.lifecycle).toEqual({ stage: "merged", state: "complete" })
+      expect(mgr.goalsForWorkspace(childB.id).find((g) => g.id === task.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" })
     })
+    expect(await mgr.mergeGoal(childB.id, task.id, (event) => events.push(event))).toEqual({ ok: true, status: "completed" })
     const parentAfter = mgr.get(parent.id)
     const childBAfter = mgr.get(childB.id)
     const childCAfter = mgr.get(childC.id)
@@ -1148,9 +1157,11 @@ describe("WorkspaceManager workspace kinds", () => {
     writeFileSync(join(spawned[1]!.cwd, "frontend", "__snapshots__", "stories.test.tsx.snap"), "second snapshot\n")
 
     spawned[0]!.emit("close", 0)
-    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === first.id)?.status).toBe("done"))
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === first.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" }))
+    expect(await mgr.mergeGoal(code.id, first.id, () => undefined)).toEqual({ ok: true, status: "completed" })
     spawned[1]!.emit("close", 0)
-    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === second.id)?.status).toBe("done"))
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === second.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" }))
+    expect(await mgr.mergeGoal(code.id, second.id, (event) => secondEvents.push(event))).toEqual({ ok: true, status: "completed" })
 
     expect(spawned).toHaveLength(2)
     expect(secondEvents.some((event) => String(event.message ?? "").includes("auto-resolved generated snapshot conflicts"))).toBe(true)
@@ -1181,6 +1192,7 @@ describe("WorkspaceManager workspace kinds", () => {
     spawned[0]!.emit("close", 0)
 
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("done"))
+    expect(await mgr.mergeGoal(code.id, task.id, () => undefined)).toEqual({ ok: true, status: "completed" })
     const state = mgr.get(code.id)
     if (!state) throw new Error("missing workspace")
     expect(readFileSync(join(state.forkDir, "frontend", "__snapshots__", "stories.test.tsx.snap"), "utf8")).toBe("regenerated snapshot\n")
@@ -1210,6 +1222,8 @@ describe("WorkspaceManager workspace kinds", () => {
 
     spawned[0]!.emit("close", 0)
 
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" }))
+    expect(await mgr.mergeGoal(code.id, task.id, (event) => events.push(event))).toEqual({ ok: true, status: "resumed" })
     await waitFor(() => expect(spawned).toHaveLength(2))
     expect(spawned[1]!.cwd).toBe(spawned[0]!.cwd)
     expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.status).toBe("running")
@@ -1245,6 +1259,8 @@ describe("WorkspaceManager workspace kinds", () => {
     writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "edited\n")
 
     spawned[0]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" }))
+    expect(await mgr.mergeGoal(code.id, task.id, (event) => events.push(event))).toEqual({ ok: true, status: "resumed" })
     await waitFor(() => expect(spawned).toHaveLength(2))
     spawned[1]!.emit("close", 0)
 
@@ -1311,7 +1327,7 @@ describe("WorkspaceManager workspace kinds", () => {
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
       initializeWorkspaces: false,
-      cacheNodeModules: false,
+      installNodeModules: false,
     })
     const created = await mgr.create({ kind: "arch", name: "db-backed" })
     expect(existsSync(join(root, ".workspaces"))).toBe(false)
@@ -1329,7 +1345,7 @@ describe("WorkspaceManager workspace kinds", () => {
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
       initializeWorkspaces: false,
-      cacheNodeModules: false,
+      installNodeModules: false,
     })
 
     expect(restored.get(created.id)).toMatchObject({
@@ -1372,7 +1388,7 @@ describe("WorkspaceManager workspace kinds", () => {
       tsx: TSX,
       getIndex: async () => ({ root: sourceProjectRoot, files: [] }),
       initializeWorkspaces: false,
-      cacheNodeModules: false,
+      installNodeModules: false,
     })
     const workspace = await mgr.create({ name: "Publish Me" })
     const state = mgr.get(workspace.id)
@@ -1452,7 +1468,7 @@ describe("stale index cache cleanup", () => {
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
       initializeWorkspaces: false,
-      cacheNodeModules: false,
+      installNodeModules: false,
     })
 
     const ws = mgr.get("ws-stale")
@@ -1526,7 +1542,7 @@ describe("stale index cache cleanup", () => {
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
       initializeWorkspaces: false,
-      cacheNodeModules: false,
+      installNodeModules: false,
     })
 
     const ws = mgr.get("ws-clean")
@@ -1594,7 +1610,7 @@ describe("stale index cache cleanup", () => {
       tsx: TSX,
       getIndex: async () => ({ root: projectRoot, files: [] }),
       initializeWorkspaces: false,
-      cacheNodeModules: false,
+      installNodeModules: false,
     })
 
     const ws = mgr.get("ws-multi")

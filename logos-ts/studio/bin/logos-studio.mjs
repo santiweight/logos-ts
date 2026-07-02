@@ -4,9 +4,11 @@ import { spawn } from "node:child_process"
 import { resolve, dirname } from "node:path"
 import { existsSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import { homedir } from "node:os"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const STUDIO = resolve(__dirname, "..")
+const DEFAULT_PROJECT = resolve(homedir(), "projects/santiweightdotcom")
 
 const args = process.argv.slice(2)
 let projectRoot = null
@@ -20,7 +22,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-projectRoot = projectRoot || resolve(process.cwd())
+projectRoot = projectRoot || DEFAULT_PROJECT
 
 if (!existsSync(projectRoot)) {
   console.error(`Error: path does not exist: ${projectRoot}`)

@@ -123,7 +123,7 @@ export function AgentPanel({
         {events.length === 0 && !running && (
           <div className="ag-line ag-dim">
             {goal
-              ? `no agent log for this goal yet`
+              ? `no agent log for this change yet`
               : `no agent activity yet — declare a change (alt-click a node) and an agent starts here.`}
           </div>
         )}
