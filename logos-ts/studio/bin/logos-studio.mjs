@@ -38,11 +38,11 @@ if (!hasTsFiles) {
 
 console.log(`\nLogos Studio`)
 console.log(`  Project: ${projectRoot}`)
-if (port) console.log(`  Port:    ${port}`)
+if (port) console.log(`  Port:    ${port} (preferred)`)
 console.log()
 
 const viteArgs = ["dev"]
-if (port) viteArgs.push("--port", port, "--strictPort")
+if (port) viteArgs.push("--port", port)
 
 const child = spawn(resolve(STUDIO, "node_modules/.bin/vite"), viteArgs, {
   cwd: STUDIO,
