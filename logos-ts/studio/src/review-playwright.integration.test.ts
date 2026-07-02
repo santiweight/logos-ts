@@ -70,12 +70,12 @@ function indexWithCapture(snapshot: string | null): StudioIndex {
   return { root: "/mock/project", files: [file] }
 }
 
-function createWorkspace(base: StudioIndex, active: StudioIndex): Workspace {
+function createWorkspace(base: StudioIndex, active: StudioIndex, parentId: string | null = null): Workspace {
   return {
     id: "ws-review",
     name: "Review fixture",
     kind: "code",
-    parentId: null,
+    parentId,
     createdAt: 1,
     baseInstanceId: "inst-base",
     activeInstanceId: "inst-active",
@@ -161,11 +161,13 @@ describe("review UI", () => {
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
   }, 60_000)
 
-  it("shows captured snapshot diffs against the workspace base instance", async () => {
+  it("shows captured snapshot diffs against the child workspace base instance", async () => {
     const projectIndex = indexWithCapture(vitestSnapshot('<article class="job-row">Original index</article>'))
     const baseIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><span>Senior Engineer</span></article>'))
     const activeIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><strong>Senior Engineer</strong></article>'))
-    const workspace = createWorkspace(baseIndex, activeIndex)
+    const parentIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><em>Parent latest</em></article>'))
+    const parent = createWorkspace(projectIndex, parentIndex)
+    const workspace = createWorkspace(baseIndex, activeIndex, "ws-parent")
     const page = await browser.newPage()
     await seedCodeSelection(page)
 
@@ -185,6 +187,7 @@ describe("review UI", () => {
       if (path === "/api/demos") return json({ active: "", demos: [] })
       if (path === "/api/workspaces") return json([workspaceMeta(workspace)])
       if (path === "/api/workspaces/ws-review") return json(workspace)
+      if (path === "/api/workspaces/ws-parent") return json(parent)
 
       return json({})
     })
@@ -205,6 +208,7 @@ describe("review UI", () => {
       bodyText = await page.locator("body").innerText()
       expect(bodyText).toContain('<span>Senior Engineer</span>')
       expect(bodyText).toContain('<strong>Senior Engineer</strong>')
+      expect(bodyText).not.toContain("<em>Parent latest</em>")
       expect(bodyText).not.toContain("Original index")
     } finally {
       await page.close()
@@ -215,7 +219,7 @@ describe("review UI", () => {
     const projectIndex = indexWithCapture(vitestSnapshot('<article class="job-row">Original index</article>'))
     const baseIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><span>Senior Engineer</span></article>'))
     const activeIndex = indexWithCapture(vitestSnapshot('<article class="job-row"><strong>Senior Engineer</strong></article>'))
-    const workspace = createWorkspace(baseIndex, activeIndex)
+    const workspace = createWorkspace(baseIndex, activeIndex, "ws-parent")
     const page = await browser.newPage()
     await seedCodeSelection(page)
     let storybookStarts = 0

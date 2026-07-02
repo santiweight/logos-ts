@@ -638,11 +638,6 @@ export function App() {
   const loadWorkspaceReviewBase = useCallback(async (ws: Workspace, goalId?: string | null): Promise<StudioIndex> => {
     const goalBase = selectGoalReviewBaseIndex(ws, goalId)
     if (goalBase) return goalBase
-    if (!ws.parentId) return selectWorkspaceReviewBaseIndex(index, ws)
-    try {
-      const res = await fetch(`/api/workspaces/${ws.parentId}`)
-      if (res.ok) return ((await res.json()) as Workspace).index
-    } catch {}
     return selectWorkspaceReviewBaseIndex(index, ws)
   }, [index])
 
