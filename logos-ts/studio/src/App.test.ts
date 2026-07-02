@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, resolveSidebarFilters, reviewChangeCount, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, sidebarFilterScope, workspaceReadyForDisplay } from "./App"
+import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, resolveSidebarFilters, reviewChangeCount, runCommentPopupFromEvent, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, sidebarFilterScope, workspaceReadyForDisplay } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -263,5 +263,59 @@ describe("createStoryCommentEventDedupe", () => {
 
     expect(accept(event)).toBe(true)
     expect(accept(event)).toBe(true)
+  })
+})
+
+describe("runCommentPopupFromEvent", () => {
+  it("maps an iframe run comment target into parent viewport coordinates", () => {
+    const iframe = document.createElement("iframe")
+    const sourceWindow = { postMessage: () => {} } as unknown as Window
+    Object.defineProperty(iframe, "contentWindow", { value: sourceWindow })
+    document.body.appendChild(iframe)
+    iframe.getBoundingClientRect = () => ({
+      left: 100,
+      top: 50,
+      right: 740,
+      bottom: 450,
+      width: 640,
+      height: 400,
+      x: 100,
+      y: 50,
+      toJSON: () => ({}),
+    })
+
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:run-comment-target",
+        storyId: "run:root-app:/details",
+        runTargetId: "root-app",
+        appPath: "/details",
+        selector: "body > main > span",
+        label: "RunSearchPanel",
+        component: "RunSearchPanel",
+        htmlContext: "selected: <span>Plain target</span>",
+        screenshotDataUrl: "data:image/png;base64,ZmFrZQ==",
+        rect: { left: 20, top: 30, right: 120, bottom: 70, width: 100, height: 40 },
+        viewport: { width: 1280, height: 800 },
+      },
+    })
+    Object.defineProperty(event, "source", { value: sourceWindow })
+    const popup = runCommentPopupFromEvent(event, iframe)
+
+    expect(popup).toMatchObject({
+      target: "component:RunSearchPanel",
+      label: "RunSearchPanel",
+      storyId: "run:root-app:/details",
+      appPath: "/details",
+      selector: "body > main > span",
+      component: "RunSearchPanel",
+      htmlContext: "selected: <span>Plain target</span>",
+      runTargetId: "root-app",
+      screenshotDataUrl: "data:image/png;base64,ZmFrZQ==",
+      x: 110,
+      y: 93,
+    })
+
+    iframe.remove()
   })
 })

@@ -184,7 +184,6 @@ function runCommentScript(target: ProxyTarget): string {
   const runTargetId = ${JSON.stringify(target.targetId)};
   let goals = [];
   let pins = [];
-  let popup = null;
   let hover = null;
   let altDown = false;
   let drawing = null;
@@ -197,12 +196,6 @@ function runCommentScript(target: ProxyTarget): string {
     ".logos-run-comment-highlight{position:fixed;z-index:2147483600;pointer-events:none;border:2px solid #2563eb;background:rgba(37,99,235,.08);box-shadow:0 0 0 9999px rgba(15,23,42,.05)}",
     ".logos-run-comment-label{position:fixed;z-index:2147483601;pointer-events:none;background:#111827;color:white;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 6px;border-radius:4px}",
     ".logos-run-comment-pin{position:fixed;z-index:2147483602;width:22px;height:22px;border-radius:999px;border:0;background:#2563eb;color:white;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;box-shadow:0 4px 14px rgba(15,23,42,.25);cursor:pointer}",
-    ".logos-run-comment-popup{position:fixed;z-index:2147483603;width:320px;background:white;color:#111827;border:1px solid #d1d5db;box-shadow:0 18px 45px rgba(15,23,42,.22);font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}",
-    ".logos-run-comment-popup header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid #e5e7eb;font-weight:600}",
-    ".logos-run-comment-popup textarea{display:block;box-sizing:border-box;width:100%;height:92px;border:0;border-bottom:1px solid #e5e7eb;padding:8px 10px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}",
-    ".logos-run-comment-popup footer{display:flex;gap:6px;justify-content:flex-end;padding:8px 10px}",
-    ".logos-run-comment-popup button{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid #d1d5db;background:white;color:#111827;padding:4px 8px;cursor:pointer}",
-    ".logos-run-comment-popup button[data-primary]{background:#2563eb;border-color:#2563eb;color:white}",
     ".logos-run-comment-toolbar{position:fixed;right:12px;bottom:12px;z-index:2147483604;background:#111827;color:white;border:1px solid rgba(255,255,255,.18);box-shadow:0 8px 28px rgba(15,23,42,.25);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;padding:6px 8px;border-radius:4px;pointer-events:none}"
   ].join("\\n");
   document.head.appendChild(css);
@@ -221,10 +214,6 @@ function runCommentScript(target: ProxyTarget): string {
 
   function storyId() {
     return "run:" + runTargetId + ":" + appPath();
-  }
-
-  function clientEventId() {
-    return crypto.randomUUID ? crypto.randomUUID() : "logos-run-comment-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
   }
 
   function inUi(el) {
@@ -364,47 +353,35 @@ function runCommentScript(target: ProxyTarget): string {
     uiRoot.append(hover, label);
   }
 
-  function openPopup(el, existing, annotation) {
+  function postCommentTarget(el, existing, annotation) {
     if (!annotation) clearAnnotation();
-    popup?.remove();
     const rect = el.getBoundingClientRect();
     const selectedLabel = existing?.label || labelFor(el);
     const selector = existing?.selector || cssPath(el);
     const component = componentName(el);
-    popup = document.createElement("div");
-    popup.className = "logos-run-comment-popup";
-    popup.setAttribute("data-logos-run-comment-popup", "");
-    popup.style.left = Math.min(window.innerWidth - 340, Math.max(12, rect.left)) + "px";
-    popup.style.top = Math.min(window.innerHeight - 190, Math.max(12, rect.bottom + 8)) + "px";
-    popup.innerHTML = "<header><span></span><button type=\\"button\\" data-close>close</button></header><textarea data-logos-run-comment-textarea placeholder=\\"Comment...\\"></textarea><footer><button type=\\"button\\" data-cancel>Cancel</button><button type=\\"button\\" data-primary data-save>Save</button></footer>";
-    popup.querySelector("span").textContent = selectedLabel;
-    popup.querySelector("[data-close]").addEventListener("click", () => { clearAnnotation(); popup?.remove(); popup = null; });
-    popup.querySelector("[data-cancel]").addEventListener("click", () => { clearAnnotation(); popup?.remove(); popup = null; });
-    popup.querySelector("[data-save]").addEventListener("click", () => {
-      const textarea = popup.querySelector("textarea");
-      const text = textarea.value.trim();
-      if (!text) return;
-      window.parent?.postMessage({
-        type: "logos:story-comment",
-        clientEventId: clientEventId(),
-        storyId: storyId(),
-        runTargetId,
-        appPath: appPath(),
-        selector,
-        label: selectedLabel,
-        htmlContext: annotation?.htmlContext || htmlContext(el),
-        ...(annotation?.screenshotDataUrl ? { screenshotDataUrl: annotation.screenshotDataUrl } : {}),
-        text,
-        author: "you",
-        mode: "code",
-        ...(component ? { component } : {}),
-      }, "*");
-      clearAnnotation();
-      popup.remove();
-      popup = null;
-    });
-    uiRoot.appendChild(popup);
-    popup.querySelector("textarea").focus();
+    window.parent?.postMessage({
+      type: "logos:run-comment-target",
+      storyId: storyId(),
+      runTargetId,
+      appPath: appPath(),
+      selector,
+      label: selectedLabel,
+      htmlContext: annotation?.htmlContext || htmlContext(el),
+      ...(annotation?.screenshotDataUrl ? { screenshotDataUrl: annotation.screenshotDataUrl } : {}),
+      ...(component ? { component } : {}),
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      },
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+    }, "*");
   }
 
   function renderPins() {
@@ -432,7 +409,7 @@ function runCommentScript(target: ProxyTarget): string {
       pin.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        openPopup(el, list[0]);
+        postCommentTarget(el, list[0]);
       });
       uiRoot.appendChild(pin);
       pins.push(pin);
@@ -444,6 +421,10 @@ function runCommentScript(target: ProxyTarget): string {
   }
 
   window.addEventListener("message", (event) => {
+    if (event.data?.type === "logos:run-comment-clear") {
+      clearAnnotation();
+      return;
+    }
     if (event.data?.type !== "logos:story-goals") return;
     goals = Array.isArray(event.data.goals) ? event.data.goals : [];
     renderPins();
@@ -515,7 +496,7 @@ function runCommentScript(target: ProxyTarget): string {
     suppressClickUntil = Date.now() + 500;
     clearHover();
     annotationCanvas = session.canvas;
-    openPopup(session.target, null, {
+    postCommentTarget(session.target, null, {
       htmlContext: annotationContext(htmlContext(session.target), session),
       screenshotDataUrl: screenshotDataUrl(session.canvas),
     });
@@ -531,7 +512,7 @@ function runCommentScript(target: ProxyTarget): string {
     if (!(target instanceof Element) || inUi(target)) return;
     event.preventDefault();
     event.stopPropagation();
-    openPopup(target);
+    postCommentTarget(target);
   }, true);
   window.addEventListener("scroll", renderPins, true);
   window.addEventListener("resize", renderPins);

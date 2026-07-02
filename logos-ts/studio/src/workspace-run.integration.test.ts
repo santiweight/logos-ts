@@ -313,15 +313,16 @@ describe("workspace + run integration", () => {
       const appFrame = page.frameLocator("iframe.story-frame[title='App']")
       await appFrame.locator("main[data-logos-component='RunSearchPanel']").waitFor({ timeout: 30_000 })
       await appFrame.locator("button", { hasText: "Search jobs" }).click({ modifiers: ["Alt"] })
-      await appFrame.locator("[data-logos-run-comment-popup]").waitFor({ timeout: 10_000 })
-      await appFrame.locator("[data-logos-run-comment-textarea]").fill("Make this search typo tolerant.")
-      await appFrame.locator("[data-logos-run-comment-popup] [data-save]").click()
+      await page.getByPlaceholder("Reply…").fill("Make this search typo tolerant.")
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter")
 
       const goal = await pollFor(async () => {
-        const res = await api(`/api/workspaces/${wsId}`)
+        const res = await api("/api/workspaces")
         expect(res.ok).toBe(true)
-        const workspace = await res.json() as { goals: Array<Record<string, unknown>> }
-        return workspace.goals.find((candidate) => candidate["text"] === "Make this search typo tolerant.") ?? null
+        const workspaces = await res.json() as Array<{ goals?: Array<Record<string, unknown>> }>
+        return workspaces
+          .flatMap((workspace) => workspace.goals ?? [])
+          .find((candidate) => candidate["text"] === "Make this search typo tolerant.") ?? null
       }, 30_000)
       expect(goal).not.toBeNull()
       expect(goal).toMatchObject({
@@ -365,15 +366,16 @@ describe("workspace + run integration", () => {
       await appFrame.locator("a", { hasText: "Details" }).click()
       await appFrame.locator("main[data-app-path='/details']").waitFor({ timeout: 30_000 })
       await appFrame.locator("[data-plain-target]").click({ modifiers: ["Alt"] })
-      await appFrame.locator("[data-logos-run-comment-popup]").waitFor({ timeout: 10_000 })
-      await appFrame.locator("[data-logos-run-comment-textarea]").fill("Tighten the details copy.")
-      await appFrame.locator("[data-logos-run-comment-popup] [data-save]").click()
+      await page.getByPlaceholder("Reply…").fill("Tighten the details copy.")
+      await page.getByRole("button", { name: "Create Change" }).click()
 
       const goal = await pollFor(async () => {
-        const res = await api(`/api/workspaces/${wsId}`)
+        const res = await api("/api/workspaces")
         expect(res.ok).toBe(true)
-        const workspace = await res.json() as { goals: Array<Record<string, unknown>> }
-        return workspace.goals.find((candidate) => candidate["text"] === "Tighten the details copy.") ?? null
+        const workspaces = await res.json() as Array<{ goals?: Array<Record<string, unknown>> }>
+        return workspaces
+          .flatMap((workspace) => workspace.goals ?? [])
+          .find((candidate) => candidate["text"] === "Tighten the details copy.") ?? null
       }, 30_000)
       expect(goal).not.toBeNull()
       expect(goal).toMatchObject({

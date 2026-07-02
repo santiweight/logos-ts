@@ -73,6 +73,21 @@ interface DemoOption {
   root: string
 }
 
+interface CommentPopupState {
+  target: string
+  label: string
+  x: number
+  y: number
+  storyId?: string | undefined
+  selector?: string | undefined
+  component?: string | undefined
+  htmlContext?: string | undefined
+  appPath?: string | undefined
+  runTargetId?: string | undefined
+  screenshotDataUrl?: string | undefined
+  sourceWindow?: Window | null | undefined
+}
+
 function projectNameFromPath(path: string): string {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "Custom"
 }
@@ -294,6 +309,78 @@ function storyCommentClientEventId(data: unknown): string | null {
   return typeof clientEventId === "string" && clientEventId.length > 0 ? clientEventId : null
 }
 
+function numberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key]
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key]
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+function findMessageIframe(source: MessageEventSource | null): HTMLIFrameElement | null {
+  if (source == null) return null
+  for (const iframe of document.querySelectorAll<HTMLIFrameElement>("iframe.story-frame")) {
+    if (iframe.contentWindow === source) return iframe
+  }
+  return null
+}
+
+export function runCommentPopupFromEvent(event: MessageEvent, frameOverride?: HTMLIFrameElement | null): CommentPopupState | null {
+  const data = event.data
+  if (typeof data !== "object" || data == null) return null
+  const record = data as Record<string, unknown>
+  if (record["type"] !== "logos:run-comment-target") return null
+  const rect = typeof record["rect"] === "object" && record["rect"] != null ? record["rect"] as Record<string, unknown> : null
+  const viewport = typeof record["viewport"] === "object" && record["viewport"] != null ? record["viewport"] as Record<string, unknown> : null
+  if (!rect || !viewport) return null
+
+  const left = numberField(rect, "left")
+  const bottom = numberField(rect, "bottom")
+  const viewportWidth = numberField(viewport, "width")
+  const viewportHeight = numberField(viewport, "height")
+  if (left == null || bottom == null || viewportWidth == null || viewportHeight == null) return null
+
+  const iframe = frameOverride ?? findMessageIframe(event.source)
+  const iframeRect = iframe?.getBoundingClientRect()
+  const scaleX = iframeRect ? iframeRect.width / Math.max(1, viewportWidth) : 1
+  const scaleY = iframeRect ? iframeRect.height / Math.max(1, viewportHeight) : 1
+  const x = (iframeRect?.left ?? 0) + left * scaleX
+  const y = (iframeRect?.top ?? 0) + bottom * scaleY + 8
+  const storyId = stringField(record, "storyId")
+  const component = stringField(record, "component")
+  const appPath = stringField(record, "appPath")
+  const target = component
+    ? `component:${component}`
+    : appPath
+      ? `app:${appPath}`
+      : storyId
+        ? `story:${storyId}`
+        : "app:/"
+
+  return {
+    target,
+    label: stringField(record, "label") ?? component ?? appPath ?? storyId ?? "App",
+    x,
+    y,
+    storyId,
+    selector: stringField(record, "selector"),
+    component,
+    htmlContext: stringField(record, "htmlContext"),
+    appPath,
+    runTargetId: stringField(record, "runTargetId"),
+    screenshotDataUrl: stringField(record, "screenshotDataUrl"),
+    sourceWindow: event.source as Window | null,
+  }
+}
+
+function clearRunCommentAnnotation(sourceWindow?: Window | null): void {
+  try {
+    sourceWindow?.postMessage({ type: "logos:run-comment-clear" }, "*")
+  } catch {}
+}
+
 export function createStoryCommentEventDedupe(limit = 200): (data: unknown) => boolean {
   const seen = new Set<string>()
   const order: string[] = []
@@ -317,7 +404,7 @@ export function App() {
   const [goalError, setGoalError] = useState<string | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [selection, setSelection] = useState<Selection>(() => readStoredSelection())
-  const [popup, setPopup] = useState<{ target: string; label: string; x: number; y: number } | null>(
+  const [popup, setPopup] = useState<CommentPopupState | null>(
     null
   )
   const [demoMenuOpen, setDemoMenuOpen] = useState(false)
@@ -1153,6 +1240,16 @@ export function App() {
   // Listen for story comments from Storybook iframe
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
+      const runCommentPopup = runCommentPopupFromEvent(e)
+      if (runCommentPopup) {
+        setPopup((current) => {
+          if (current?.sourceWindow && current.sourceWindow !== runCommentPopup.sourceWindow) {
+            clearRunCommentAnnotation(current.sourceWindow)
+          }
+          return runCommentPopup
+        })
+        return
+      }
       if (e.data?.type === "logos:story-ready") {
         postStoryGoals(e.source as Window | null)
         return
@@ -1667,9 +1764,25 @@ export function App() {
           label={popup.label}
           goals={goalsByTarget[popup.target] ?? []}
           workspaceKind={activeWs?.kind}
-          onAdd={(text, mode) => { addGoal(popup.target, popup.label, text, mode, true); setPopup(null) }}
+          onAdd={(text, mode) => {
+            const extra = popup.storyId ? {
+              storyId: popup.storyId,
+              ...(popup.selector ? { selector: popup.selector } : {}),
+              ...(popup.component ? { component: popup.component } : {}),
+              ...(popup.htmlContext ? { htmlContext: popup.htmlContext } : {}),
+              ...(popup.appPath ? { appPath: popup.appPath } : {}),
+              ...(popup.runTargetId ? { runTargetId: popup.runTargetId } : {}),
+              ...(popup.screenshotDataUrl ? { screenshotDataUrl: popup.screenshotDataUrl } : {}),
+            } : undefined
+            addGoal(popup.target, popup.label, text, mode, true, extra)
+            clearRunCommentAnnotation(popup.sourceWindow)
+            setPopup(null)
+          }}
           onReply={(goalId, text) => { continueGoal(goalId, text) }}
-          onClose={() => setPopup(null)}
+          onClose={() => {
+            clearRunCommentAnnotation(popup.sourceWindow)
+            setPopup(null)
+          }}
         />
       )}
     </div>
