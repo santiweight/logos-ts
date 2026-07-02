@@ -43,7 +43,7 @@ type WorkspaceManagerLike = {
   addGoal(
     workspaceId: string,
     goal: Omit<Goal, "status" | "lifecycle" | "mergePolicy" | "workingInstanceId" | "mergedInstanceId">,
-    opts?: { fork?: boolean; autoMerge?: boolean },
+    opts?: { fork?: boolean },
   ): Promise<{ goal: Goal; workspaceId: string } | { error: string; status: number }>
   renameGoal(workspaceId: string, goalId: string, label: string): Goal | null
   ensureStorybook(workspaceId: string): Promise<void>
@@ -633,7 +633,8 @@ async function handleArchApi(runtime: ArchApiRuntime, req: IncomingMessage, res:
           storyId: namingInput.storyId,
           selector: namingInput.selector,
           component: namingInput.component,
-        }, { fork: body["fork"] === true, autoMerge: body["autoMerge"] !== false })
+          screenshotDataUrl: typeof body["screenshotDataUrl"] === "string" ? body["screenshotDataUrl"] : null,
+        }, { fork: body["fork"] === true })
         if ("error" in result) {
           json(res, { error: result.error }, result.status)
           return

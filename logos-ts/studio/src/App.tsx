@@ -1021,7 +1021,7 @@ export function App() {
   const addGoal = useCallback(
     async (
       target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
-      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; goalName?: string; appPath?: string; runTargetId?: string },
+      extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; goalName?: string; appPath?: string; runTargetId?: string; screenshotDataUrl?: string },
     ) => {
       // 1. Code forks are created client-side. Arch isolation is owned by the backend.
       const shouldFork = mode === "code" || fork
@@ -1057,11 +1057,13 @@ export function App() {
     (goalId: string, text: string) => {
       if (!activeWorkspaceId) return
       setSelected({ type: "goal", id: goalId })
-      setGoalEvents((prev) => ({ ...prev, [goalId]: [] }))
       setRunningGoals((prev) => new Set(prev).add(goalId))
       setAgentGoalId(goalId)
       setAgentOpen(true)
       let closed = false
+      loadGoalSessionEvents(goalId).then((history) => {
+        if (history.length > 0) setGoalEvents((prev) => ({ ...prev, [goalId]: history }))
+      })
       fetch("/api/agent/continue", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1107,7 +1109,7 @@ export function App() {
         pump()
       })
     },
-    [activeWorkspaceId, refreshWorkspaces, refreshTests, refreshStorybooks, openWorkspace],
+    [activeWorkspaceId, refreshWorkspaces, refreshTests, refreshStorybooks, openWorkspace, loadGoalSessionEvents],
   )
 
   const addStoryWritingGoal = useCallback(
@@ -1190,7 +1192,7 @@ export function App() {
       }
       if (e.data?.type !== "logos:story-comment") return
       if (!acceptStoryCommentEvent(e.data)) return
-      const { storyId, component, selector, label, text, mode, htmlContext, appPath, runTargetId } = e.data
+      const { storyId, component, selector, label, text, mode, htmlContext, appPath, runTargetId, screenshotDataUrl } = e.data
       if (typeof storyId === "string" && storyId) {
         setStoryCommentDrafts((current) => {
           const next = { ...current }
@@ -1215,6 +1217,7 @@ export function App() {
         htmlContext,
         appPath,
         runTargetId,
+        screenshotDataUrl,
       })
     }
     window.addEventListener("message", onMsg)

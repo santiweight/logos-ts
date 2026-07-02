@@ -101,6 +101,17 @@ describe("LogosRuntimeStore", () => {
     })
   })
 
+  it("persists goal screenshot data", () => {
+    const ws = workspace()
+    ws.goals[0] = {
+      ...ws.goals[0]!,
+      screenshotDataUrl: "data:image/png;base64,ZmFrZQ==",
+    }
+    store.saveWorkspace(ws)
+
+    expect(store.loadWorkspace(ws.id)?.goals[0]?.screenshotDataUrl).toBe("data:image/png;base64,ZmFrZQ==")
+  })
+
   it("persists workspace initialization state", () => {
     const ws = workspace()
     ws.initialization = {

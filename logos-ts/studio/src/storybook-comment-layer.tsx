@@ -23,6 +23,7 @@ export interface StoryComment {
   createdAt: number
   component?: string
   htmlContext?: string
+  screenshotDataUrl?: string
   mode?: string
   status?: string
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
@@ -39,6 +40,7 @@ interface Draft {
   text?: string
   mode?: "code" | "arch"
   htmlContext?: string
+  screenshotDataUrl?: string
   kind?: "new" | "reply"
 }
 
@@ -52,6 +54,17 @@ interface StoryDraft extends Draft {
 
 interface LogosCommentLayerWindow extends Window {
   __LOGOS_STORY_COMMENT_LAYER_ACTIVE__?: string
+}
+
+interface DrawingSession {
+  canvas: HTMLCanvasElement
+  context: CanvasRenderingContext2D
+  target: Element
+  startX: number
+  startY: number
+  lastX: number
+  lastY: number
+  moved: boolean
 }
 
 const LOGOS_STORY_COMMENT_LAYER_ID = `logos-comment-layer-${Math.random().toString(36).slice(2)}`
@@ -195,6 +208,115 @@ function elementContextLine(el: Element): string {
   return `<${tag}${attrs ? ` ${attrs}` : ""}>${text}</${tag}>`
 }
 
+function createDrawingCanvas(): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } | null {
+  const canvas = document.createElement("canvas")
+  const dpr = Math.max(1, window.devicePixelRatio || 1)
+  canvas.width = Math.max(1, Math.round(window.innerWidth * dpr))
+  canvas.height = Math.max(1, Math.round(window.innerHeight * dpr))
+  canvas.style.cssText = [
+    "position:fixed",
+    "inset:0",
+    `width:${window.innerWidth}px`,
+    `height:${window.innerHeight}px`,
+    "z-index:2147482999",
+    "pointer-events:none",
+  ].join(";")
+  const context = canvas.getContext("2d")
+  if (context == null) return null
+  context.scale(dpr, dpr)
+  context.lineCap = "round"
+  context.lineJoin = "round"
+  context.lineWidth = 4
+  context.strokeStyle = "#dc2626"
+  document.documentElement.appendChild(canvas)
+  return { canvas, context }
+}
+
+function annotationScreenshotDataUrl(canvas: HTMLCanvasElement): string | undefined {
+  try {
+    const dataUrl = canvas.toDataURL("image/png")
+    return dataUrl.startsWith("data:image/png;base64,") ? dataUrl : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function cloneWithInlineStyles(source: HTMLElement): HTMLElement {
+  const clone = source.cloneNode(true) as HTMLElement
+  const sourceNodes = [source, ...Array.from(source.querySelectorAll<HTMLElement>("*"))]
+  const cloneNodes = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>("*"))]
+  sourceNodes.forEach((node, index) => {
+    const cloneNode = cloneNodes[index]
+    if (cloneNode == null) return
+    cloneNode.style.cssText = window.getComputedStyle(node).cssText
+  })
+  return clone
+}
+
+async function captureAnnotatedScreenshot(root: HTMLElement, annotationCanvas: HTMLCanvasElement): Promise<string | undefined> {
+  const fallback = annotationScreenshotDataUrl(annotationCanvas)
+  const output = document.createElement("canvas")
+  output.width = Math.max(1, window.innerWidth)
+  output.height = Math.max(1, window.innerHeight)
+  const context = output.getContext("2d")
+  if (context == null) return fallback
+
+  try {
+    context.fillStyle = "#ffffff"
+    context.fillRect(0, 0, output.width, output.height)
+    const rect = root.getBoundingClientRect()
+    const clone = cloneWithInlineStyles(root)
+    clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml")
+    const serialized = new XMLSerializer().serializeToString(clone)
+    const svg = [
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${output.width}" height="${output.height}">`,
+      `<foreignObject x="${rect.left}" y="${rect.top}" width="${rect.width}" height="${rect.height}">`,
+      serialized,
+      "</foreignObject></svg>",
+    ].join("")
+    const image = new Image()
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error("timed out loading serialized story screenshot")), 150)
+      image.onload = () => {
+        window.clearTimeout(timeout)
+        resolve()
+      }
+      image.onerror = () => {
+        window.clearTimeout(timeout)
+        reject(new Error("failed to load serialized story screenshot"))
+      }
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    })
+    context.drawImage(image, 0, 0)
+    context.drawImage(annotationCanvas, 0, 0, output.width, output.height)
+    return annotationScreenshotDataUrl(output) ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+async function buildDrawingDraft(root: HTMLElement, session: DrawingSession): Promise<Draft> {
+  const screenshotDataUrl = await captureAnnotatedScreenshot(root, session.canvas)
+  return {
+    selector: cssPath(session.target, root),
+    label: describeElement(session.target),
+    htmlContext: appendAnnotationContext(describeHtmlContext(session.target, root), session),
+    ...(screenshotDataUrl != null ? { screenshotDataUrl } : {}),
+    kind: "new",
+  }
+}
+
+function appendAnnotationContext(htmlContext: string, session: DrawingSession): string {
+  const left = Math.round(Math.min(session.startX, session.lastX))
+  const top = Math.round(Math.min(session.startY, session.lastY))
+  const width = Math.round(Math.abs(session.lastX - session.startX))
+  const height = Math.round(Math.abs(session.lastY - session.startY))
+  return [
+    htmlContext,
+    `annotation: Alt-drag drawing from viewport (${Math.round(session.startX)}, ${Math.round(session.startY)}) to (${Math.round(session.lastX)}, ${Math.round(session.lastY)}); bounds ${left},${top} ${width}x${height}`,
+  ].join("\n")
+}
+
 export function StorybookCommentLayer({
   storyId,
   component,
@@ -213,12 +335,20 @@ export function StorybookCommentLayer({
   const [draft, setDraft] = useState<Draft | null>(null)
   const [openSelector, setOpenSelector] = useState<string | null>(null)
   const [workspaceKind, setWorkspaceKind] = useState<"code" | "arch">("code")
+  const drawingRef = useRef<DrawingSession | null>(null)
+  const annotationPreviewRef = useRef<HTMLCanvasElement | null>(null)
+  const suppressClickUntilRef = useRef(0)
   const { offset: popoverOffset, reset: resetPopoverOffset, dragHandleProps } = usePopoverDrag()
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick((t) => t + 1), [])
   const identity = portableStoryIdentity()
   const effectiveStoryId = identity?.storyId ?? storyId
   const effectiveComponent = identity?.component ?? component
+
+  const clearAnnotationPreview = useCallback(() => {
+    annotationPreviewRef.current?.remove()
+    annotationPreviewRef.current = null
+  }, [])
 
   useEffect(() => {
     if (!layerActive) return undefined
@@ -248,8 +378,9 @@ export function StorybookCommentLayer({
     setDraft(null)
     setOpenSelector(null)
     setHover(null)
+    clearAnnotationPreview()
     resetPopoverOffset()
-  }, [effectiveStoryId, layerActive, resetPopoverOffset])
+  }, [clearAnnotationPreview, effectiveStoryId, layerActive, resetPopoverOffset])
 
   useEffect(() => {
     if (!layerActive) return
@@ -303,13 +434,89 @@ export function StorybookCommentLayer({
 
   useEffect(() => {
     if (!layerActive || !enabled) return
+    const onMouseDown = (e: MouseEvent) => {
+      if (!e.altKey || e.button !== 0) return
+      const target = e.target as Element
+      const rootEl = rootRef.current
+      if (!inStory(target) || rootEl == null) return
+      clearAnnotationPreview()
+      const drawing = createDrawingCanvas()
+      if (drawing == null) return
+      drawing.context.beginPath()
+      drawing.context.moveTo(e.clientX, e.clientY)
+      drawingRef.current = {
+        canvas: drawing.canvas,
+        context: drawing.context,
+        target,
+        startX: e.clientX,
+        startY: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        moved: false,
+      }
+    }
+    const onMouseMove = (e: MouseEvent) => {
+      const session = drawingRef.current
+      if (session == null) return
+      e.preventDefault()
+      e.stopPropagation()
+      const dx = e.clientX - session.startX
+      const dy = e.clientY - session.startY
+      if (Math.hypot(dx, dy) >= 4) session.moved = true
+      session.lastX = e.clientX
+      session.lastY = e.clientY
+      session.context.lineTo(e.clientX, e.clientY)
+      session.context.stroke()
+    }
+    const onMouseUp = (e: MouseEvent) => {
+      const session = drawingRef.current
+      if (session == null) return
+      drawingRef.current = null
+      if (!session.moved) {
+        session.canvas.remove()
+        return
+      }
+      e.preventDefault()
+      e.stopPropagation()
+      suppressClickUntilRef.current = Date.now() + 500
+      const rootEl = rootRef.current
+      if (rootEl == null) {
+        session.canvas.remove()
+        return
+      }
+      annotationPreviewRef.current = session.canvas
+      void buildDrawingDraft(rootEl, session).then(setDraft)
+      setOpenSelector(null)
+      setHover(null)
+    }
+    document.addEventListener("mousedown", onMouseDown, true)
+    document.addEventListener("mousemove", onMouseMove, true)
+    document.addEventListener("mouseup", onMouseUp, true)
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown, true)
+      document.removeEventListener("mousemove", onMouseMove, true)
+      document.removeEventListener("mouseup", onMouseUp, true)
+      drawingRef.current?.canvas.remove()
+      drawingRef.current = null
+      clearAnnotationPreview()
+    }
+  }, [clearAnnotationPreview, enabled, inStory, layerActive])
+
+  useEffect(() => {
+    if (!layerActive || !enabled) return
     const onClick = (e: MouseEvent) => {
       if (!e.altKey) return
+      if (Date.now() < suppressClickUntilRef.current) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
       const target = e.target as Element
       const rootEl = rootRef.current
       if (!inStory(target) || rootEl == null) return
       e.preventDefault()
       e.stopPropagation()
+      clearAnnotationPreview()
       setDraft({
         selector: cssPath(target, rootEl),
         label: describeElement(target),
@@ -320,7 +527,7 @@ export function StorybookCommentLayer({
     }
     document.addEventListener("click", onClick, true)
     return () => document.removeEventListener("click", onClick, true)
-  }, [enabled, inStory, layerActive])
+  }, [clearAnnotationPreview, enabled, inStory, layerActive])
 
   useEffect(() => {
     if (!layerActive) return
@@ -349,13 +556,14 @@ export function StorybookCommentLayer({
 
   const root = rootRef.current
 
-  const sendComment = (selector: string, label: string, htmlContext: string | undefined, p: SubmitPayload) => {
+  const sendComment = (selector: string, label: string, htmlContext: string | undefined, screenshotDataUrl: string | undefined, p: SubmitPayload) => {
     postStoryComment({
       storyId: effectiveStoryId,
       ...(effectiveComponent != null ? { component: effectiveComponent } : {}),
       selector,
       label,
       ...(htmlContext != null ? { htmlContext } : {}),
+      ...(screenshotDataUrl != null ? { screenshotDataUrl } : {}),
       text: p.text,
       author: "you",
       mode: p.mode,
@@ -383,6 +591,7 @@ export function StorybookCommentLayer({
       selector: draftUpdate.selector,
       label: draftUpdate.label,
       ...(draftUpdate.htmlContext != null ? { htmlContext: draftUpdate.htmlContext } : {}),
+      ...(draftUpdate.screenshotDataUrl != null ? { screenshotDataUrl: draftUpdate.screenshotDataUrl } : {}),
       text: p.text,
       mode: p.mode,
       kind: draftUpdate.kind ?? "new",
@@ -401,7 +610,8 @@ export function StorybookCommentLayer({
     const { selector } = resolveNearestSelector(rootEl, draft.selector)
     const label = selector === draft.selector ? draft.label : rootLabel
     const htmlContext = selector === draft.selector ? draft.htmlContext : describeHtmlContext(rootEl, rootEl)
-    sendComment(selector, label, htmlContext, p)
+    sendComment(selector, label, htmlContext, draft.screenshotDataUrl, p)
+    clearAnnotationPreview()
     clearCommentDraft()
     setDraft(null)
     setOpenSelector(selector)
@@ -428,9 +638,10 @@ export function StorybookCommentLayer({
               rect={rect}
               count={list.length}
               active={openSelector === selector}
-              onClick={() => {
-                setOpenSelector((cur) => (cur === selector ? null : selector))
-                setDraft(null)
+                onClick={() => {
+                  clearAnnotationPreview()
+                  setOpenSelector((cur) => (cur === selector ? null : selector))
+                  setDraft(null)
               }}
             />
           )
@@ -459,7 +670,7 @@ export function StorybookCommentLayer({
                 label={label}
                 comments={list}
                 onAdd={(p) => {
-                  sendComment(selector, label, describeHtmlContext(nearest.element, root), p)
+                  sendComment(selector, label, describeHtmlContext(nearest.element, root), undefined, p)
                   clearCommentDraft()
                   setDraft(null)
                 }}
@@ -471,7 +682,7 @@ export function StorybookCommentLayer({
                 }}
                 onEditingChange={sendCommentEditing}
                 workspaceKind={workspaceKind}
-                onClose={() => { clearCommentDraft(); setOpenSelector(null); setDraft(null) }}
+                onClose={() => { clearAnnotationPreview(); clearCommentDraft(); setOpenSelector(null); setDraft(null) }}
                 dragHandleProps={dragHandleProps}
               />
             </div>
@@ -495,7 +706,7 @@ export function StorybookCommentLayer({
                 <CommentComposer
                   label={draft.label}
                   onSave={saveDraft}
-                  onCancel={() => { clearCommentDraft(); setDraft(null) }}
+                  onCancel={() => { clearAnnotationPreview(); clearCommentDraft(); setDraft(null) }}
                   initialDraft={draft}
                   onDraftChange={(p) => {
                     const next = { ...draft, ...p, kind: "new" as const }
