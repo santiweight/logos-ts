@@ -1803,6 +1803,7 @@ export function App() {
               base={reviewBaseIndex}
               workspace={(reviewWorkspaceIndex ?? workspaceIndex)!}
               showHeaderTitle={false}
+              storybookUrl={activeStorybookUrl}
             />
           ) : selection.view === "run" ? (
             <RunView

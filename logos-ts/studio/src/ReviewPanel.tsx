@@ -13,6 +13,7 @@ interface Props {
   base: StudioIndex
   workspace: StudioIndex
   showHeaderTitle?: boolean
+  storybookUrl?: string
 }
 
 type ReviewTab = "architecture" | "snapshots"
@@ -30,6 +31,7 @@ export function ReviewPanel({
   base,
   workspace,
   showHeaderTitle = true,
+  storybookUrl,
 }: Props) {
   const architectureLines = useMemo(
     () => lineDiff(indexToArchText(base), indexToArchText(workspace)),
@@ -64,7 +66,7 @@ export function ReviewPanel({
         {tab === "architecture" ? (
           <ArchitectureReview lines={architectureLines} stats={architectureStats} />
         ) : (
-          <SnapshotReview changes={snapshotChangesList} />
+          <SnapshotReview changes={snapshotChangesList} storybookUrl={storybookUrl} />
         )}
       </div>
     </section>
@@ -210,8 +212,10 @@ function DiffRow({ line }: { line: DiffLine }) {
 
 function SnapshotReview({
   changes,
+  storybookUrl,
 }: {
   changes: SnapshotChange[]
+  storybookUrl?: string
 }) {
   const [selectedId, setSelectedId] = useState(changes[0]?.id ?? null)
   const selected = changes.find((change) => change.id === selectedId) ?? changes[0] ?? null
@@ -246,6 +250,7 @@ function SnapshotReview({
       </aside>
       <SnapshotDetail
         change={selected}
+        storybookUrl={storybookUrl}
       />
     </div>
   )
@@ -253,8 +258,10 @@ function SnapshotReview({
 
 function SnapshotDetail({
   change,
+  storybookUrl,
 }: {
   change: SnapshotChange
+  storybookUrl?: string
 }) {
   const [view, setView] = useState<CaptureView>("visual")
   const beforeHtml = extractSnapshotHtml(change.beforeSnapshot)
@@ -296,6 +303,7 @@ function SnapshotDetail({
           change={change}
           beforeHtml={beforeHtml}
           afterHtml={afterHtml}
+          storybookUrl={storybookUrl}
         />
       ) : (
         <pre className="capture-source-diff">
@@ -310,28 +318,44 @@ function VisualComparison({
   change,
   beforeHtml,
   afterHtml,
+  storybookUrl,
 }: {
   change: SnapshotChange
   beforeHtml: string | null
   afterHtml: string | null
+  storybookUrl?: string
 }) {
+  const afterSrc = storybookUrl && change.storyId
+    ? `${storybookUrl}/iframe.html?id=${encodeURIComponent(change.storyId)}&viewMode=story`
+    : null
+  const hasBefore = beforeHtml != null
+  const hasAfter = afterSrc != null || afterHtml != null
   return (
-    <div className={`capture-visuals ${beforeHtml != null && afterHtml != null ? "split" : "single"}`}>
-      {beforeHtml != null && (
+    <div className={`capture-visuals ${hasBefore && hasAfter ? "split" : "single"}`}>
+      {hasBefore && (
         <SnapshotPreview
           label="Before"
           html={beforeHtml}
           storyId={change.storyId}
         />
       )}
-      {afterHtml != null && (
+      {afterSrc != null ? (
+        <div className="capture-preview">
+          <div className="capture-preview-label">After</div>
+          <iframe
+            className="capture-preview-frame"
+            src={afterSrc}
+            title={`After ${change.storyId ?? "captured story"}`}
+          />
+        </div>
+      ) : afterHtml != null ? (
         <SnapshotPreview
           label="After"
           html={afterHtml}
           storyId={change.storyId}
         />
-      )}
-      {beforeHtml == null && afterHtml == null && (
+      ) : null}
+      {!hasBefore && !hasAfter && (
         <div className="empty">This snapshot has no output to render.</div>
       )}
     </div>

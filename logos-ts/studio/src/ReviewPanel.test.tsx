@@ -178,6 +178,26 @@ describe("ReviewPanel", () => {
     expect(frames[1]?.getAttribute("srcdoc")).toContain("<div>Platform Engineer</div>")
   })
 
+  it("uses live Storybook iframe for after when storybookUrl is provided", () => {
+    const base = index([capturedFile("JobRow", "<div>Engineer</div>")])
+    const workspace = index([capturedFile("JobRow", "<div>Platform Engineer</div>")])
+    const { container } = render(
+      <ReviewPanel
+        base={base}
+        workspace={workspace}
+        storybookUrl="http://localhost:6006"
+      />
+    )
+
+    const frames = [...container.querySelectorAll("iframe.capture-preview-frame")]
+    expect(frames).toHaveLength(2)
+    expect(frames[0]?.getAttribute("srcdoc")).toContain("<div>Engineer</div>")
+    expect(frames[1]?.getAttribute("src")).toBe(
+      "http://localhost:6006/iframe.html?id=jobrow--default&viewMode=story"
+    )
+    expect(frames[1]?.getAttribute("srcdoc")).toBeNull()
+  })
+
   it("does not render story implementation changes as architecture diffs", () => {
     const base = index([
       storyFile([
