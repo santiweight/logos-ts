@@ -461,10 +461,10 @@ export class WorkspaceManager {
       goals: ws.goals,
       ...(ws.initialization ? { initialization: ws.initialization } : {}),
       ...(ws.publication ? { publication: ws.publication } : {}),
-      ...(this.workspaceStatuses.has(ws.id) ? { status: this.workspaceStatuses.get(ws.id) } : {}),
+      ...(this.workspaceStatuses.has(ws.id) ? { status: this.workspaceStatuses.get(ws.id) ?? null } : {}),
     }
-    if (ws.type === "remote") return { ...base, type: "remote", tracking: ws.tracking }
-    return { ...base, type: "local" }
+    if (ws.type === "remote") return { ...base, type: "remote" as const, tracking: ws.tracking }
+    return { ...base, type: "local" as const }
   }
 
   private storybookCapsForInstance(inst?: WorkspaceInstance): StorybookCapsResolution {
@@ -508,6 +508,12 @@ export class WorkspaceManager {
 
   private checkoutOriginMainProject(): { root: string; cleanup: () => void } {
     const { gitRoot, projectRel } = this.sourceProjectGitInfo()
+    try {
+      execFileSync("git", ["-C", gitRoot, "fetch", "origin", "main"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+    } catch {}
     let commit = ""
     try {
       commit = execFileSync("git", ["-C", gitRoot, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], {
