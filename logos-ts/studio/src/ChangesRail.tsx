@@ -147,19 +147,6 @@ export function ChangesRail({
                 {mergeIcon}
               </button>
             )}
-            {!w.publication && (
-              <button
-                className="rail-merge"
-                title="Make pull request"
-                aria-label={`Make pull request for ${w.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onCreatePullRequest(w.id)
-                }}
-              >
-                {mergeIcon}
-              </button>
-            )}
             <button
               className="rail-del"
               title={thread?.lifecycle?.stage === "merged" ? "Archive workspace (⌘⌫)" : "Delete workspace (⌘⌫)"}
