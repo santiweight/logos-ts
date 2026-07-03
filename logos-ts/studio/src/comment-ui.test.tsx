@@ -21,7 +21,6 @@ describe("CommentThread replies", () => {
 
     expect(onAdd).toHaveBeenCalledWith({
       text: "make this bold",
-      mode: "code",
     })
   })
 
@@ -145,7 +144,6 @@ describe("CommentThread replies", () => {
 
     expect(onAdd).toHaveBeenCalledWith({
       text: "make another change",
-      mode: "code",
     })
     expect(onReply).not.toHaveBeenCalled()
   })

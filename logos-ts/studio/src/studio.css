@@ -559,7 +559,6 @@ body.resizing-rail * {
 .exit-ws { color: var(--muted); text-decoration: underline; cursor: pointer; margin-left: 6px; }
 .exit-ws:hover { color: var(--text); }
 .cmode { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 4px; border-radius: 2px; margin-left: 6px; }
-.cmode.arch { background: rgba(74, 158, 255, 0.18); color: #6fb4ff; }
 .cmode.code { background: #ffffff14; color: var(--muted); }
 .agent-toggle { cursor: pointer; text-decoration: underline; }
 .agent-toggle:hover { opacity: 0.85; }

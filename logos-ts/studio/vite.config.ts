@@ -20,7 +20,7 @@ import { createSessionProject } from "../src/session-project"
 import { buildGoalNamePrompt, cleanGoalName, fallbackGoalName, type GoalNameInput } from "../src/goal-naming"
 import { cleanEnvForClaude } from "../src/claude-cli"
 import { LogosSecrets } from "../src/logos-secrets"
-import { defaultLogosRuntimeDir, resolveLogosRuntimePaths } from "../src/runtime-paths"
+import { createLogosDevInstanceId, defaultLogosDevInstanceRuntimeDir, defaultLogosRuntimeDir, resolveLogosRuntimePaths, sanitizeLogosPathSegment } from "../src/runtime-paths"
 
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
@@ -158,14 +158,29 @@ function resetStoredWorkspaceRuntime(store: LogosRuntimeStore, sessions: ClaudeS
 
 async function createStudioRuntime(): Promise<StudioRuntime> {
   const { demoId, sourceProject } = sourceProjectForStartup()
+  const instanceId = sanitizeLogosPathSegment(process.env.LOGOS_STUDIO_INSTANCE_ID ?? createLogosDevInstanceId())
+  process.env.LOGOS_STUDIO_INSTANCE_ID = instanceId
+  const runtimeRoot = resolve(process.env.LOGOS_RUNTIME_DIR ?? defaultLogosDevInstanceRuntimeDir(sourceProject, instanceId))
+  const agentRunsDir = resolve(process.env.LOGOS_AGENT_RUNS_DIR ?? resolve(runtimeRoot, "agent-runs"))
+  const viteCacheDir = resolve(process.env.LOGOS_VITE_CACHE_DIR ?? resolve(runtimeRoot, "vite-cache"))
+  const tmpDir = resolve(process.env.LOGOS_TMPDIR ?? resolve(runtimeRoot, "tmp"))
+  process.env.LOGOS_RUNTIME_DIR = runtimeRoot
+  process.env.LOGOS_AGENT_RUNS_DIR = agentRunsDir
+  process.env.LOGOS_VITE_CACHE_DIR = viteCacheDir
+  process.env.LOGOS_TMPDIR = tmpDir
+  mkdirSync(runtimeRoot, { recursive: true })
+  mkdirSync(agentRunsDir, { recursive: true })
+  mkdirSync(viteCacheDir, { recursive: true })
+  mkdirSync(tmpDir, { recursive: true })
   const runtimePaths = resolveLogosRuntimePaths({
     sourceProject,
-    ...(process.env.LOGOS_RUNTIME_DIR ? { runtimeRoot: process.env.LOGOS_RUNTIME_DIR } : {}),
+    runtimeRoot,
   })
-  const runsDir = process.env.LOGOS_AGENT_RUNS_DIR ? resolve(process.env.LOGOS_AGENT_RUNS_DIR) : runtimePaths.agentRuns
+  const runsDir = agentRunsDir
   const projectRoot = createSessionProject(sourceProject, runtimePaths.devSessions).root
   const caps = detectProject(projectRoot)
   console.log(`[logos] source: ${sourceProject}`)
+  console.log(`[logos] instance: ${instanceId}`)
   console.log(`[logos] runtime: ${runtimePaths.root}`)
   console.log(`[logos] demo: ${demoId}`)
   console.log(`[logos] project: ${caps.root}`)
@@ -210,6 +225,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     sessions: sessionMgr,
     secrets,
     tsx,
+    studioInstanceId: instanceId,
     getIndex: () => indexReady,
   })
 
@@ -510,7 +526,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
             text: String(body.text ?? ""),
             label: String(body.label ?? ""),
             target: String(body.target ?? ""),
-            mode: body.mode === "arch" ? "arch" : "code",
+            mode: "code",
             component: typeof body.component === "string" ? body.component : null,
             storyId: typeof body.storyId === "string" ? body.storyId : null,
             selector: typeof body.selector === "string" ? body.selector : null,
@@ -526,7 +542,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
             text: String(body.text ?? ""),
             label: goalName,
             target: String(body.target ?? ""),
-            mode: body.mode === "arch" ? "arch" : "code",
+            mode: "code",
             createdAt: Date.now(),
             storyId: body.storyId ?? null,
             selector: body.selector ?? null,

@@ -4,7 +4,7 @@ import { dirname } from "node:path"
 
 const require = createRequire(import.meta.url)
 
-export type WorkspaceKind = "code" | "arch"
+export type WorkspaceKind = "code"
 
 export type StoredGoalLifecycle =
   | {
@@ -105,9 +105,7 @@ export interface StoredWorkspaceRecord {
 }
 
 export type WorkspacePolicyEventType =
-  | "arch_goal_redirected"
   | "goal_rejected"
-  | "arch_agent_blocked"
 
 export interface StoredWorkspacePolicyEvent {
   seq: number
@@ -378,7 +376,7 @@ export class LogosRuntimeStore {
     const workspace: StoredWorkspaceRecord = {
       id: row["id"] as string,
       name: row["name"] as string,
-      kind: row["kind"] === "arch" ? "arch" : "code",
+      kind: "code",
       parentId: nullableString(row["parent_id"]),
       createdAt: row["created_at"] as number,
       baseInstanceId: row["base_instance_id"] as string,
@@ -795,7 +793,7 @@ function mapGoal(row: Record<string, unknown>): StoredGoal {
     text: row["text"] as string,
     label: row["label"] as string,
     target: row["target"] as string,
-    mode: row["mode"] === "arch" ? "arch" : "code",
+    mode: "code",
     createdAt: row["created_at"] as number,
     storyId: nullableString(row["story_id"]),
     selector: nullableString(row["selector"]),

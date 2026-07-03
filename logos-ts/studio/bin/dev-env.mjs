@@ -1,3 +1,8 @@
+import { createHash, randomBytes } from "node:crypto"
+import { mkdirSync } from "node:fs"
+import { homedir } from "node:os"
+import { basename, resolve } from "node:path"
+
 const BASE_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -29,6 +34,9 @@ const LOGOS_ENV_KEYS = [
   "LOGOS_GOAL_NAMING",
   "LOGOS_RUNTIME_DIR",
   "LOGOS_STUDIO_RUNTIME_DIR",
+  "LOGOS_STUDIO_INSTANCE_ID",
+  "LOGOS_TMPDIR",
+  "LOGOS_VITE_CACHE_DIR",
 ]
 
 const SECRET_ENV_KEYS = [
@@ -56,6 +64,21 @@ function withPackageManagerBins(path, source) {
   return parts.join(":")
 }
 
+function defaultLogosRuntimeDir(sourceProject) {
+  const projectRoot = resolve(sourceProject)
+  const hash = createHash("sha256").update(projectRoot).digest("hex").slice(0, 12)
+  const name = basename(projectRoot).replace(/[^a-zA-Z0-9._-]+/g, "-") || "project"
+  return resolve(homedir(), ".logos", "projects", `${name}-${hash}`)
+}
+
+function createDevInstanceId() {
+  return `dev-${Date.now().toString(36)}-${process.pid}-${randomBytes(4).toString("hex")}`
+}
+
+function sanitizePathSegment(value) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "instance"
+}
+
 export function isolatedDevEnv(projectRoot, source = process.env) {
   const env = {}
 
@@ -72,6 +95,15 @@ export function isolatedDevEnv(projectRoot, source = process.env) {
 
   env.LOGOS_PROJECT = projectRoot
   env.LOGOS_STARTUP_PROJECT = projectRoot
+  env.LOGOS_STUDIO_INSTANCE_ID = sanitizePathSegment(env.LOGOS_STUDIO_INSTANCE_ID ?? createDevInstanceId())
+  env.LOGOS_RUNTIME_DIR = resolve(env.LOGOS_RUNTIME_DIR ?? resolve(defaultLogosRuntimeDir(projectRoot), "dev-instances", env.LOGOS_STUDIO_INSTANCE_ID))
+  env.LOGOS_AGENT_RUNS_DIR = resolve(env.LOGOS_AGENT_RUNS_DIR ?? resolve(env.LOGOS_RUNTIME_DIR, "agent-runs"))
+  env.LOGOS_VITE_CACHE_DIR = resolve(env.LOGOS_VITE_CACHE_DIR ?? resolve(env.LOGOS_RUNTIME_DIR, "vite-cache"))
+  env.LOGOS_TMPDIR = resolve(env.LOGOS_TMPDIR ?? resolve(env.LOGOS_RUNTIME_DIR, "tmp"))
   env.PATH = withPackageManagerBins(env.PATH, source)
+  mkdirSync(env.LOGOS_RUNTIME_DIR, { recursive: true })
+  mkdirSync(env.LOGOS_AGENT_RUNS_DIR, { recursive: true })
+  mkdirSync(env.LOGOS_VITE_CACHE_DIR, { recursive: true })
+  mkdirSync(env.LOGOS_TMPDIR, { recursive: true })
   return env
 }

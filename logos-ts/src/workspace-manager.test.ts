@@ -16,7 +16,7 @@ const tempDirs: string[] = []
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 })
 
-function goal(id: string, mode: Goal["mode"], status: Goal["status"] = "pending"): Goal {
+function goal(id: string, mode: Goal["mode"] | "arch", status: Goal["status"] = "pending"): Goal {
   const lifecycle: Goal["lifecycle"] = status === "pending"
     ? { stage: "initializing", state: "creating_goal" }
     : status === "running"
@@ -29,7 +29,7 @@ function goal(id: string, mode: Goal["mode"], status: Goal["status"] = "pending"
     text: "change it",
     label: "thing",
     target: "file:thing.ts",
-    mode,
+    mode: mode === "arch" ? "code" : mode,
     createdAt: 1000,
     status,
     lifecycle,
@@ -259,16 +259,16 @@ describe("selectNextGoal", () => {
 })
 
 describe("WorkspaceManager workspace kinds", () => {
-  it("creates code workspaces by default and architecture workspaces when requested", async () => {
+  it("creates code workspaces and normalizes legacy architecture workspace requests", async () => {
     const mgr = createManager()
 
     const code = await mgr.create()
     const arch = await mgr.create({ kind: "arch" })
 
     expect(code.kind).toBe("code")
-    expect(arch.kind).toBe("arch")
+    expect(arch.kind).toBe("code")
     expect(mgr.get(code.id)?.kind).toBe("code")
-    expect(mgr.get(arch.id)?.kind).toBe("arch")
+    expect(mgr.get(arch.id)?.kind).toBe("code")
   })
 
   it("resetAll clears workspace state and materialized instances", async () => {
@@ -413,7 +413,7 @@ describe("WorkspaceManager workspace kinds", () => {
     return result
   }
 
-  it("keeps code goals in code workspaces and forks arch goals from code workspaces", async () => {
+  it("keeps legacy architecture goals in code workspaces", async () => {
     const mgr = createManager()
     const code = await mgr.create({ kind: "code" })
 
@@ -423,36 +423,22 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(codeResult.goal.id).toBe("code-goal")
     expect(codeResult.workspaceId).toBe(code.id)
     expect(archResult.goal.id).toBe("arch-goal")
-    expect(archResult.workspaceId).not.toBe(code.id)
-    expect(mgr.get(archResult.workspaceId)?.kind).toBe("arch")
-    expect(mgr.get(archResult.workspaceId)?.parentId).toBe(code.id)
+    expect(archResult.goal.mode).toBe("code")
+    expect(archResult.workspaceId).toBe(code.id)
+    expect(mgr.get(archResult.workspaceId)?.kind).toBe("code")
   })
 
-  it("records a policy event when an architecture goal is redirected", async () => {
+  it("does not record policy events for legacy architecture goal input", async () => {
     const mgr = createManager()
     const code = await mgr.create({ kind: "code" })
 
-    const archResult = expectGoal(await mgr.addGoal(code.id, goal("arch-goal", "arch")))
+    expectGoal(await mgr.addGoal(code.id, goal("arch-goal", "arch")))
     const events = mgr.listPolicyEvents({ workspaceId: code.id })
 
-    expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({
-      seq: 0,
-      type: "arch_goal_redirected",
-      workspaceId: code.id,
-      goalId: "arch-goal",
-      message: "architecture goal placed in a dedicated architecture workspace",
-      details: {
-        sourceWorkspaceId: code.id,
-        sourceWorkspaceKind: "code",
-        targetWorkspaceId: archResult.workspaceId,
-        targetWorkspaceKind: "arch",
-        forkRequested: false,
-      },
-    })
+    expect(events).toEqual([])
   })
 
-  it("keeps arch goals in an existing arch workspace unless fork is requested", async () => {
+  it("normalizes legacy architecture workspaces and goals to code", async () => {
     const mgr = createManager()
     const arch = await mgr.create({ kind: "arch" })
 
@@ -462,9 +448,8 @@ describe("WorkspaceManager workspace kinds", () => {
 
     expect(first.workspaceId).toBe(arch.id)
     expect(second.workspaceId).toBe(arch.id)
-    expect(forked.workspaceId).not.toBe(arch.id)
-    expect(mgr.get(forked.workspaceId)?.kind).toBe("arch")
-    expect(mgr.get(forked.workspaceId)?.parentId).toBe(arch.id)
+    expect(forked.workspaceId).toBe(arch.id)
+    expect(mgr.get(forked.workspaceId)?.kind).toBe("code")
   })
 
   it("allows multiple code goals in a code workspace", async () => {
@@ -841,27 +826,6 @@ describe("WorkspaceManager workspace kinds", () => {
     await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
   }, 60_000)
 
-  it("stops architecture goals when stripping fails", async () => {
-    const binDir = mkdtempSync(join(tmpdir(), "logos-failing-tsx-"))
-    tempDirs.push(binDir)
-    const failingTsx = join(binDir, "tsx")
-    writeFileSync(failingTsx, "#!/bin/sh\nexit 42\n")
-    chmodSync(failingTsx, 0o755)
-
-    const spawned: FakeAgentProcess[] = []
-    const mgr = createManager({ spawned, tsx: failingTsx })
-    const arch = await mgr.create({ kind: "arch" })
-    const task = expectGoal(await mgr.addGoal(arch.id, goal("strip-fails", "arch"))).goal
-    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
-
-    expect(mgr.processNext(arch.id, (event) => events.push(event))).toBe(task.id)
-
-    await waitFor(() => expect(events.some((event) => String(event.message ?? "").includes("strip failed"))).toBe(true))
-    expect(mgr.goalsForWorkspace(arch.id).find((g) => g.id === task.id)?.status).toBe("error")
-    expect(spawned).toHaveLength(0)
-    expect(events.some((event) => event.message === "building architecture context…")).toBe(false)
-  }, 60_000)
-
   it("does not capture story snapshots before starting the agent working instance", async () => {
     const prepared: string[] = []
     const spawned: FakeAgentProcess[] = []
@@ -900,135 +864,6 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(prepared).toHaveLength(1)
     expect(events[0]).toMatchObject({ type: "status", message: "preparing workspace instance…" })
   }, 60_000)
-
-  it("rejects code goals in architecture workspaces", async () => {
-    const mgr = createManager()
-    const arch = await mgr.create({ kind: "arch" })
-
-    expect(await mgr.addGoal(arch.id, goal("code-in-arch", "code"))).toEqual({
-      error: "code goals cannot be added to architecture workspaces",
-      status: 409,
-    })
-  })
-
-  it("records a policy event when a goal is rejected", async () => {
-    const mgr = createManager()
-    const arch = await mgr.create({ kind: "arch" })
-
-    await mgr.addGoal(arch.id, goal("code-in-arch", "code"))
-
-    expect(mgr.listPolicyEvents()).toEqual([
-      expect.objectContaining({
-        seq: 0,
-        type: "goal_rejected",
-        workspaceId: arch.id,
-        goalId: "code-in-arch",
-        message: "code goals cannot be added to architecture workspaces",
-        details: {
-          workspaceKind: "arch",
-          goalMode: "code",
-        },
-      }),
-    ])
-  })
-
-  it("allows multiple architecture goals to queue in an architecture workspace", async () => {
-    const mgr = createManager()
-    const arch = await mgr.create({ kind: "arch" })
-
-    expect(expectGoal(await mgr.addGoal(arch.id, goal("first", "arch"))).goal.id).toBe("first")
-    expect(expectGoal(await mgr.addGoal(arch.id, goal("second", "arch"))).goal.id).toBe("second")
-    expect(mgr.goalsForWorkspace(arch.id).map((g) => g.id)).toEqual(["first", "second"])
-  })
-
-  it("continues architecture goals into an implementation pass before completing", async () => {
-    const spawned: FakeAgentProcess[] = []
-    const mgr = createManager({
-      spawned,
-      setupProject(root) {
-        writeFileSync(join(root, "thing.ts"), "export function thing(): string { return 'old' }\n")
-      },
-    })
-    const arch = await mgr.create({ kind: "arch" })
-    expectGoal(await mgr.addGoal(arch.id, goal("arch-change", "arch")))
-
-    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
-    expect(mgr.processNext(arch.id, (event) => events.push(event))).toBe("arch-change")
-    await waitFor(() => expect(spawned).toHaveLength(1), 60_000)
-
-    spawned[0]!.emit("close", 0)
-
-    await waitFor(() => expect(spawned).toHaveLength(2), 60_000)
-    expect(events.some((event) => event.message === "architecture complete; starting implementation…")).toBe(true)
-    expect(spawned[1]!.args.join("\n")).toContain("The architecture pass is complete")
-
-    spawned[1]!.emit("close", 0)
-    await waitFor(() => expect(mgr.goalsForWorkspace(arch.id)[0]?.status).toBe("done"), 60_000)
-    expect(mgr.goalsForWorkspace(arch.id)[0]?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" })
-    expect(await mgr.mergeGoal(arch.id, "arch-change", (event) => events.push(event))).toEqual({ ok: true, status: "completed" })
-    expect(mgr.goalsForWorkspace(arch.id)[0]?.lifecycle).toEqual({ stage: "merged", state: "complete" })
-  }, 90_000)
-
-  it("does not start a second architecture agent in the same architecture workspace", async () => {
-    const mgr = createManager()
-    const arch = await mgr.create({ kind: "arch" })
-    const running = expectGoal(await mgr.addGoal(arch.id, goal("running", "arch"))).goal
-    running.status = "running"
-    expect(expectGoal(await mgr.addGoal(arch.id, goal("pending", "arch"))).goal.id).toBe("pending")
-
-    const events: { type: string; message?: unknown }[] = []
-    const result = mgr.processNext(arch.id, (event) => events.push(event))
-
-    expect(result).toBeNull()
-    expect(events).toEqual([
-      { type: "error", message: "architecture workspace already has a running agent" },
-    ])
-    expect(mgr.listPolicyEvents({ workspaceId: arch.id })).toEqual([
-      expect.objectContaining({
-        seq: 0,
-        type: "arch_agent_blocked",
-        workspaceId: arch.id,
-        goalId: "running",
-        message: "architecture workspace already has a running agent",
-        details: {
-          workspaceKind: "arch",
-          runningGoalId: "running",
-        },
-      }),
-    ])
-  })
-
-  it("fails an architecture goal without starting an agent when strip fails", async () => {
-    const spawned: FakeAgentProcess[] = []
-    const mgr = createManager({
-      spawned,
-      tsx: "/usr/bin/false",
-      setupProject: (projectRoot) => {
-        mkdirSync(join(projectRoot, "app"), { recursive: true })
-        writeFileSync(join(projectRoot, "app", "robots.ts"), `export default function robots() {
-  return { rules: { userAgent: "*", allow: "/" } }
-}
-`)
-      },
-    })
-    const arch = await mgr.create({ kind: "arch" })
-    const task = expectGoal(await mgr.addGoal(arch.id, goal("strip-fails", "arch"))).goal
-    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
-
-    expect(mgr.processNext(arch.id, (event) => events.push(event))).toBe(task.id)
-
-    await waitFor(() => {
-      const current = mgr.goalsForWorkspace(arch.id).find((g) => g.id === task.id)
-      expect(current?.status).toBe("error")
-      expect(current?.lifecycle).toEqual({ stage: "impl", state: "impl_failed" })
-    })
-    expect(spawned).toHaveLength(0)
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "error",
-      goalId: task.id,
-      message: expect.stringContaining("strip failed:"),
-    }))
-  })
 
   it("starts a requested code goal while another code goal owns the workspace", async () => {
     const spawned: FakeAgentProcess[] = []
@@ -1426,17 +1261,6 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(events).toEqual([{ type: "error", message: "goal is done" }])
   })
 
-  it("allows architecture agents to run in different architecture workspaces", async () => {
-    const mgr = createManager()
-    const firstArch = await mgr.create({ kind: "arch" })
-    const secondArch = await mgr.create({ kind: "arch" })
-    const running = expectGoal(await mgr.addGoal(firstArch.id, goal("running", "arch"))).goal
-    running.status = "running"
-    expect(expectGoal(await mgr.addGoal(secondArch.id, goal("pending", "arch"))).goal.id).toBe("pending")
-
-    expect(mgr.nextPendingGoal(secondArch.id)?.id).toBe("pending")
-  })
-
   it("persists workspace state in the runtime database", async () => {
     const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
     tempDirs.push(root)
@@ -1482,7 +1306,7 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(restored.get(created.id)).toMatchObject({
       id: created.id,
       name: "db-backed",
-      kind: "arch",
+      kind: "code",
       activeInstanceId: created.activeInstanceId,
       baseInstanceId: created.baseInstanceId,
     })

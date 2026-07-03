@@ -10,7 +10,7 @@ import { CommentSidebar } from "./CommentSidebar"
 import { ReviewPanel } from "./ReviewPanel"
 import { mainChromeState } from "./main-chrome"
 import { GotoCtx } from "./highlight"
-import { architectureDiffIndex, diffIndex } from "./diff"
+import { diffIndex } from "./diff"
 import { selectGoalReviewBaseIndex, selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, selectWorkspaceReviewIndex, snapshotChanges } from "./review"
 import { buildStoryWritingPrompt } from "./story-goals"
 import type {
@@ -612,10 +612,8 @@ export function App() {
 
   const diff = useMemo(() => {
     if (!activeWorkspaceId || !reviewWorkspaceIndex) return {}
-    return activeWs?.kind === "arch"
-      ? architectureDiffIndex(reviewBaseIndex, reviewWorkspaceIndex)
-      : diffIndex(reviewBaseIndex, reviewWorkspaceIndex)
-  }, [activeWorkspaceId, activeWs?.kind, reviewWorkspaceIndex, reviewBaseIndex])
+    return diffIndex(reviewBaseIndex, reviewWorkspaceIndex)
+  }, [activeWorkspaceId, reviewWorkspaceIndex, reviewBaseIndex])
 
   const activeGoals = activeWs?.goals ?? []
   const activeStorybookRenderKey = buildStorybookRenderKey(activeWs, activeStorybookState)
@@ -1153,14 +1151,14 @@ export function App() {
 
   const addGoal = useCallback(
     async (
-      target: string, label: string, text: string, mode: "code" | "arch", fork: boolean,
+      target: string, label: string, text: string, fork: boolean,
       extra?: { storyId?: string; selector?: string; component?: string; htmlContext?: string; goalName?: string; workspaceName?: string; appPath?: string; runTargetId?: string; screenshotDataUrl?: string },
     ) => {
       const { workspaceName: explicitWorkspaceName, ...goalExtra } = extra ?? {}
-      // 1. Code forks are created client-side. Arch isolation is owned by the backend.
-      const shouldFork = mode === "code" || fork
+      // 1. Forks are created client-side.
+      const shouldFork = fork
       const workspaceName = explicitWorkspaceName ?? goalExtra.goalName ?? label
-      let wsId = shouldFork && mode === "code" ? await createWorkspace(activeWorkspaceId, "code", workspaceName) : activeWorkspaceId
+      let wsId = shouldFork ? await createWorkspace(activeWorkspaceId, "code", workspaceName) : activeWorkspaceId
       if (!wsId) wsId = await createWorkspace(null, "code", workspaceName)
       if (!wsId) return
 
@@ -1168,7 +1166,7 @@ export function App() {
       const goalRes = await fetch(`/api/workspaces/${wsId}/goals`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target, label, text, mode, fork: shouldFork, ...goalExtra }),
+        body: JSON.stringify({ target, label, text, mode: "code", fork: shouldFork, ...goalExtra }),
       })
       const result = await goalRes.json()
       if (!goalRes.ok) {
@@ -1249,7 +1247,7 @@ export function App() {
 
   const addStoryWritingGoal = useCallback(
     (target: string, label: string) => {
-      addGoal(target, label, buildStoryWritingPrompt(label), "code", false, {
+      addGoal(target, label, buildStoryWritingPrompt(label), false, {
         component: label,
         goalName: `Generate Stories for ${label}`,
         workspaceName: `Generate Stories for ${label}`,
@@ -1272,7 +1270,6 @@ export function App() {
         component: g.component,
         appPath: g.appPath,
         runTargetId: g.runTargetId,
-        mode: g.mode,
         status: g.status,
         sessionId: g.sessionId,
         replies: g.replies,
@@ -1372,7 +1369,7 @@ export function App() {
       }
       if (e.data?.type !== "logos:story-comment") return
       if (!acceptStoryCommentEvent(e.data)) return
-      const { storyId, component, selector, label, text, mode, htmlContext, appPath, runTargetId, screenshotDataUrl } = e.data
+      const { storyId, component, selector, label, text, htmlContext, appPath, runTargetId, screenshotDataUrl } = e.data
       if (typeof storyId === "string" && storyId) {
         setStoryCommentDrafts((current) => {
           const next = { ...current }
@@ -1390,7 +1387,7 @@ export function App() {
         : typeof appPath === "string" && appPath.length > 0
           ? `app:${appPath}`
           : `story:${storyId}`
-      addGoal(target, label ?? storyId, text, mode ?? "code", true, {
+      addGoal(target, label ?? storyId, text, true, {
         storyId,
         selector,
         component,
@@ -1838,8 +1835,7 @@ export function App() {
           y={popup.y}
           label={popup.label}
           goals={goalsByTarget[popup.target] ?? []}
-          workspaceKind={activeWs?.kind}
-          onAdd={(text, mode) => {
+          onAdd={(text) => {
             const extra = popup.storyId ? {
               storyId: popup.storyId,
               ...(popup.selector ? { selector: popup.selector } : {}),
@@ -1849,7 +1845,7 @@ export function App() {
               ...(popup.runTargetId ? { runTargetId: popup.runTargetId } : {}),
               ...(popup.screenshotDataUrl ? { screenshotDataUrl: popup.screenshotDataUrl } : {}),
             } : undefined
-            addGoal(popup.target, popup.label, text, mode, true, extra)
+            addGoal(popup.target, popup.label, text, true, extra)
             clearRunCommentAnnotation(popup.sourceWindow)
             setPopup(null)
           }}

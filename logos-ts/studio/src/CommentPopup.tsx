@@ -14,18 +14,17 @@ interface Props {
   y: number
   label: string
   goals: Goal[]
-  workspaceKind?: "code" | "arch" | undefined
-  onAdd: (text: string, mode: "code" | "arch") => void
+  onAdd: (text: string) => void
   onReply?: (goalId: string, text: string) => void
   onClose: () => void
 }
 
-export function CommentPopup({ x, y, label, goals, workspaceKind, onAdd, onReply, onClose }: Props) {
+export function CommentPopup({ x, y, label, goals, onAdd, onReply, onClose }: Props) {
   const left = Math.min(x, window.innerWidth - 290)
   const top = Math.min(y, window.innerHeight - 280)
   const { offset, reset, dragHandleProps } = usePopoverDrag()
 
-  const handleAdd = (p: SubmitPayload) => onAdd(p.text, p.mode)
+  const handleAdd = (p: SubmitPayload) => onAdd(p.text)
   const replyProps = onReply == null
     ? {}
     : { onReply: (p: ReplyPayload) => onReply(p.goalId, p.text) }
@@ -48,7 +47,6 @@ export function CommentPopup({ x, y, label, goals, workspaceKind, onAdd, onReply
         <CommentThread
           label={label}
           comments={goals}
-          workspaceKind={workspaceKind}
           onAdd={handleAdd}
           {...replyProps}
           onClose={onClose}

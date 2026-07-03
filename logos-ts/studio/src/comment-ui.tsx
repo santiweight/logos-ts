@@ -17,13 +17,11 @@ export interface CommentItem {
   agentStatus?: string | null
   sessionId?: string | null
   status?: string | null
-  mode?: string
   replies?: GoalReply[]
 }
 
 export interface SubmitPayload {
   text: string
-  mode: "code" | "arch"
 }
 
 export type DraftPayload = SubmitPayload
@@ -41,7 +39,7 @@ export interface DragOffset {
 const FONT = "12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace"
 type DragHandleProps = React.HTMLAttributes<HTMLDivElement>
 
-// --- Thread: shows existing comments + reply box with mode/fork controls ------
+// --- Thread: shows existing comments + reply box ------------------------------
 
 export function CommentThread({
   label,
@@ -50,7 +48,6 @@ export function CommentThread({
   onRemove,
   onReply,
   onClose,
-  workspaceKind,
   onEditingChange,
   initialDraft,
   onDraftChange,
@@ -62,14 +59,12 @@ export function CommentThread({
   onRemove?: (id: string) => void
   onReply?: ((payload: ReplyPayload) => void) | undefined
   onClose: () => void
-  workspaceKind?: "code" | "arch" | undefined
   onEditingChange?: (active: boolean) => void
   initialDraft?: Partial<DraftPayload> | undefined
   onDraftChange?: (payload: DraftPayload) => void
   dragHandleProps?: DragHandleProps | undefined
 }) {
   const [text, setText] = useState(initialDraft?.text ?? "")
-  const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
   const [replyGoalId, setReplyGoalId] = useState<string | null>(null)
   const [replyText, setReplyText] = useState("")
   const onEditingChangeRef = useRef(onEditingChange)
@@ -79,8 +74,8 @@ export function CommentThread({
   const editingActive = text.trim().length > 0
   useEffect(() => {
     onEditingChangeRef.current?.(editingActive)
-    onDraftChangeRef.current?.({ text, mode })
-  }, [editingActive, mode, text])
+    onDraftChangeRef.current?.({ text })
+  }, [editingActive, text])
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const canReply = useCallback((c: CommentItem) =>
     onReply != null
@@ -100,7 +95,7 @@ export function CommentThread({
       setText("")
       return
     }
-    onAdd({ text: t, mode })
+    onAdd({ text: t })
     setText("")
   }
 
@@ -210,24 +205,20 @@ export function CommentThread({
         </div>
       ) : (
         <ModeBar
-          mode={mode}
-          setMode={setMode}
           onSubmit={submit}
           disabled={text.trim().length === 0}
-          workspaceKind={workspaceKind}
         />
       )}
     </>
   )
 }
 
-// --- Composer: new-comment box with mode/fork controls ------------------------
+// --- Composer: new-comment box ------------------------------------------------
 
 export function CommentComposer({
   label,
   onSave,
   onCancel,
-  workspaceKind,
   onEditingChange,
   initialDraft,
   onDraftChange,
@@ -236,14 +227,12 @@ export function CommentComposer({
   label: string
   onSave: (payload: SubmitPayload) => void
   onCancel: () => void
-  workspaceKind?: "code" | "arch" | undefined
   onEditingChange?: (active: boolean) => void
   initialDraft?: Partial<DraftPayload> | undefined
   onDraftChange?: (payload: DraftPayload) => void
   dragHandleProps?: DragHandleProps | undefined
 }) {
   const [text, setText] = useState(initialDraft?.text ?? "")
-  const [mode, setMode] = useState<"code" | "arch">(initialDraft?.mode ?? "code")
   const onEditingChangeRef = useRef(onEditingChange)
   const onDraftChangeRef = useRef(onDraftChange)
   onEditingChangeRef.current = onEditingChange
@@ -251,12 +240,12 @@ export function CommentComposer({
   const editingActive = text.trim().length > 0
   useEffect(() => {
     onEditingChangeRef.current?.(editingActive)
-    onDraftChangeRef.current?.({ text, mode })
-  }, [editingActive, mode, text])
+    onDraftChangeRef.current?.({ text })
+  }, [editingActive, text])
   useEffect(() => () => onEditingChangeRef.current?.(false), [])
   const submit = () => {
     const t = text.trim()
-    if (t.length > 0) onSave({ text: t, mode })
+    if (t.length > 0) onSave({ text: t })
   }
 
   return (
@@ -273,11 +262,8 @@ export function CommentComposer({
         style={textareaStyle}
       />
       <ModeBar
-        mode={mode}
-        setMode={setMode}
         onSubmit={submit}
         disabled={text.trim().length === 0}
-        workspaceKind={workspaceKind}
       />
     </>
   )
@@ -318,29 +304,18 @@ function Header({
   )
 }
 
-// --- Mode bar: segmented code/arch toggle + fork + submit --------------------
+// --- Action bar ---------------------------------------------------------------
 
 function ModeBar({
-  mode,
-  setMode,
   onSubmit,
   disabled,
-  workspaceKind,
 }: {
-  mode: "code" | "arch"
-  setMode: (m: "code" | "arch") => void
   onSubmit: () => void
   disabled: boolean
-  workspaceKind?: "code" | "arch" | undefined
 }) {
   return (
     <div style={actionsStyle}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <div style={segmentedTrack} onClick={() => setMode(mode === "code" ? "arch" : "code")}>
-          <span style={segmentBtn(mode === "code")}>code</span>
-          <span style={segmentBtn(mode === "arch")}>arch</span>
-        </div>
-      </div>
+      <div />
       <button type="button" onClick={onSubmit} style={primaryBtnStyle} disabled={disabled}>
         Create Change
       </button>

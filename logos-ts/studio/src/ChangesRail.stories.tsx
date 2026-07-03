@@ -33,7 +33,7 @@ const goal2: Goal = {
   target: "cls:StudioIndex",
   label: "StudioIndex",
   text: "Flatten into a single files[] array",
-  mode: "arch",
+  mode: "code",
   createdAt: Date.now() - 120_000,
   status: "pending",
 }
@@ -53,7 +53,7 @@ const goalError: Goal = {
   target: "fn:extractArchitecture",
   label: "extractArchitecture",
   text: "Return early when no source files are found",
-  mode: "arch",
+  mode: "code",
   createdAt: Date.now() - 60_000,
   status: "error",
 }
@@ -83,7 +83,7 @@ const ws2: WorkspaceMeta = {
 const wsArch: WorkspaceMeta = {
   id: "ws-arch",
   name: "StudioIndex",
-  kind: "arch",
+  kind: "code",
   parentId: null,
   createdAt: Date.now() - 180_000,
   baseInstanceId: "inst-arch",
@@ -233,7 +233,7 @@ export const ManyWorkspaces: Story = {
       {
         id: "ws-4",
         name: "workspace-4",
-        kind: "arch",
+        kind: "code",
         parentId: "ws-3",
         createdAt: Date.now() - 10_000,
         baseInstanceId: "inst-4",

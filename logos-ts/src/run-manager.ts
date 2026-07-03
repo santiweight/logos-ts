@@ -427,6 +427,7 @@ function runEnv(opts: {
   out["BROWSER"] = "none"
   out["CI"] = process.env["CI"] ?? "true"
   out["LOGOS_SESSION"] = basename(opts.projectRoot)
+  if (process.env["LOGOS_STUDIO_INSTANCE_ID"]) out["LOGOS_STUDIO_INSTANCE_ID"] = process.env["LOGOS_STUDIO_INSTANCE_ID"]
   out["LOGOS_WS"] = opts.workspaceId
   out["LOGOS_RUN_TARGET"] = opts.targetId
   out["LOGOS_RUN_BASE"] = opts.base

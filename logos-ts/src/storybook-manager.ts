@@ -236,6 +236,7 @@ export class StorybookManager {
           LOGOS_SB_CACHE_DIR: cacheDir,
           // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
           LOGOS_SESSION: basename(this.projectRoot),
+          ...(process.env["LOGOS_STUDIO_INSTANCE_ID"] ? { LOGOS_STUDIO_INSTANCE_ID: process.env["LOGOS_STUDIO_INSTANCE_ID"] } : {}),
           LOGOS_WS: id,
         },
       })
@@ -447,7 +448,6 @@ export interface StoryComment {
   createdAt: number
   component?: string
   htmlContext?: string
-  mode?: string
   status?: string
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
 }
@@ -477,17 +477,16 @@ export function postCommentEditing(storyId: string, active: boolean): void {
   } catch {}
 }
 
-export function postCommentDraft(draft: (Omit<StoryComment, "id" | "createdAt" | "author" | "status"> & { text: string; mode: "code" | "arch"; kind: "new" | "reply" }) | { storyId: string; active: false }): void {
+export function postCommentDraft(draft: (Omit<StoryComment, "id" | "createdAt" | "author" | "status"> & { text: string; kind: "new" | "reply" }) | { storyId: string; active: false }): void {
   try {
     window.parent?.postMessage({ type: "logos:story-comment-draft", ...draft }, "*")
   } catch {}
 }
 
-export function onGoalsFromStudio(cb: (goals: StoryComment[], workspaceKind: "code" | "arch", drafts: any[]) => void): () => void {
+export function onGoalsFromStudio(cb: (goals: StoryComment[], workspaceKind: "code", drafts: any[]) => void): () => void {
   const handler = (event: MessageEvent) => {
     if (event.data?.type === "logos:story-goals") {
-      const kind = event.data.workspaceKind === "arch" ? "arch" : "code"
-      cb(event.data.goals as StoryComment[], kind, Array.isArray(event.data.drafts) ? event.data.drafts : [])
+      cb(event.data.goals as StoryComment[], "code", Array.isArray(event.data.drafts) ? event.data.drafts : [])
     }
   }
   window.addEventListener("message", handler)
@@ -595,7 +594,6 @@ interface Draft {
   selector: string
   label: string
   text?: string
-  mode?: "code" | "arch"
   htmlContext?: string
   kind?: "new" | "reply"
 }
@@ -643,7 +641,6 @@ export function CommentLayer({
   const [layerActive] = useState(claimStoryCommentLayer)
   const rootRef = useRef<HTMLDivElement>(null)
   const [enabled, setEnabled] = useState(true)
-  const [workspaceKind, setWorkspaceKind] = useState<"code" | "arch">("code")
   const [comments, setComments] = useState<StoryComment[]>([])
   const [altDown, setAltDown] = useState(false)
   const [hover, setHover] = useState<HoverTarget | null>(null)
@@ -660,9 +657,8 @@ export function CommentLayer({
   useEffect(() => {
     if (!layerActive) return undefined
     postReady(storyId)
-    return onGoalsFromStudio((goals, kind, drafts) => {
+    return onGoalsFromStudio((goals, _kind, drafts) => {
       setComments(goals.filter((goal) => goal.storyId === storyId))
-      setWorkspaceKind(kind)
       const restored = drafts.find((draft) => draft.storyId === storyId && typeof draft.text === "string" && draft.text.trim())
       if (restored) {
         if (restored.kind === "reply") {
@@ -782,7 +778,6 @@ export function CommentLayer({
       ...(htmlContext ? { htmlContext } : {}),
       text: payload.text,
       author: "you",
-      mode: payload.mode,
     })
   }
 
@@ -808,7 +803,6 @@ export function CommentLayer({
       label: draftUpdate.label,
       ...(draftUpdate.htmlContext ? { htmlContext: draftUpdate.htmlContext } : {}),
       text: payload.text,
-      mode: payload.mode,
       kind: draftUpdate.kind ?? "new",
     })
     sendCommentEditing(true)
@@ -879,7 +873,6 @@ export function CommentLayer({
                 <CommentThread
                   label={label}
                   comments={list}
-                  workspaceKind={workspaceKind}
                   onAdd={(payload) => {
                     sendComment(selector, label, describeHtmlContext(nearest.element, root), payload)
                     clearCommentDraft()
@@ -906,7 +899,6 @@ export function CommentLayer({
               <div style={{ ...popoverShell, ...popoverPos(rect), position: "absolute", pointerEvents: "auto" }}>
                 <CommentComposer
                   label={draft.label}
-                  workspaceKind={workspaceKind}
                   onSave={saveDraft}
                   onCancel={() => { clearCommentDraft(); setDraft(null) }}
                   initialDraft={draft}

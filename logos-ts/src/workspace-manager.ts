@@ -2,17 +2,12 @@
 // WorkspaceManager: owns workspace lifecycle, goal queue, and agent sequencing.
 //
 // Ontology:
-//   Workspace  — user-facing intent container, typed as code or architecture
+//   Workspace  — user-facing intent container
 //   Instance   — a materialized project tree on disk
 //   Goal       — a change request to be achieved in a workspace
 //   GoalQueue  — the ordered list of goals for a workspace (one per workspace)
 //   AgentRun   — executes one goal in a workspace instance directory
 //
-// Code and architecture work are isolated by workspace kind. Arch goals posted
-// to a code workspace fork into a dedicated arch workspace. Arch goals posted
-// to an arch workspace join its queue unless the caller explicitly asks to fork.
-// Each architecture workspace runs at most one architecture agent at a time.
-
 import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync } from "node:fs"
 import { resolve, relative, join, basename, dirname, sep } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
@@ -22,7 +17,7 @@ const execFileAsync = promisify(execFile)
 import type { StorybookManager } from "./storybook-manager.js"
 import type { RunManager } from "./run-manager.js"
 import type { ClaudeSessionManager } from "./claude-session-manager.js"
-import { buildArchImplementationPrompt, buildArchPrompt, buildGoalLine, buildImplPrompt, buildStoryGenerationSystemPrompt, buildVerifyNote, isStoryGenerationRequest, isWebResearchRequest, selectNextGoal } from "./prompt.js"
+import { buildGoalLine, buildImplPrompt, buildStoryGenerationSystemPrompt, buildVerifyNote, isStoryGenerationRequest, isWebResearchRequest, selectNextGoal } from "./prompt.js"
 import { buildClaudePrintArgs, cleanEnvForClaude } from "./claude-cli.js"
 import type { LogosSecrets } from "./logos-secrets.js"
 import { WorkspaceCodeService, type RebaseInstanceResult } from "./workspace-code-service.js"
@@ -61,7 +56,7 @@ export interface Goal {
   text: string
   label: string
   target: string
-  mode: "code" | "arch"
+  mode: "code"
   createdAt: number
   storyId?: string | null
   selector?: string | null
@@ -148,6 +143,10 @@ export interface PushWorkspaceBranchResult {
 export type AddGoalResult =
   | { goal: Goal; workspaceId: string }
   | { error: string; status: number }
+
+type AddGoalInput = Omit<Goal, "status" | "lifecycle" | "mergePolicy" | "workingInstanceId" | "mergedInstanceId" | "mode"> & {
+  mode?: "code" | "arch"
+}
 
 export type WorkspacePolicyEventType =
   import("./runtime-store.js").WorkspacePolicyEventType
@@ -258,6 +257,7 @@ export class WorkspaceManager {
   private spawnAgent: AgentSpawner
   private secrets: LogosSecrets
   private codeService: WorkspaceCodeService
+  private studioInstanceId: string
   private goalWorkingInstances = new Map<string, string>()
   private acceptanceRepairAttempts = new Map<string, number>()
 
@@ -278,6 +278,7 @@ export class WorkspaceManager {
     spawnAgent?: AgentSpawner
     initializeWorkspaces?: boolean
     installNodeModules?: boolean
+    studioInstanceId?: string
   }) {
     this.store = opts.store
     this.runsDir = opts.runsDir
@@ -295,6 +296,7 @@ export class WorkspaceManager {
     this.indexCache = new TsIndexCache({ logosTsRoot: this.logosTsRoot, tsx: this.tsx })
     this.secrets = opts.secrets
     this.spawnAgent = opts.spawnAgent ?? spawn
+    this.studioInstanceId = opts.studioInstanceId ?? process.env["LOGOS_STUDIO_INSTANCE_ID"] ?? basename(this.projectRoot)
     this.codeService = new WorkspaceCodeService({
       runsDir: this.runsDir,
       projectRoot: this.projectRoot,
@@ -827,11 +829,11 @@ export class WorkspaceManager {
     return "main"
   }
 
-  async create(opts?: { name?: string; fromWorkspaceId?: string; kind?: WorkspaceKind }): Promise<WorkspaceMeta> {
+  async create(opts?: { name?: string; fromWorkspaceId?: string; kind?: WorkspaceKind | "arch" }): Promise<WorkspaceMeta> {
     const id = this.nextWorkspaceId()
     const parentId = opts?.fromWorkspaceId ?? null
     const parentWs = parentId ? this.workspaces.get(parentId) : null
-    const kind = opts?.kind ?? "code"
+    const kind: WorkspaceKind = "code"
     const parentInst = parentWs ? this.activeInstance(parentWs) : null
     const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
     const sourceIndex = parentInst?.index ?? (this.getIndex ? await this.getIndex() : undefined)
@@ -934,52 +936,15 @@ export class WorkspaceManager {
 
   async addGoal(
     wsId: string,
-    goal: Omit<Goal, "status" | "lifecycle" | "mergePolicy" | "workingInstanceId" | "mergedInstanceId">,
+    goal: AddGoalInput,
     opts?: { fork?: boolean },
   ): Promise<AddGoalResult> {
     let ws = this.workspaces.get(wsId)
     if (!ws) return { error: "workspace not found", status: 404 }
 
-    if (goal.mode === "code" && ws.kind === "arch") {
-      this.recordPolicyEvent({
-        type: "goal_rejected",
-        workspaceId: ws.id,
-        goalId: goal.id,
-        message: "code goals cannot be added to architecture workspaces",
-        details: {
-          workspaceKind: ws.kind,
-          goalMode: goal.mode,
-        },
-      })
-      return { error: "code goals cannot be added to architecture workspaces", status: 409 }
-    }
-
-    if (goal.mode === "arch" && (ws.kind !== "arch" || opts?.fork === true)) {
-      const sourceWs = ws
-      const meta = await this.create({
-        name: `arch: ${goal.label || goal.target}`,
-        fromWorkspaceId: wsId,
-        kind: "arch",
-      })
-      ws = this.workspaces.get(meta.id)
-      if (!ws) return { error: "created architecture workspace could not be loaded", status: 500 }
-      this.recordPolicyEvent({
-        type: "arch_goal_redirected",
-        workspaceId: sourceWs.id,
-        goalId: goal.id,
-        message: "architecture goal placed in a dedicated architecture workspace",
-        details: {
-          sourceWorkspaceId: sourceWs.id,
-          sourceWorkspaceKind: sourceWs.kind,
-          targetWorkspaceId: ws.id,
-          targetWorkspaceKind: ws.kind,
-          forkRequested: opts?.fork === true,
-        },
-      })
-    }
-
     const g: Goal = {
       ...goal,
+      mode: "code",
       status: "pending",
       lifecycle: { stage: "initializing", state: "creating_goal" },
       mergePolicy: DEFAULT_MERGE_POLICY,
@@ -1107,42 +1072,6 @@ export class WorkspaceManager {
       return requestedGoal.id
     }
 
-    if (runningGoal && ws.kind === "arch") {
-      if (requestedGoal?.id === runningGoal.id || (requestedGoal && this.runningAgents.has(requestedGoal.id))) {
-        this.subscribeGoalEvents(requestedGoal.id, onEvent)
-        onEvent({ type: "status", goalId: requestedGoal.id, message: "attached to running agent" })
-        return requestedGoal.id
-      }
-      if (requestedGoal && requestedGoal.status !== "pending") {
-        onEvent({ type: "error", message: `goal is ${requestedGoal.status}` })
-        return null
-      }
-      if (requestedGoal?.status === "pending" && requestedGoal.mode === ws.kind && !this.runningAgents.has(requestedGoal.id)) {
-        this.subscribeGoalEvents(requestedGoal.id, onEvent)
-        onEvent({
-          type: "queued",
-          goalId: requestedGoal.id,
-          runningGoalId: runningGoal.id,
-          message: "goal queued behind running agent",
-        })
-        return requestedGoal.id
-      }
-
-      const runningDetails: Record<string, unknown> = { workspaceKind: ws.kind }
-      runningDetails["runningGoalId"] = runningGoal.id
-      if (ws.kind === "arch") {
-        this.recordPolicyEvent({
-          type: "arch_agent_blocked",
-          workspaceId: ws.id,
-          message: "architecture workspace already has a running agent",
-          goalId: runningGoal.id,
-          details: runningDetails,
-        })
-      }
-      onEvent({ type: "error", message: ws.kind === "arch" ? "architecture workspace already has a running agent" : "workspace already has a running agent" })
-      return null
-    }
-
     const awaitingMerge = this.goalAwaitingMerge(ws)
     if (awaitingMerge && requestedGoal?.id !== awaitingMerge.id) {
       onEvent({
@@ -1168,10 +1097,7 @@ export class WorkspaceManager {
       onEvent({ type: "error", message: "goal is already running" })
       return null
     }
-    if (goal.mode !== ws.kind) {
-      onEvent({ type: "error", message: `${goal.mode} goal cannot run in ${ws.kind} workspace` })
-      return null
-    }
+    goal.mode = "code"
     if (ws.initialization?.status === "error") {
       onEvent({ type: "error", goalId: goal.id, message: "workspace initialization failed" })
       return null
@@ -1206,7 +1132,7 @@ export class WorkspaceManager {
     if (!ws || this.runningGoal(ws) || this.goalAwaitingMerge(ws)) return
     if (ws.initialization?.status === "initializing" || ws.initialization?.status === "error") return
     const goal = selectNextGoal(ws.goals, this.runningAgents)
-    if (!goal || goal.mode !== ws.kind) return
+    if (!goal) return
 
     goal.status = "running"
     setGoalLifecycle(goal, { stage: "initializing", state: "creating_instance" })
@@ -1271,31 +1197,6 @@ export class WorkspaceManager {
 
     const dir = workingInst.materializedRoot
 
-    // Architecture mode: strip bodies for this single architecture agent.
-    const mode = goal.mode
-    const bodiesFile = resolve(this.runsDir, `${goal.id}.bodies.json`)
-    const archOriginalSnapshot = resolve(this.runsDir, `${goal.id}.original`)
-    if (mode === "arch") {
-      cpSync(dir, archOriginalSnapshot, {
-        recursive: true,
-        filter: (s) => !/node_modules/.test(s),
-      })
-      recordAndEmit({ type: "status", goalId: goal.id, message: "stripping to architecture view…" })
-      try {
-        await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "strip", dir, bodiesFile], {
-          cwd: this.logosTsRoot, encoding: "utf8",
-        })
-      } catch (e) {
-        rmSync(archOriginalSnapshot, { recursive: true, force: true })
-        goal.status = "error"
-        goal.lifecycle = { stage: "impl", state: "impl_failed" }
-        this.save(ws)
-        recordAndEmit({ type: "error", goalId: goal.id, message: "strip failed: " + String(e) })
-        this.maybeStartNextQueued(ws.id)
-        return
-      }
-    }
-
     // Build context
     recordAndEmit({ type: "status", goalId: goal.id, message: "building architecture context…" })
     const targets = [goal.component ? `component:${goal.component}` : goal.target]
@@ -1312,10 +1213,7 @@ export class WorkspaceManager {
     const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
     const screenshotPath = this.materializeGoalScreenshot(goal, dir)
     const goalLine = buildGoalLine({ ...goal, screenshotPath })
-    const prompt =
-      mode === "arch"
-        ? buildArchPrompt(context, sandbox, goalLine)
-        : buildImplPrompt(context, sandbox, goalLine, buildVerifyNote(!!this.caps.tests))
+    const prompt = buildImplPrompt(context, sandbox, goalLine, buildVerifyNote(!!this.caps.tests))
 
     // MCP config
     const mcpConfig: { mcpServers: Record<string, unknown> } = { mcpServers: {} }
@@ -1352,7 +1250,12 @@ export class WorkspaceManager {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
         // Ownership tag: lets `ps -E` / a sweeper identify strays from dead sessions.
-        env: { ...cleanEnvForClaude(this.secrets.anthropicApiKey), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+        env: {
+          ...cleanEnvForClaude(this.secrets.anthropicApiKey),
+          LOGOS_SESSION: basename(this.projectRoot),
+          LOGOS_STUDIO_INSTANCE_ID: this.studioInstanceId,
+          LOGOS_WS: ws.id,
+        },
       },
     )
     this.runningAgents.set(goal.id, child)
@@ -1379,17 +1282,6 @@ export class WorkspaceManager {
         return
       }
 
-      if (mode === "arch") {
-        recordAndEmit({ type: "status", message: "splicing implementations + inferring imports…" })
-        try {
-          await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/archmode.ts"), "splice", dir, bodiesFile], {
-            cwd: this.logosTsRoot, encoding: "utf8",
-          })
-        } catch (e) {
-          recordAndEmit({ type: "stderr", message: "splice failed: " + String(e) })
-        }
-      }
-
       rmSync(mcpConfigPath, { force: true })
       if (code !== 0) {
         goal.status = "error"
@@ -1398,26 +1290,6 @@ export class WorkspaceManager {
         this.save(ws)
         recordAndEmit({ type: "done", code })
         this.maybeStartNextQueued(ws.id)
-        return
-      }
-
-      if (mode === "arch") {
-        rmSync(archOriginalSnapshot, { recursive: true, force: true })
-        await this.reindexInstance(ws, workingInst)
-        recordAndEmit({ type: "status", goalId: goal.id, message: "architecture complete; starting implementation…" })
-        const implPrompt = await this.buildArchitectureImplementationPrompt(dir, goal)
-        if (!this.resumeGoalInInstance(ws, goal, implPrompt, workingInst, onEvent, {
-          recordUserReply: false,
-          lifecycleOnStart: { stage: "impl", state: "agent_running" },
-          treatAsImplementation: true,
-        })) {
-          goal.status = "error"
-          setGoalLifecycle(goal, { stage: "impl", state: "impl_failed" })
-          this.appendAgentSummary(goal, collectedEvents)
-          this.save(ws)
-          recordAndEmit({ type: "error", goalId: goal.id, message: "failed to start implementation after architecture pass" })
-          this.maybeStartNextQueued(ws.id)
-        }
         return
       }
 
@@ -1470,23 +1342,6 @@ export class WorkspaceManager {
       })
     }
     await this.reindexInstance(ws, inst)
-  }
-
-  private async buildArchitectureImplementationPrompt(dir: string, goal: Goal): Promise<string> {
-    const targets = [goal.component ? `component:${goal.component}` : goal.target]
-    let context = ""
-    try {
-      const { stdout } = await execFileAsync(this.tsx, [resolve(this.logosTsRoot, "src/context.ts"), dir, "40000", ...targets], {
-        cwd: this.logosTsRoot,
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-      })
-      context = stdout
-    } catch (e) {
-      context = `Context rebuild failed after the architecture pass: ${String(e)}\n`
-    }
-    const sandbox = `IMPORTANT: Your working directory is ${dir}. You MUST only read and edit files under this directory using RELATIVE paths. NEVER use absolute paths, NEVER navigate to parent directories, NEVER edit files outside your working directory. All file paths in the context above are relative to your cwd.\n\n`
-    return buildArchImplementationPrompt(context, sandbox, buildGoalLine(goal), buildVerifyNote(!!this.caps.tests))
   }
 
   private storybookDirsForInstance(inst: WorkspaceInstance): { frontendDir: string; configDir?: string } | null {
@@ -1917,7 +1772,12 @@ export class WorkspaceManager {
       {
         cwd: dir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...cleanEnvForClaude(this.secrets.anthropicApiKey), LOGOS_SESSION: basename(this.projectRoot), LOGOS_WS: ws.id },
+        env: {
+          ...cleanEnvForClaude(this.secrets.anthropicApiKey),
+          LOGOS_SESSION: basename(this.projectRoot),
+          LOGOS_STUDIO_INSTANCE_ID: this.studioInstanceId,
+          LOGOS_WS: ws.id,
+        },
       },
     )
     this.runningAgents.set(goal.id, child)
@@ -1945,22 +1805,6 @@ export class WorkspaceManager {
         setGoalLifecycle(goal, goal.lifecycle.stage === "merging"
           ? { stage: "merging", state: "merge_failed" }
           : { stage: "impl", state: "impl_failed" })
-        this.appendAgentSummary(goal, collectedEvents)
-        this.save(ws)
-        recordAndEmit({ type: "done", code })
-        this.maybeStartNextQueued(ws.id)
-        return
-      }
-
-      if (goal.mode === "arch" && !opts?.treatAsImplementation) {
-        await this.reindexInstance(ws, inst)
-        goal.status = "done"
-        setGoalLifecycle(goal, { stage: "merged", state: "complete" })
-        ws.activeInstanceId = inst.id
-        goal.mergedInstanceId = inst.id
-        goal.workingInstanceId = null
-        this.goalWorkingInstances.delete(goal.id)
-        this.restartWorkspaceServices(ws, inst)
         this.appendAgentSummary(goal, collectedEvents)
         this.save(ws)
         recordAndEmit({ type: "done", code })

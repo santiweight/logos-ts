@@ -25,7 +25,6 @@ export interface StoryComment {
   component?: string
   htmlContext?: string
   screenshotDataUrl?: string
-  mode?: string
   status?: string
   sessionId?: string | null
   replies?: { author: "agent" | "user"; text: string; createdAt: number }[]
@@ -40,7 +39,6 @@ interface Draft {
   selector: string
   label: string
   text?: string
-  mode?: "code" | "arch"
   htmlContext?: string
   screenshotDataUrl?: string
   kind?: "new" | "reply"
@@ -50,7 +48,6 @@ interface StoryDraft extends Draft {
   storyId: string
   component?: string
   text: string
-  mode: "code" | "arch"
   kind: "new" | "reply"
 }
 
@@ -137,14 +134,14 @@ function postCommentDraft(draft: StoryDraft | { storyId: string; active: false }
 }
 
 function onGoalsFromStudio(
-  cb: (goals: StoryComment[], workspaceKind: "code" | "arch", drafts: StoryDraft[]) => void,
+  cb: (goals: StoryComment[], workspaceKind: "code", drafts: StoryDraft[]) => void,
 ): () => void {
   const handler = (e: MessageEvent) => {
     const data: unknown = e.data
     if (!isRecord(data) || data["type"] !== "logos:story-goals") return
     cb(
       Array.isArray(data["goals"]) ? data["goals"] as StoryComment[] : [],
-      data["workspaceKind"] === "arch" ? "arch" : "code",
+      "code",
       Array.isArray(data["drafts"]) ? data["drafts"] as StoryDraft[] : [],
     )
   }
@@ -343,7 +340,6 @@ export function StorybookCommentLayer({
   const [hover, setHover] = useState<HoverTarget | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [openSelector, setOpenSelector] = useState<string | null>(null)
-  const [workspaceKind, setWorkspaceKind] = useState<"code" | "arch">("code")
   const drawingRef = useRef<DrawingSession | null>(null)
   const annotationPreviewRef = useRef<HTMLCanvasElement | null>(null)
   const suppressClickUntilRef = useRef(0)
@@ -366,8 +362,7 @@ export function StorybookCommentLayer({
 
   useEffect(() => {
     if (!layerActive) return undefined
-    return onGoalsFromStudio((goals, kind, drafts) => {
-      setWorkspaceKind(kind)
+    return onGoalsFromStudio((goals, _kind, drafts) => {
       setComments(goals.filter((g) => g.storyId === effectiveStoryId))
       const restored = drafts.find((d): boolean => d.storyId === effectiveStoryId && d.text.trim().length > 0)
       if (restored != null) {
@@ -575,7 +570,6 @@ export function StorybookCommentLayer({
       ...(screenshotDataUrl != null ? { screenshotDataUrl } : {}),
       text: p.text,
       author: "you",
-      mode: p.mode,
     })
   }
 
@@ -602,7 +596,6 @@ export function StorybookCommentLayer({
       ...(draftUpdate.htmlContext != null ? { htmlContext: draftUpdate.htmlContext } : {}),
       ...(draftUpdate.screenshotDataUrl != null ? { screenshotDataUrl: draftUpdate.screenshotDataUrl } : {}),
       text: p.text,
-      mode: p.mode,
       kind: draftUpdate.kind ?? "new",
     })
     sendCommentEditing(true)
@@ -695,7 +688,6 @@ export function StorybookCommentLayer({
                   sendCommentDraft(replyDraft, p)
                 }}
                 onEditingChange={sendCommentEditing}
-                workspaceKind={workspaceKind}
                 onClose={() => { clearAnnotationPreview(); clearCommentDraft(); setOpenSelector(null); setDraft(null) }}
                 dragHandleProps={dragHandleProps}
               />
@@ -728,7 +720,6 @@ export function StorybookCommentLayer({
                     sendCommentDraft(next, p)
                   }}
                   onEditingChange={sendCommentEditing}
-                  workspaceKind={workspaceKind}
                   dragHandleProps={dragHandleProps}
                 />
               </div>

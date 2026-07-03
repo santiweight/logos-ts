@@ -114,7 +114,7 @@ export interface Goal {
   text: string
   label: string
   target: string
-  mode: "code" | "arch"
+  mode: "code"
   createdAt: number
   storyId?: string | null
   selector?: string | null
@@ -132,7 +132,7 @@ export interface Goal {
   replies?: GoalReply[]
 }
 
-export type WorkspaceKind = "code" | "arch"
+export type WorkspaceKind = "code"
 
 export interface WorkspacePublication {
   branchName: string

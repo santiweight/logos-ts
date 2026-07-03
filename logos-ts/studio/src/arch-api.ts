@@ -18,7 +18,7 @@ export type ArchCheckStatus = "pending" | "running" | "pass" | "fail" | "idle"
 export interface ArchWorkspaceSummary {
   id: string
   name: string
-  kind: "arch"
+  kind: "code"
   parentId: string | null
   createdAt: number
   activeSnapshotId: string

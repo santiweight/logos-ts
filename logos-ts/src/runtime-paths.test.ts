@@ -1,7 +1,7 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { defaultLogosRuntimeDir, resolveLogosRuntimePaths } from "./runtime-paths.js"
+import { defaultLogosDevInstanceRuntimeDir, defaultLogosRuntimeDir, resolveLogosRuntimePaths, sanitizeLogosPathSegment } from "./runtime-paths.js"
 
 describe("Logos runtime paths", () => {
   it("puts default runtime state outside the source project", () => {
@@ -29,5 +29,21 @@ describe("Logos runtime paths", () => {
 
     expect(defaultLogosRuntimeDir(projectRoot)).toBe(defaultLogosRuntimeDir(projectRoot))
     expect(defaultLogosRuntimeDir(projectRoot)).toContain("logos")
+  })
+
+  it("derives isolated dev instance runtime dirs below the project runtime", () => {
+    const projectRoot = join(tmpdir(), "logos-source")
+    const first = defaultLogosDevInstanceRuntimeDir(projectRoot, "dev-one")
+    const second = defaultLogosDevInstanceRuntimeDir(projectRoot, "dev-two")
+
+    expect(first).toContain(join("dev-instances", "dev-one"))
+    expect(second).toContain(join("dev-instances", "dev-two"))
+    expect(first).not.toBe(second)
+    expect(first.startsWith(defaultLogosRuntimeDir(projectRoot))).toBe(true)
+  })
+
+  it("sanitizes runtime path segments", () => {
+    expect(sanitizeLogosPathSegment("dev one/../two")).toBe("dev-one-..-two")
+    expect(sanitizeLogosPathSegment("///")).toBe("instance")
   })
 })

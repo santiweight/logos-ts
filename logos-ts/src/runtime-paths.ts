@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { homedir } from "node:os"
 import { basename, resolve } from "node:path"
 
@@ -18,6 +18,18 @@ export function defaultLogosRuntimeDir(sourceProject: string): string {
   const hash = createHash("sha256").update(projectRoot).digest("hex").slice(0, 12)
   const name = basename(projectRoot).replace(/[^a-zA-Z0-9._-]+/g, "-") || "project"
   return resolve(homedir(), ".logos", "projects", `${name}-${hash}`)
+}
+
+export function createLogosDevInstanceId(): string {
+  return `dev-${Date.now().toString(36)}-${process.pid}-${randomBytes(4).toString("hex")}`
+}
+
+export function sanitizeLogosPathSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "instance"
+}
+
+export function defaultLogosDevInstanceRuntimeDir(sourceProject: string, instanceId: string): string {
+  return resolve(defaultLogosRuntimeDir(sourceProject), "dev-instances", sanitizeLogosPathSegment(instanceId))
 }
 
 export function resolveLogosRuntimePaths(opts: ResolveLogosRuntimePathOptions): LogosRuntimePaths {

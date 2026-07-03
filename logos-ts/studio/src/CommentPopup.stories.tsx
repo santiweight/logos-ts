@@ -27,7 +27,7 @@ const goal2: Goal = {
   target: "fn:buildStudioIndex",
   label: "buildStudioIndex",
   text: "Flatten the two-bucket model into files[]",
-  mode: "arch",
+  mode: "code",
   createdAt: Date.now() - 60_000,
   status: "done",
 }

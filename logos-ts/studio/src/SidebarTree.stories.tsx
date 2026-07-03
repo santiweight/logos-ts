@@ -123,7 +123,7 @@ export const WithGoals: Story = {
     comments: {
       "fn:parseJob": [
         { id: "g1", target: "fn:parseJob", label: "parseJob", text: "needs refactor", mode: "code", createdAt: 0, status: "pending" as const },
-        { id: "g2", target: "fn:parseJob", label: "parseJob", text: "also fix types", mode: "arch", createdAt: 0, status: "done" as const },
+        { id: "g2", target: "fn:parseJob", label: "parseJob", text: "also fix types", mode: "code", createdAt: 0, status: "done" as const },
       ],
     },
   },

@@ -39,7 +39,7 @@ import type { SbEntry } from "../../src/storybook-manager"
 type WorkspaceManagerLike = {
   list(): WorkspaceMeta[]
   get(id: string): Workspace | undefined
-  create(opts?: { name?: string; fromWorkspaceId?: string; kind?: "code" | "arch" }): Promise<WorkspaceMeta>
+  create(opts?: { name?: string; fromWorkspaceId?: string; kind?: "code" }): Promise<WorkspaceMeta>
   addGoal(
     workspaceId: string,
     goal: Omit<Goal, "status" | "lifecycle" | "mergePolicy" | "workingInstanceId" | "mergedInstanceId">,
@@ -72,7 +72,7 @@ interface ArchApiRuntime {
     text: string
     label: string
     target: string
-    mode: "arch"
+    mode: "code"
     component: string | null
     storyId: string | null
     selector: string | null
@@ -305,7 +305,7 @@ function archWorkspace(meta: WorkspaceMeta): ArchWorkspaceSummary {
   return {
     id: meta.id,
     name: meta.name,
-    kind: "arch",
+    kind: meta.kind,
     parentId: meta.parentId,
     createdAt: meta.createdAt,
     activeSnapshotId: meta.activeInstanceId,
@@ -551,7 +551,7 @@ async function handleArchApi(runtime: ArchApiRuntime, req: IncomingMessage, res:
       if (req.method === "POST" && parts.length === 1 && parts[0] === "workspaces") {
         const body = JSON.parse((await runtime.readBody(req)) || "{}") as { name?: string; fromWorkspaceId?: string }
         const workspace = await runtime.wsMgr.create({
-          kind: "arch",
+          kind: "code",
           ...(typeof body.name === "string" ? { name: body.name } : {}),
           ...(typeof body.fromWorkspaceId === "string" ? { fromWorkspaceId: body.fromWorkspaceId } : {}),
         })
@@ -616,7 +616,7 @@ async function handleArchApi(runtime: ArchApiRuntime, req: IncomingMessage, res:
           text,
           label: labelInput,
           target,
-          mode: "arch" as const,
+          mode: "code" as const,
           component: node?.kind === "component" ? node.label : null,
           storyId: typeof body["storyId"] === "string" ? body["storyId"] : node?.kind === "story" ? node.id.replace(/^story:/, "") : null,
           selector: typeof body["selector"] === "string" ? body["selector"] : null,
@@ -628,7 +628,7 @@ async function handleArchApi(runtime: ArchApiRuntime, req: IncomingMessage, res:
           text,
           label: fallbackGoalName(namingInput),
           target,
-          mode: "arch",
+          mode: "code",
           createdAt: Date.now(),
           storyId: namingInput.storyId,
           selector: namingInput.selector,

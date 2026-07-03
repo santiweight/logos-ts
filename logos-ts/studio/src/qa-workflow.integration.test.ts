@@ -352,7 +352,7 @@ class QaApi {
       const ws = this.workspaces.get(workspaceId)
       const goal = doneGoal(`goal-${this.createdGoals.length}`, String(body["goalName"] ?? body["label"] ?? "QA goal"), String(body["target"] ?? ""), {
         text: String(body["text"] ?? ""),
-        mode: body["mode"] === "arch" ? "arch" : "code",
+        mode: "code",
         storyId: typeof body["storyId"] === "string" ? body["storyId"] : null,
         selector: typeof body["selector"] === "string" ? body["selector"] : null,
         component: typeof body["component"] === "string" ? body["component"] : null,
@@ -418,7 +418,7 @@ class QaApi {
     if (request.method() === "POST" && !sub) {
       const body = readBody()
       const fromWorkspaceId = typeof body["fromWorkspaceId"] === "string" ? body["fromWorkspaceId"] : undefined
-      const kind = body["kind"] === "arch" ? "arch" : "code"
+      const kind = "code"
       const name = typeof body["name"] === "string" ? body["name"] : undefined
       this.workspaceCreates.push({ ...(fromWorkspaceId ? { fromWorkspaceId } : {}), kind, ...(name ? { name } : {}) })
       const n = this.workspaceCreates.length
