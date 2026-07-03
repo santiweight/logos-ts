@@ -1534,14 +1534,15 @@ export class WorkspaceManager {
     child.stderr?.on("data", (d) => recordAndEmit({ type: "stderr", message: d.toString() }))
     child.on("error", (e) => recordAndEmit({ type: "error", message: String(e) }))
     child.on("close", async (code) => {
-      this.runningAgents.delete(goal.id)
       if (this.deletingWorkspaces.has(ws.id) || !this.workspaces.has(ws.id)) {
+        this.runningAgents.delete(goal.id)
         rmSync(mcpConfigPath, { force: true })
         return
       }
 
       rmSync(mcpConfigPath, { force: true })
       if (code !== 0) {
+        this.runningAgents.delete(goal.id)
         goal.status = "error"
         setGoalLifecycle(goal, { stage: "impl", state: "impl_failed" })
         this.appendAgentSummary(goal, collectedEvents)
@@ -1555,6 +1556,7 @@ export class WorkspaceManager {
       this.save(ws)
       await this.captureReviewSnapshots(ws, goal, workingInst, recordAndEmit)
       await this.reindexInstance(ws, workingInst)
+      this.runningAgents.delete(goal.id)
       goal.status = "done"
       setGoalLifecycle(goal, { stage: "impl", state: "ready_to_merge" })
       this.activateSingleReadyWorkingInstance(ws, { restartServices: true })

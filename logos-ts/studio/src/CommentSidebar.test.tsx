@@ -26,6 +26,7 @@ function renderPanel({
   onNavigate = vi.fn(),
   onReply = vi.fn(),
   onMerge = vi.fn(),
+  onNewComment = vi.fn(),
   onResizeStart = vi.fn(),
 }: {
   selectedGoal?: Goal | null
@@ -33,6 +34,7 @@ function renderPanel({
   onNavigate?: (goal: Goal) => void
   onReply?: (goalId: string, text: string) => void
   onMerge?: (goalId: string) => void
+  onNewComment?: (text: string) => void
   onResizeStart?: () => void
 } = {}) {
   render(
@@ -42,17 +44,28 @@ function renderPanel({
       onNavigate={onNavigate}
       onReply={onReply}
       onMerge={onMerge}
+      onNewComment={onNewComment}
       onResizeStart={onResizeStart}
     />
   )
-  return { onNavigate, onReply, onMerge }
+  return { onNavigate, onReply, onMerge, onNewComment }
 }
 
 describe("CommentSidebar", () => {
-  it("shows an empty state when no goal is selected", () => {
+  it("shows composer when no goal is selected", () => {
     renderPanel({ selectedGoal: null })
 
-    expect(screen.getByText("Select a Change from the rail.")).toBeInTheDocument()
+    expect(screen.getByPlaceholderText("Ask Claude anything...")).toBeInTheDocument()
+  })
+
+  it("creates a new workspace when posting from idle state", () => {
+    const onNewComment = vi.fn()
+    renderPanel({ selectedGoal: null, onNewComment })
+
+    fireEvent.change(screen.getByPlaceholderText("Ask Claude anything..."), { target: { value: "Fix the login page" } })
+    fireEvent.click(screen.getByText("Send"))
+
+    expect(onNewComment).toHaveBeenCalledWith("Fix the login page")
   })
 
   it("renders exactly the selected goal thread", () => {
@@ -103,5 +116,120 @@ describe("CommentSidebar", () => {
     fireEvent.click(screen.getByText("Accept"))
 
     expect(onMerge).toHaveBeenCalledWith("goal-1")
+  })
+
+  it("shows Claude title in header", () => {
+    renderPanel({ selectedGoal: null })
+
+    expect(screen.getByText("Claude")).toBeInTheDocument()
+  })
+
+  it("does not fire onNewComment for empty/whitespace-only input", () => {
+    const onNewComment = vi.fn()
+    renderPanel({ selectedGoal: null, onNewComment })
+
+    fireEvent.change(screen.getByPlaceholderText("Ask Claude anything..."), { target: { value: "   " } })
+    fireEvent.click(screen.getByText("Send"))
+
+    expect(onNewComment).not.toHaveBeenCalled()
+  })
+
+  it("clears composer after submitting new comment", () => {
+    const onNewComment = vi.fn()
+    renderPanel({ selectedGoal: null, onNewComment })
+
+    const textarea = screen.getByPlaceholderText("Ask Claude anything...") as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "Test comment" } })
+    fireEvent.click(screen.getByText("Send"))
+
+    expect(textarea.value).toBe("")
+  })
+
+  it("supports Cmd+Enter to submit new comment", () => {
+    const onNewComment = vi.fn()
+    renderPanel({ selectedGoal: null, onNewComment })
+
+    const textarea = screen.getByPlaceholderText("Ask Claude anything...") as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "Test with keyboard" } })
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true })
+
+    expect(onNewComment).toHaveBeenCalledWith("Test with keyboard")
+  })
+
+  it("shows hint text in idle state", () => {
+    renderPanel({ selectedGoal: null })
+
+    expect(screen.getByText(/Select a workspace from the rail/)).toBeInTheDocument()
+  })
+
+  it("send button is disabled when composer is empty in idle state", () => {
+    renderPanel({ selectedGoal: null })
+
+    const sendButton = screen.getByText("Send") as HTMLButtonElement
+    expect(sendButton).toBeDisabled()
+  })
+
+  it("switches from idle composer to goal thread when goal becomes non-null", () => {
+    const { rerender } = render(
+      <CommentSidebar
+        goal={null}
+        running={false}
+        onNavigate={vi.fn()}
+        onReply={vi.fn()}
+        onMerge={vi.fn()}
+        onNewComment={vi.fn()}
+        onResizeStart={vi.fn()}
+      />
+    )
+
+    expect(screen.getByPlaceholderText("Ask Claude anything...")).toBeInTheDocument()
+
+    rerender(
+      <CommentSidebar
+        goal={goal()}
+        running={false}
+        onNavigate={vi.fn()}
+        onReply={vi.fn()}
+        onMerge={vi.fn()}
+        onNewComment={vi.fn()}
+        onResizeStart={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByPlaceholderText("Ask Claude anything...")).not.toBeInTheDocument()
+    expect(screen.getByText("Make Postings Bold")).toBeInTheDocument()
+  })
+
+  it("clears reply input when switching between goals", () => {
+    const { rerender } = render(
+      <CommentSidebar
+        goal={goal()}
+        running={false}
+        onNavigate={vi.fn()}
+        onReply={vi.fn()}
+        onMerge={vi.fn()}
+        onNewComment={vi.fn()}
+        onResizeStart={vi.fn()}
+      />
+    )
+
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "Reply to goal 1" } })
+    expect(textarea.value).toBe("Reply to goal 1")
+
+    rerender(
+      <CommentSidebar
+        goal={goal({ id: "goal-2", label: "Different Goal", text: "different text" })}
+        running={false}
+        onNavigate={vi.fn()}
+        onReply={vi.fn()}
+        onMerge={vi.fn()}
+        onNewComment={vi.fn()}
+        onResizeStart={vi.fn()}
+      />
+    )
+
+    const newTextarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    expect(newTextarea.value).toBe("")
   })
 })

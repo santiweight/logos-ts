@@ -1830,6 +1830,9 @@ body.resizing-comments * {
   flex: none;
 }
 .cs-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-weight: 600;
   font-size: 11px;
   text-transform: uppercase;
@@ -1859,6 +1862,22 @@ body.resizing-comments * {
   color: var(--muted);
   font-size: 11px;
   text-align: center;
+}
+
+.cs-idle {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.cs-idle .cs-idle-hint {
+  padding: 16px 12px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+.cs-idle .cs-composer {
+  margin-top: auto;
 }
 
 .cs-card {

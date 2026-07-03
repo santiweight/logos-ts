@@ -1603,6 +1603,97 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(readFileSync(join(checkoutDir, "thing.txt"), "utf8")).toBe("edited\n")
     expect(readFileSync(join(checkoutDir, "other.txt"), "utf8")).toBe("from elsewhere\n")
   }, 60_000)
+
+  it("keeps goal in runningAgents during post-processing so reconnecting clients receive events", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("post-proc", "code"))).goal
+
+    const firstEvents: { type: string; message?: unknown; goalId?: unknown }[] = []
+    mgr.processNext(code.id, (event) => firstEvents.push(event))
+    await waitFor(() => expect(spawned).toHaveLength(1))
+
+    // Agent child process exits successfully — post-processing (snapshots, reindex) starts.
+    // Don't await the close; instead, immediately try to re-attach while post-processing runs.
+    spawned[0]!.emit("close", 0)
+
+    // Before the fix, runningAgents.delete happened immediately on close,
+    // leaving goal.status === "running" but no entry in runningAgents. A
+    // reconnecting client would get "attached to running agent" but then
+    // never receive events. After the fix, the goal stays in runningAgents
+    // through post-processing, so a subscriber attached during that window
+    // receives the done event.
+    const reconnectEvents: { type: string; message?: unknown; goalId?: unknown }[] = []
+    const reconnectResult = mgr.processById(code.id, task.id, (event) => reconnectEvents.push(event))
+    expect(reconnectResult).toBe(task.id)
+
+    // The reconnecting client should eventually get the done event
+    await waitFor(() => expect(reconnectEvents.some((e) => e.type === "done")).toBe(true))
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+  }, 60_000)
+
+  it("cleans up runningAgents on error exit without blocking on post-processing", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    expectGoal(await mgr.addGoal(code.id, goal("err-goal", "code")))
+
+    const events: { type: string; message?: unknown; code?: unknown }[] = []
+    mgr.processNext(code.id, (event) => events.push(event))
+    await waitFor(() => expect(spawned).toHaveLength(1))
+
+    spawned[0]!.emit("close", 1)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("error"))
+
+    expect(events.some((e) => e.type === "done" && e.code === 1)).toBe(true)
+  }, 60_000)
+
+  it("delivers post-processing status events to a subscriber that attaches during snapshot capture", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("snap-sub", "code"))).goal
+
+    mgr.processNext(code.id, () => {})
+    await waitFor(() => expect(spawned).toHaveLength(1))
+
+    spawned[0]!.emit("close", 0)
+
+    // Attach a late subscriber during the post-processing window
+    const lateEvents: { type: string; message?: unknown }[] = []
+    mgr.processById(code.id, task.id, (event) => lateEvents.push(event))
+
+    // Wait for full completion
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("done"))
+
+    // Late subscriber should have received the "attached" status AND the done event
+    expect(lateEvents.some((e) => e.type === "status" && typeof e.message === "string" && e.message.includes("attached"))).toBe(true)
+    expect(lateEvents.some((e) => e.type === "done")).toBe(true)
+  }, 60_000)
+
+  it("does not block a second goal from starting after first goal errors", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const mgr = createManager({ spawned })
+    const code = await mgr.create({ kind: "code" })
+    expectGoal(await mgr.addGoal(code.id, goal("first-err", "code")))
+    expectGoal(await mgr.addGoal(code.id, goal("second-ok", "code")))
+
+    mgr.processNext(code.id, () => {})
+    await waitFor(() => expect(spawned).toHaveLength(1))
+
+    spawned[0]!.emit("close", 1)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id)[0]?.status).toBe("error"))
+
+    // The second goal should be processable after the first errors
+    const secondEvents: { type: string; message?: unknown }[] = []
+    const result = mgr.processById(code.id, "second-ok", (event) => secondEvents.push(event))
+    expect(result).toBe("second-ok")
+    await waitFor(() => expect(spawned).toHaveLength(2))
+
+    spawned[1]!.emit("close", 0)
+    await waitFor(() => expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === "second-ok")?.status).toBe("done"))
+  }, 60_000)
 })
 
 describe("stale index cache cleanup", () => {
