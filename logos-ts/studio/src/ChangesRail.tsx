@@ -7,6 +7,7 @@ const listIcon = svgIcon("M5 7h14M5 12h14M5 17h14", 12)
 const collapseIcon = svgIcon("M15 18l-6-6 6-6", 12)
 const mergeIcon = svgIcon("M7 3v11a4 4 0 0 0 4 4h6M17 18l-3-3M17 18l-3 3M7 7h5", 12)
 const trashIcon = svgIcon("M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7", 12)
+const archiveIcon = svgIcon("M3 6h18M5 6v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6M10 12h4", 12)
 const pushIcon = svgIcon("M12 21V5M7 10l5-5 5 5M5 21h14", 12)
 
 function initializationStatusText(status: NonNullable<WorkspaceMeta["initialization"]>["steps"][number]["status"]): string {
@@ -161,14 +162,14 @@ export function ChangesRail({
             )}
             <button
               className="rail-del"
-              title="Delete workspace (⌘⌫)"
-              aria-label={`Delete ${w.name}`}
+              title={thread?.lifecycle?.stage === "merged" ? "Archive workspace (⌘⌫)" : "Delete workspace (⌘⌫)"}
+              aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
               onClick={(e) => {
                 e.stopPropagation()
                 onDeleteWorkspace(w.id)
               }}
             >
-              {trashIcon}
+              {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
             </button>
           </div>
         </div>

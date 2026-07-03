@@ -1002,6 +1002,13 @@ export class WorkspaceManager {
     if (!ws) return
     this.deletingWorkspaces.add(id)
 
+    // Reparent children to this workspace's parent (keep their commits intact)
+    for (const child of this.workspaces.values()) {
+      if (child.parentId !== id) continue
+      child.parentId = ws.parentId
+      this.save(child)
+    }
+
     // Kill any running agents for this workspace's goals
     for (const g of ws.goals) {
       const child = this.runningAgents.get(g.id)

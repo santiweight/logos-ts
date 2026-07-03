@@ -405,6 +405,67 @@ describe("ChangesRail", () => {
     expect(onCreatePullRequest).toHaveBeenCalledWith("ws-1")
   })
 
+  it("shows Archive label instead of Delete for merged workspaces", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "merged-ws",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [
+          {
+            id: "g-1",
+            text: "done change",
+            label: "done",
+            target: "component:X",
+            mode: "code" as const,
+            createdAt: 1000,
+            status: "done" as const,
+            lifecycle: { stage: "merged" as const, state: "complete" as const },
+          },
+        ],
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} />)
+
+    expect(screen.getByTitle("Archive workspace (⌘⌫)")).toBeInTheDocument()
+    expect(screen.getByLabelText("Archive merged-ws")).toBeInTheDocument()
+    expect(screen.queryByTitle("Delete workspace (⌘⌫)")).not.toBeInTheDocument()
+  })
+
+  it("shows Delete label for non-merged workspaces", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "active-ws",
+        kind: "code" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [
+          {
+            id: "g-1",
+            text: "pending change",
+            label: "thing",
+            target: "component:X",
+            mode: "code" as const,
+            createdAt: 1000,
+            status: "pending" as const,
+          },
+        ],
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} />)
+
+    expect(screen.getByTitle("Delete workspace (⌘⌫)")).toBeInTheDocument()
+    expect(screen.getByLabelText("Delete active-ws")).toBeInTheDocument()
+    expect(screen.queryByTitle("Archive workspace (⌘⌫)")).not.toBeInTheDocument()
+  })
+
   it("does not show visible trash controls on change rows", () => {
     const workspaces = [
       {

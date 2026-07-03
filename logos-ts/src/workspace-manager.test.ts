@@ -740,6 +740,51 @@ describe("WorkspaceManager workspace kinds", () => {
     }])
   }, 20_000)
 
+  it("reparents children to the deleted workspace's parent without retargeting", async () => {
+    const mgr = createManager()
+    const root = await mgr.create({ kind: "code" })
+    const parent = await mgr.create({ fromWorkspaceId: root.id, kind: "code", name: "parent" })
+    const child = await mgr.create({ fromWorkspaceId: parent.id, kind: "code", name: "child" })
+
+    const childBefore = mgr.get(child.id)
+    if (!childBefore) throw new Error("missing child")
+    expect(childBefore.parentId).toBe(parent.id)
+    const baseInstanceBefore = childBefore.baseInstanceId
+    const activeInstanceBefore = childBefore.activeInstanceId
+
+    mgr.delete(parent.id)
+
+    expect(mgr.get(parent.id)).toBeUndefined()
+    const childAfter = mgr.get(child.id)
+    if (!childAfter) throw new Error("child was deleted")
+    expect(childAfter.parentId).toBe(root.id)
+    expect(childAfter.baseInstanceId).toBe(baseInstanceBefore)
+    expect(childAfter.activeInstanceId).toBe(activeInstanceBefore)
+  })
+
+  it("reparents multiple children when deleting their parent", async () => {
+    const mgr = createManager()
+    const root = await mgr.create({ kind: "code" })
+    const parent = await mgr.create({ fromWorkspaceId: root.id, kind: "code", name: "parent" })
+    const childA = await mgr.create({ fromWorkspaceId: parent.id, kind: "code", name: "child-a" })
+    const childB = await mgr.create({ fromWorkspaceId: parent.id, kind: "code", name: "child-b" })
+
+    mgr.delete(parent.id)
+
+    expect(mgr.get(childA.id)?.parentId).toBe(root.id)
+    expect(mgr.get(childB.id)?.parentId).toBe(root.id)
+  })
+
+  it("reparents to null when deleting a root-level workspace", async () => {
+    const mgr = createManager()
+    const root = await mgr.create({ kind: "code" })
+    const child = await mgr.create({ fromWorkspaceId: root.id, kind: "code", name: "child" })
+
+    mgr.delete(root.id)
+
+    expect(mgr.get(child.id)?.parentId).toBeNull()
+  })
+
   it("shuts down every path-scoped Storybook service when deleting a workspace", async () => {
     const shutdowns: string[] = []
     const mgr = createManager({
