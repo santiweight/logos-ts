@@ -442,9 +442,9 @@ describe("ChangesRail", () => {
     ]
     render(<ChangesRail {...baseProps} workspaces={workspaces} />)
 
-    expect(screen.getByTitle("Archive workspace (⌘⌫)")).toBeInTheDocument()
+    expect(screen.getByTitle("Archive workspace")).toBeInTheDocument()
     expect(screen.getByLabelText("Archive merged-ws")).toBeInTheDocument()
-    expect(screen.queryByTitle("Delete workspace (⌘⌫)")).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Delete workspace")).not.toBeInTheDocument()
   })
 
   it("shows Delete label for non-merged workspaces", () => {
@@ -473,9 +473,29 @@ describe("ChangesRail", () => {
     ]
     render(<ChangesRail {...baseProps} workspaces={workspaces} />)
 
-    expect(screen.getByTitle("Delete workspace (⌘⌫)")).toBeInTheDocument()
+    expect(screen.getByTitle("Delete workspace")).toBeInTheDocument()
     expect(screen.getByLabelText("Delete active-ws")).toBeInTheDocument()
-    expect(screen.queryByTitle("Archive workspace (⌘⌫)")).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Archive workspace")).not.toBeInTheDocument()
+  })
+
+  it("hides delete button for remote workspaces", () => {
+    const workspaces = [
+      {
+        id: "ws-1",
+        name: "remote-ws",
+        kind: "code" as const,
+        type: "remote" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [],
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} />)
+
+    expect(screen.queryByTitle("Delete workspace")).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Archive workspace")).not.toBeInTheDocument()
   })
 
   it("shows spinner with status tooltip when workspace has a status", () => {
@@ -496,7 +516,7 @@ describe("ChangesRail", () => {
     render(<ChangesRail {...baseProps} workspaces={workspaces} />)
 
     expect(screen.getByTitle("Stopping agents…")).toBeInTheDocument()
-    expect(screen.queryByTitle("Delete workspace (⌘⌫)")).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Delete workspace")).not.toBeInTheDocument()
   })
 
   it("hides accept button when workspace has a status", () => {
@@ -547,7 +567,7 @@ describe("ChangesRail", () => {
     ]
     render(<ChangesRail {...baseProps} workspaces={workspaces} />)
 
-    expect(screen.getByTitle("Delete workspace (⌘⌫)")).toBeInTheDocument()
+    expect(screen.getByTitle("Delete workspace")).toBeInTheDocument()
   })
 
   it("does not call onDeleteWorkspace when clicking spinner during status", () => {
@@ -624,6 +644,6 @@ describe("ChangesRail", () => {
     render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
 
     expect(document.querySelector(".rail-row.comment")).toBeNull()
-    expect(screen.queryByTitle("Delete change (⌘⌫)")).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Delete change")).not.toBeInTheDocument()
   })
 })

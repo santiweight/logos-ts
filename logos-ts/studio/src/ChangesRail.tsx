@@ -153,17 +153,19 @@ export function ChangesRail({
                     {mergeIcon}
                   </button>
                 )}
-                <button
-                  className="rail-del"
-                  title={thread?.lifecycle?.stage === "merged" ? "Archive workspace (⌘⌫)" : "Delete workspace (⌘⌫)"}
-                  aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDeleteWorkspace(w.id)
-                  }}
-                >
-                  {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
-                </button>
+                {w.type !== "remote" && (
+                  <button
+                    className="rail-del"
+                    title={thread?.lifecycle?.stage === "merged" ? "Archive workspace" : "Delete workspace"}
+                    aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDeleteWorkspace(w.id)
+                    }}
+                  >
+                    {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
+                  </button>
+                )}
               </>
             )}
           </div>

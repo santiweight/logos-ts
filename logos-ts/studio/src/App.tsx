@@ -927,22 +927,6 @@ export function App() {
     } catch {}
   }, [sidebarFiltersByScope])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
-        const tag = (e.target as HTMLElement)?.tagName
-        if (tag === "TEXTAREA" || tag === "INPUT") return
-        const sel = selected ?? (activeWorkspaceId ? { type: "workspace" as const, id: activeWorkspaceId } : null)
-        if (!sel) return
-        e.preventDefault()
-        if (sel.type === "workspace") deleteWorkspace(sel.id)
-        else if (activeWorkspaceId) deleteGoal(activeWorkspaceId, sel.id)
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [selected, activeWorkspaceId, deleteWorkspace, deleteGoal])
-
   const [reviewOpen, setReviewOpen] = useState(false)
 
   // ---- agent (per-goal) ----
