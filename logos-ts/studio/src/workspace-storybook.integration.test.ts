@@ -186,15 +186,13 @@ describe("workspace + storybook integration", () => {
 
     const url = await pollFor(async () => (await getStorybookUrls())[storybookId] ?? null, 150_000)
     expect(url).not.toBeNull()
-    expect(url).toBe(`/storybooks/${encodeURIComponent(storybookId)}`)
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
 
-    const sbRes = await fetch(`${baseUrl}${url!}`)
+    const sbRes = await fetch(url!)
     expect(sbRes.ok).toBe(true)
     expect(await sbRes.text()).toContain("fake storybook /")
 
-    const rootAssetRes = await fetch(`${baseUrl}/vite-inject-mocker-entry.js`, {
-      headers: { referer: `${baseUrl}${url!}/iframe.html?id=example--default` },
-    })
+    const rootAssetRes = await fetch(`${url!}/vite-inject-mocker-entry.js`)
     expect(rootAssetRes.ok).toBe(true)
     expect(await rootAssetRes.text()).toContain("fake storybook /vite-inject-mocker-entry.js")
 

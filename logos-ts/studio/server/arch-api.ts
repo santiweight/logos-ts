@@ -34,7 +34,7 @@ import { diffIndex } from "../src/diff"
 import { indexToArchText, lineDiff } from "../src/arch-text"
 import { extractSnapshotHtml, snapshotChanges } from "../src/review"
 import { publicRunUrl } from "./run-proxy"
-import { publicStorybookUrl } from "./storybook-proxy"
+import type { SbEntry } from "../../src/storybook-manager"
 
 type WorkspaceManagerLike = {
   list(): WorkspaceMeta[]
@@ -51,7 +51,7 @@ type WorkspaceManagerLike = {
 }
 
 type StorybookManagerLike = {
-  all(): Record<string, string>
+  all(): Record<string, SbEntry>
   allStates(): Record<string, SbState>
 }
 
@@ -342,7 +342,7 @@ function buildEvaluation(
       kind: "storybook",
       label: "Storybook",
       status: state?.status ?? (storybookEntries[serviceId] ? "ready" : "starting"),
-      url: storybookEntries[serviceId] ? publicStorybookUrl(serviceId) : null,
+      url: storybookEntries[serviceId]?.url ?? null,
       nodeIds: storybookNodeIds,
       ...(state?.error ? { error: state.error } : {}),
     })

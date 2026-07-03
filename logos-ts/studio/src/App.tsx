@@ -520,7 +520,7 @@ export function App() {
     storybookUrls,
     storybookStates,
   )
-  const activeStoryRenderer = activeStorybookUrl ? "storybook" : "portable"
+  const activeStoryRenderer = selection.view === "story" ? "storybook" : "portable"
   const retryStorybook = useCallback(async () => {
     if (!activeWorkspaceId) return
     try {

@@ -5,6 +5,7 @@ import { resolve, dirname } from "node:path"
 import { existsSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { homedir } from "node:os"
+import { isolatedDevEnv } from "./dev-env.mjs"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const STUDIO = resolve(__dirname, "..")
@@ -46,7 +47,7 @@ if (port) viteArgs.push("--port", port)
 
 const child = spawn(resolve(STUDIO, "node_modules/.bin/vite"), viteArgs, {
   cwd: STUDIO,
-  env: { ...process.env, LOGOS_PROJECT: projectRoot },
+  env: isolatedDevEnv(projectRoot),
   stdio: "inherit",
 })
 

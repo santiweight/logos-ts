@@ -25,7 +25,7 @@ function renderStory(storybookRenderKey: string, storyCommentEditingByStoryId: R
       selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
       workspaceId="ws-1"
       storyRenderer="storybook"
-      storybookUrl="/storybooks/ws-1"
+      storybookUrl="http://127.0.0.1:6006"
       storybookState={{ status: "ready", startedAt: 1000, logs: [] }}
       storybookRenderKey={storybookRenderKey}
       storyCommentEditingByStoryId={storyCommentEditingByStoryId}
@@ -93,7 +93,7 @@ describe("ContentPanel", () => {
     const iframe = screen.getByTitle("jobcard--default")
     expect(iframe).toHaveAttribute(
       "src",
-      "/storybooks/ws-1/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000"
+      "http://127.0.0.1:6006/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000"
     )
 
     rerender(
@@ -102,7 +102,7 @@ describe("ContentPanel", () => {
         selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
         workspaceId="ws-1"
         storyRenderer="storybook"
-        storybookUrl="/storybooks/ws-1"
+        storybookUrl="http://127.0.0.1:6006"
         storybookState={{ status: "ready", startedAt: 2000, logs: [] }}
         storybookRenderKey="inst-2:2000"
         storyCommentEditingByStoryId={{}}
@@ -115,7 +115,7 @@ describe("ContentPanel", () => {
 
     expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
       "src",
-      "/storybooks/ws-1/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-2%3A2000"
+      "http://127.0.0.1:6006/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-2%3A2000"
     )
   })
 
@@ -123,7 +123,7 @@ describe("ContentPanel", () => {
     const { rerender } = renderStory("inst-1:1000")
     expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
       "src",
-      "/storybooks/ws-1/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000"
+      "http://127.0.0.1:6006/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000"
     )
 
     rerender(
@@ -132,7 +132,7 @@ describe("ContentPanel", () => {
         selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
         workspaceId="ws-1"
         storyRenderer="storybook"
-        storybookUrl="/storybooks/ws-1"
+        storybookUrl="http://127.0.0.1:6006"
         storybookState={{ status: "ready", startedAt: 2000, logs: [] }}
         storybookRenderKey="inst-2:2000"
         storyCommentEditingByStoryId={{ "jobcard--default": true }}
@@ -145,7 +145,7 @@ describe("ContentPanel", () => {
 
     expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
       "src",
-      "/storybooks/ws-1/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000"
+      "http://127.0.0.1:6006/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000"
     )
 
     rerender(
@@ -154,7 +154,7 @@ describe("ContentPanel", () => {
         selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
         workspaceId="ws-1"
         storyRenderer="storybook"
-        storybookUrl="/storybooks/ws-1"
+        storybookUrl="http://127.0.0.1:6006"
         storybookState={{ status: "ready", startedAt: 2000, logs: [] }}
         storybookRenderKey="inst-2:2000"
         storyCommentEditingByStoryId={{}}
@@ -167,7 +167,7 @@ describe("ContentPanel", () => {
 
     expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
       "src",
-      "/storybooks/ws-1/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-2%3A2000"
+      "http://127.0.0.1:6006/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-2%3A2000"
     )
   })
 })

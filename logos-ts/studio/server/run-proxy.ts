@@ -78,7 +78,7 @@ function refererProxyTarget(req: IncomingMessage, url: URL, manager: RunManager)
 }
 
 function isRefererProxyPath(pathname: string): boolean {
-  return !pathname.startsWith("/runs/") && !pathname.startsWith("/storybooks/")
+  return !pathname.startsWith("/runs/")
 }
 
 function upstreamHeaders(req: IncomingMessage, target: URL): OutgoingHttpHeaders {
@@ -119,7 +119,7 @@ function runScopeScript(target: ProxyTarget): string {
   return `
 (() => {
   const base = ${JSON.stringify(base)};
-  const reserved = [/^\\/runs\\//, /^\\/storybooks\\//];
+  const reserved = [/^\\/runs\\//];
   function scopedUrl(value) {
     if (value == null || value === "") return value;
     try {

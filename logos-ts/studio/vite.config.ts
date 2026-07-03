@@ -8,7 +8,6 @@ import { homedir } from "node:os"
 import type { StudioIndex } from "./src/types"
 import { authPlugin } from "./server/auth"
 import { createArchApi } from "./server/arch-api"
-import { publicStorybookUrl, storybookProxyPlugin } from "./server/storybook-proxy"
 import { publicRunUrl, runProxyPlugin } from "./server/run-proxy"
 import { detectProject } from "../src/detect-project"
 import { StorybookManager } from "../src/storybook-manager"
@@ -365,7 +364,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         const entries = sbManager.all()
         const states = sbManager.allStates()
         const urls: Record<string, string> = {}
-        for (const id of Object.keys(entries)) urls[id] = publicStorybookUrl(id)
+        for (const [id, entry] of Object.entries(entries)) urls[id] = entry.url
         res.end(JSON.stringify({ urls, states, entries }))
       })
 
@@ -904,7 +903,7 @@ export default defineConfig(async ({ command }) => {
   return {
     cacheDir: process.env.LOGOS_VITE_CACHE_DIR || undefined,
     plugins: runtime
-      ? [authPlugin(), workspaceAliasPlugin(runtime), portableStoriesPlugin(runtime), react(), studioApi(runtime), storybookProxyPlugin(runtime.sbManager), runProxyPlugin(runtime.runManager), autoStorybook(runtime)]
+      ? [authPlugin(), workspaceAliasPlugin(runtime), portableStoriesPlugin(runtime), react(), studioApi(runtime), runProxyPlugin(runtime.runManager), autoStorybook(runtime)]
       : [react()],
     define: { "process.env": "{}" },
     server: {

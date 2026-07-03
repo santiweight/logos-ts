@@ -90,13 +90,13 @@ describe("selectActiveStorybookRuntime", () => {
     const ws = workspace([], "inst-active")
 
     expect(selectActiveStorybookRuntime(ws.id, ws, undefined, {
-      "ws-1": "/storybooks/ws-1",
-      "inst-active": "/storybooks/inst-active",
+      "ws-1": "http://127.0.0.1:6006",
+      "inst-active": "http://127.0.0.1:6007",
     }, {
       "ws-1": { status: "ready", startedAt: 1000, logs: [] },
       "inst-active": { status: "ready", startedAt: 2000, logs: [] },
     })).toEqual({
-      url: "/storybooks/inst-active",
+      url: "http://127.0.0.1:6007",
       state: { status: "ready", startedAt: 2000, logs: [] },
     })
   })
@@ -105,13 +105,13 @@ describe("selectActiveStorybookRuntime", () => {
     const ws = workspace([], "inst-active")
 
     expect(selectActiveStorybookRuntime(ws.id, ws, "demos/hn-jobs", {
-      "inst-active": "/storybooks/inst-active",
-      "inst-active:demos/hn-jobs": "/storybooks/inst-active%3Ademos%2Fhn-jobs",
+      "inst-active": "http://127.0.0.1:6007",
+      "inst-active:demos/hn-jobs": "http://127.0.0.1:6008",
     }, {
       "inst-active": { status: "ready", startedAt: 1000, logs: [] },
       "inst-active:demos/hn-jobs": { status: "ready", startedAt: 2000, logs: [] },
     })).toEqual({
-      url: "/storybooks/inst-active%3Ademos%2Fhn-jobs",
+      url: "http://127.0.0.1:6008",
       state: { status: "ready", startedAt: 2000, logs: [] },
     })
   })

@@ -391,7 +391,7 @@ class QaApi {
       const ws = this.workspaces.get(workspaceId)
       if (ws) {
         const key = `${ws.activeInstanceId}:frontend`
-        this.storybookUrls[key] = `/storybooks/${encodeURIComponent(key)}`
+        this.storybookUrls[key] = `http://127.0.0.1:6106`
         this.storybookStates[key] = { status: "ready", startedAt: Date.now(), logs: ["ready"] }
       }
       return json({ ok: true })
@@ -464,7 +464,7 @@ async function newPage(api: QaApi): Promise<{ page: Page; consoleErrors: string[
     contentType: "text/html",
     body: "<!doctype html><main>QA run target</main>",
   }))
-  await page.route("**/storybooks/**", (route) => route.fulfill({
+  await page.route("http://127.0.0.1:6106/**", (route) => route.fulfill({
     status: 200,
     contentType: "text/html",
     body: "<!doctype html><main>QA Storybook iframe</main>",
@@ -534,7 +534,7 @@ describe("Studio QA workflow", () => {
       await page.waitForSelector("iframe.story-frame[title='jobcard--default']", { timeout: 30_000 })
       await waitFor(() => api.storybookStarts.includes("ws-main"))
       const storySrc = await page.locator("iframe.story-frame[title='jobcard--default']").getAttribute("src")
-      expect(storySrc).toContain("/storybooks/inst-main%3Afrontend/iframe.html?id=jobcard--default")
+      expect(storySrc).toContain("http://127.0.0.1:6106/iframe.html?id=jobcard--default")
 
       await page.locator(".sidebar-tree .anode.comp", { hasText: "JobCard" }).click({ modifiers: ["Alt"] })
       await page.getByRole("textbox").fill("Make the title more specific and keep salary visible")
