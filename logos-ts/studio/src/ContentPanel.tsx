@@ -9,6 +9,7 @@ import {
 } from "react"
 import { CommentCtx, DiffCtx, Row } from "./arch"
 import { contentPanelLabel } from "./content-label"
+import { TerminalLog } from "./TerminalLog"
 import type { ComponentEntry, GoalApi, DiffStatus, FileEntry, FileItem, RunState, RunTarget, SbState, Selection } from "./types"
 
 export type StoryRenderer = "portable" | "storybook"
@@ -343,7 +344,7 @@ function StoryView({
           )}
           {storybookState.logs.length > 0 && (
             <pre className="sb-startup-logs">
-              {storybookState.logs.join("\n")}
+              <TerminalLog lines={storybookState.logs} />
               <div ref={logsEndRef} />
             </pre>
           )}
@@ -361,7 +362,7 @@ function StoryView({
         </div>
         {storybookState?.logs && storybookState.logs.length > 0 && (
           <pre className="sb-startup-logs">
-            {storybookState.logs.join("\n")}
+            <TerminalLog lines={storybookState.logs} />
             <div ref={logsEndRef} />
           </pre>
         )}
@@ -410,7 +411,7 @@ export function RunView({
           )}
           {runState.logs.length > 0 && (
             <pre className="sb-startup-logs">
-              {runState.logs.join("\n")}
+              <TerminalLog lines={runState.logs} />
               <div ref={logsEndRef} />
             </pre>
           )}
@@ -428,7 +429,7 @@ export function RunView({
         </div>
         {runState?.logs && runState.logs.length > 0 && (
           <pre className="sb-startup-logs">
-            {runState.logs.join("\n")}
+            <TerminalLog lines={runState.logs} />
             <div ref={logsEndRef} />
           </pre>
         )}

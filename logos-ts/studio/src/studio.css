@@ -1256,6 +1256,17 @@ body.resizing-sidebar * {
   color: var(--muted); background: var(--panel); border-radius: 4px;
   padding: 8px; margin: 0; white-space: pre-wrap; word-break: break-all;
 }
+.terminal-log-code {
+  font: inherit;
+  color: inherit;
+  white-space: inherit;
+}
+.sb-startup-logs a {
+  color: #90c6ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sb-startup-logs a:hover { color: #cbe4ff; }
 
 /* ---- Review ---- */
 .review-header .tab { min-width: 126px; }
