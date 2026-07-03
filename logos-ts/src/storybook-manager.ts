@@ -26,6 +26,23 @@ export interface SbState {
 type Registry = Record<string, SbEntry>
 
 const MAX_LOG_LINES = 50
+const STORYBOOK_READY_PROBE_ATTEMPTS = 20
+const STORYBOOK_READY_PROBE_INTERVAL_MS = 250
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function probeStorybook(url: string): Promise<boolean> {
+  for (let attempt = 0; attempt < STORYBOOK_READY_PROBE_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await fetch(url, { cache: "no-store" })
+      if (res.ok) return true
+    } catch {}
+    await delay(STORYBOOK_READY_PROBE_INTERVAL_MS)
+  }
+  return false
+}
 
 export class StorybookManager {
   private registry: Registry = {}
@@ -223,15 +240,18 @@ export class StorybookManager {
         },
       })
 
-      let resolved = false
+      let settled = false
+      let ready = false
+      let closed = false
+      let detectingPort = false
       let timeout: ReturnType<typeof setTimeout> | undefined
       const fail = (error: string) => {
         state.status = "failed"
         state.error = error
         state.updatedAt = Date.now()
         this.saveState(id)
-        if (!resolved) {
-          resolved = true
+        if (!settled) {
+          settled = true
           if (timeout) clearTimeout(timeout)
           reject(new Error(error))
         }
@@ -262,47 +282,74 @@ export class StorybookManager {
         }
       }
 
+      const markReady = (port: number, url: string) => {
+        if (closed || settled) return
+        const pid = child.pid
+        if (pid == null) {
+          fail(`failed to get pid from storybook child process`)
+          return
+        }
+        const entry: SbEntry = {
+          id,
+          pid,
+          port,
+          url,
+          cwd: frontendDir,
+          startedAt: Date.now(),
+        }
+        this.registry[id] = entry
+        ready = true
+        settled = true
+        if (timeout) clearTimeout(timeout)
+        state.status = "ready"
+        delete state.error
+        state.updatedAt = Date.now()
+        this.save()
+        this.saveState(id)
+        console.log(`[storybook-mgr] ${id} ready on ${url} (pid ${child.pid})`)
+        resolve_(url)
+      }
+
       // Accumulate stdout across chunks — the URL can be split mid-line.
       let stdoutBuf = ""
       child.stdout.on("data", (d: Buffer) => {
         bufferLines(d)
         stdoutBuf += d.toString()
         const m = stdoutBuf.match(/https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/)
-        if (m != null && m[1] != null && !resolved) {
-          resolved = true
-          clearTimeout(timeout)
+        if (m != null && m[1] != null && !detectingPort && !settled && !closed) {
+          detectingPort = true
           const port = parseInt(m[1], 10)
           const url = `http://127.0.0.1:${port}`
-          const pid = child.pid
-          if (pid == null) {
-            fail(`failed to get pid from storybook child process`)
-            return
-          }
-          const entry: SbEntry = {
-            id,
-            pid,
-            port,
-            url,
-            cwd: frontendDir,
-            startedAt: Date.now(),
-          }
-          this.registry[id] = entry
-          state.status = "ready"
-          delete state.error
-          state.updatedAt = Date.now()
-          this.save()
-          this.saveState(id)
-          console.log(`[storybook-mgr] ${id} ready on ${url} (pid ${child.pid})`)
-          resolve_(url)
+          probeStorybook(url).then((ok) => {
+            if (ok) markReady(port, url)
+            else if (!closed && !settled) fail(`storybook for ${id} printed ${url} but did not respond`)
+          }).catch((error: unknown) => {
+            if (!closed && !settled) fail(error instanceof Error ? error.message : String(error))
+          })
         }
       })
       child.stderr.on("data", bufferLines)
       child.on("close", (code) => {
+        closed = true
         console.log(`[storybook-mgr] ${id} exited (code ${code})`)
+        if (timeout) clearTimeout(timeout)
         delete this.registry[id]
         this.live.delete(id)
         this.save()
-        if (this.stopping.delete(id)) return
+        if (this.stopping.delete(id)) {
+          settled = true
+          return
+        }
+        if (ready) {
+          this.setState(id, {
+            status: "failed",
+            startedAt: state.startedAt,
+            updatedAt: Date.now(),
+            logs: state.logs,
+            error: `storybook stopped after startup with code ${code}`,
+          })
+          return
+        }
         fail(`storybook for ${id} exited with code ${code}`)
       })
     })
@@ -356,6 +403,15 @@ const userDecorators = [
 const preview = {
   ...userPreviewModule,
   ...userDefault,
+  parameters: {
+    ...((userPreviewModule as any).parameters ?? {}),
+    ...(userDefault.parameters ?? {}),
+    nextjs: {
+      ...((userPreviewModule as any).parameters?.nextjs ?? {}),
+      ...(userDefault.parameters?.nextjs ?? {}),
+      appDirectory: true,
+    },
+  },
   decorators: [...userDecorators, withLogosComments],
 }
 
