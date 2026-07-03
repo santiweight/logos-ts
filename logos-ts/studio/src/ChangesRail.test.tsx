@@ -14,8 +14,6 @@ const baseProps = {
   workspacesLoading: false,
   activeWorkspaceId: null,
   selected: null,
-  onNewWorkspace: noop,
-  onResetWorkspaces: noop,
   onOpenWorkspace: noop as (id: string) => void,
   onCreatePullRequest: noop as (id: string) => void,
   onSelectGoal: noop as (workspaceId: string, goalId: string) => void,
@@ -27,6 +25,14 @@ const baseProps = {
 }
 
 describe("ChangesRail", () => {
+  it("labels the rail as workspaces and keeps create/reset actions out of the rail header", () => {
+    render(<ChangesRail {...baseProps} />)
+
+    expect(screen.getByText("WORKSPACES")).toBeInTheDocument()
+    expect(screen.queryByTitle("New workspace")).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Reset all workspaces")).not.toBeInTheDocument()
+  })
+
   it("shows loading indicator while workspaces are loading", () => {
     render(<ChangesRail {...baseProps} workspacesLoading={true} workspaces={[]} />)
     expect(screen.getByText("Loading workspaces…")).toBeInTheDocument()
@@ -70,6 +76,7 @@ describe("ChangesRail", () => {
   it("collapsed rail does not show loading text", () => {
     render(<ChangesRail {...baseProps} open={false} workspacesLoading={true} workspaces={[]} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Open workspaces")).toBeInTheDocument()
   })
 
   it("marks the workspace row as running when a change is in runningGoals", () => {

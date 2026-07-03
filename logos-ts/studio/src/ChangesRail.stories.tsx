@@ -98,8 +98,6 @@ const baseArgs = {
   workspacesLoading: false,
   activeWorkspaceId: null,
   selected: null,
-  onNewWorkspace: noop,
-  onResetWorkspaces: noop,
   onOpenWorkspace: noop,
   onCreatePullRequest: noop,
   onSelectGoal: noop,

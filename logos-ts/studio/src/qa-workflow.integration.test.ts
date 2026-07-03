@@ -595,12 +595,8 @@ describe("Studio QA workflow", () => {
       await page.locator(".refresh-btn", { hasText: "↻" }).click()
       await waitFor(() => api.reindexCalls.includes("ws-created-2"))
 
-      await page.locator("button[title='New workspace']").click()
-      await waitFor(() => api.workspaceCreates.length === 3)
-      expect(api.workspaceCreates[2]).toEqual({ kind: "code" })
-      await page.locator(".rail-row.ws", { hasText: "Workspace 3" }).waitFor({ timeout: 15_000 })
-
-      await page.locator("button[title='Reset all workspaces']").click()
+      await page.getByRole("button", { name: "Open project menu" }).click()
+      await page.getByRole("button", { name: "Reset all workspaces" }).click()
       await waitFor(() => api.resetCount === 1)
       await page.locator(".rail-row.ws", { hasText: "Reset workspace" }).waitFor({ timeout: 15_000 })
 
@@ -646,7 +642,10 @@ describe("Studio QA workflow", () => {
       await page.locator(".rail-row.ws", { hasText: "Main workspace" }).waitFor({ timeout: 45_000 })
       await page.getByRole("button", { name: "Open project menu" }).click()
       const demoMenu = await page.locator(".demo-menu").innerText()
-      expect(demoMenu).toContain("OPEN PROJECT")
+      expect(demoMenu).toContain("PROJECTS")
+      expect(demoMenu).toContain("COMMANDS")
+      expect(demoMenu).not.toContain("Reload current project")
+      expect(demoMenu).toContain("Reset all workspaces")
       expect(demoMenu).toContain("Vinyl Collection")
       expect(demoMenu).toContain("Household Maintenance")
 

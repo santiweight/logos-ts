@@ -110,12 +110,17 @@ body {
   position: absolute;
   top: 23px;
   left: 0;
-  width: 190px;
+  width: 220px;
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: #1b1b1f;
   box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+}
+.demo-menu-section.commands {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
 }
 .demo-menu-title {
   padding: 3px 6px 5px;

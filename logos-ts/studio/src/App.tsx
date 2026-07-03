@@ -1551,17 +1551,31 @@ export function App() {
         <span className="topbar-title">{projectLabel}</span>
         {demoMenuOpen && (
           <div className="demo-menu">
-            <div className="demo-menu-title">Open Project</div>
-            {demos.map((demo) => (
+            <div className="demo-menu-section">
+              <div className="demo-menu-title">Projects</div>
+              {demos.map((demo) => (
+                <button
+                  key={demo.id}
+                  className={`demo-menu-item ${demo.id === activeDemoId ? "active" : ""}`}
+                  onClick={() => openDemo(demo.id)}
+                >
+                  <span>{demo.name}</span>
+                  {demo.id === activeDemoId && <span className="demo-current">current project</span>}
+                </button>
+              ))}
+            </div>
+            <div className="demo-menu-section commands">
+              <div className="demo-menu-title">Commands</div>
               <button
-                key={demo.id}
-                className={`demo-menu-item ${demo.id === activeDemoId ? "active" : ""}`}
-                onClick={() => openDemo(demo.id)}
+                className="demo-menu-item"
+                onClick={() => {
+                  setDemoMenuOpen(false)
+                  resetWorkspaces()
+                }}
               >
-                <span>{demo.name}</span>
-                {demo.id === activeDemoId && <span className="demo-current">current project</span>}
+                <span>Reset all workspaces</span>
               </button>
-            ))}
+            </div>
           </div>
         )}
       </div>
@@ -1572,7 +1586,7 @@ export function App() {
           aria-pressed={mobilePanel === "changes"}
           onClick={() => setMobilePanel("changes")}
         >
-          Changes
+          Workspaces
         </button>
         <button
           type="button"
@@ -1627,8 +1641,6 @@ export function App() {
         workspacesLoading={workspacesLoading}
         activeWorkspaceId={activeWorkspaceId}
         selected={selected}
-        onNewWorkspace={() => createWorkspace()}
-        onResetWorkspaces={resetWorkspaces}
         onOpenWorkspace={(id) => {
           setSelected({ type: "workspace", id })
           openWorkspace(id)

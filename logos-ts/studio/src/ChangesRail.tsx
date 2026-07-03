@@ -4,9 +4,7 @@ import type { WorkspaceMeta } from "./types"
 import { svgIcon } from "./icons"
 
 const listIcon = svgIcon("M5 7h14M5 12h14M5 17h14", 12)
-const plusIcon = svgIcon("M12 5v14M5 12h14", 12)
 const collapseIcon = svgIcon("M15 18l-6-6 6-6", 12)
-const resetIcon = svgIcon("M4 4v6h6M20 20v-6h-6M6.5 17.5a7.5 7.5 0 0 0 11-10.2L20 10M17.5 6.5a7.5 7.5 0 0 0-11 10.2L4 14", 12)
 const mergeIcon = svgIcon("M7 3v11a4 4 0 0 0 4 4h6M17 18l-3-3M17 18l-3 3M7 7h5", 12)
 const trashIcon = svgIcon("M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7", 12)
 const pushIcon = svgIcon("M12 21V5M7 10l5-5 5 5M5 21h14", 12)
@@ -61,8 +59,6 @@ interface Props {
   workspacesLoading: boolean
   activeWorkspaceId: string | null
   selected: { type: "workspace" | "goal"; id: string } | null
-  onNewWorkspace: () => void
-  onResetWorkspaces: () => void
   onOpenWorkspace: (id: string) => void
   onCreatePullRequest: (id: string) => void
   onSelectGoal: (workspaceId: string, goalId: string) => void
@@ -80,8 +76,6 @@ export function ChangesRail({
   workspacesLoading,
   activeWorkspaceId,
   selected,
-  onNewWorkspace,
-  onResetWorkspaces,
   onOpenWorkspace,
   onCreatePullRequest,
   onSelectGoal,
@@ -94,7 +88,7 @@ export function ChangesRail({
   if (!open) {
     return (
       <div className="rail collapsed">
-        <button className="rail-toggle" onClick={onToggle} title="Changes" aria-label="Open changes">
+        <button className="rail-toggle" onClick={onToggle} title="Workspaces" aria-label="Open workspaces">
           {listIcon}
         </button>
         {workspaces.length > 0 && <div className="rail-count">{workspaces.length}</div>}
@@ -241,17 +235,11 @@ export function ChangesRail({
 
   return (
     <div className="rail">
-      <div className="rail-resize" title="Resize changes sidebar" onPointerDown={onResizeStart} />
+      <div className="rail-resize" title="Resize workspaces sidebar" onPointerDown={onResizeStart} />
       <div className="rail-head">
-        <span>CHANGES</span>
+        <span>WORKSPACES</span>
         <span>
-          <button className="rail-toggle" onClick={onNewWorkspace} title="New workspace" aria-label="New workspace">
-            {plusIcon}
-          </button>
-          <button className="rail-toggle" onClick={onResetWorkspaces} title="Reset all workspaces" aria-label="Reset all workspaces">
-            {resetIcon}
-          </button>
-          <button className="rail-toggle" onClick={onToggle} title="Collapse" aria-label="Collapse changes">
+          <button className="rail-toggle" onClick={onToggle} title="Collapse" aria-label="Collapse workspaces">
             {collapseIcon}
           </button>
         </span>
