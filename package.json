@@ -1,5 +1,8 @@
 {
   "name": "logos-workspace",
   "private": true,
-  "packageManager": "pnpm@11.8.0"
+  "packageManager": "pnpm@11.8.0",
+  "scripts": {
+    "dev": "node logos-ts/studio/bin/logos-studio.mjs --port 5175"
+  }
 }

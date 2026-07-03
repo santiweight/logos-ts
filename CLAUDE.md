@@ -43,13 +43,8 @@ household-maintenance/ Storybook/Vite demo app for operations queue QA
 # deps (first time)
 pnpm install
 
-# Demo Storybooks (back the studio's Story tab)
-pnpm --dir vinyl-collection/frontend storybook
-pnpm --dir investment-portfolio/frontend storybook
-pnpm --dir household-maintenance/frontend storybook
-
-# studio (auto-starts Storybook)
-pnpm --dir logos-ts/studio dev              # auto-assigns a free port, prints the URL
+# Logos Studio. This is the canonical way to run the app from the workspace root.
+pnpm dev                                    # auto-assigns a free port, prints the URL
 ```
 
 Leaving a comment in the studio (alt-click a node) declares a change and

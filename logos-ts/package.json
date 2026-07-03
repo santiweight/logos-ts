@@ -5,8 +5,7 @@
   "type": "module",
   "description": "A Logos-style compiler for TypeScript: architecture, dependency, and story extraction.",
   "scripts": {
-    "dev": "node studio/bin/logos-studio.mjs /Users/santiagoweight/projects/santiweightdotcom --port 5175",
-    "studio": "node studio/bin/logos-studio.mjs /Users/santiagoweight/projects/santiweightdotcom",
+    "dev": "node studio/bin/logos-studio.mjs --port 5175",
     "demo": "tsx src/demo.ts",
     "typecheck": "tsc --noEmit",
     "lint": "node -e \"console.log('Strict lint is optional. Run lint:strict for a cleanup pass.')\"",
