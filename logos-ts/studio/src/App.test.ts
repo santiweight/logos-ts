@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, resolveSidebarFilters, reviewChangeCount, runCommentPopupFromEvent, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, sidebarFilterScope, workspaceReadyForDisplay } from "./App"
+import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, resolveSidebarFilters, reviewChangeCount, runCommentPopupFromEvent, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, shouldShowProjectStartupScreen, sidebarFilterScope, workspaceReadyForDisplay } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -184,6 +184,15 @@ describe("selectActiveWorkspaceView", () => {
 
     expect(selectActiveWorkspaceView(previousView, "ws-new")).toBeNull()
     expect(selectActiveWorkspaceView(previousView, "ws-old")).toBe(previousView)
+  })
+})
+
+describe("shouldShowProjectStartupScreen", () => {
+  it("only shows the startup screen while a project load or reset is active", () => {
+    expect(shouldShowProjectStartupScreen(false, "boot")).toBe(true)
+    expect(shouldShowProjectStartupScreen(false, "idle")).toBe(false)
+    expect(shouldShowProjectStartupScreen(true, "boot")).toBe(false)
+    expect(shouldShowProjectStartupScreen(true, "reset")).toBe(true)
   })
 })
 

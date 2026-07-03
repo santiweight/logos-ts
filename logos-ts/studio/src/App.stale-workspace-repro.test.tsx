@@ -152,21 +152,21 @@ describe("App workspace switching", () => {
     )
     const parentWorkspace = workspace("ws-parent", "Parent Workspace", 0, index("BaseComponent", "export function BaseComponent() { return null }"))
 
-    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input.toString()
-      if (url === "/api/index") return jsonResponse(parentWorkspace.index)
-      if (url === "/api/test-results") return jsonResponse({ status: "idle", results: null, runningSince: null })
-      if (url === "/api/storybooks") return jsonResponse({ urls: {}, states: {} })
-      if (url === "/api/run-targets") return jsonResponse({ targets: [] })
-      if (url === "/api/runs") return jsonResponse({ urls: {}, states: {} })
-      if (url === "/api/demos") return jsonResponse({ active: "test", demos: [] })
-      if (url === "/api/workspaces") return jsonResponse([meta(oldWorkspace), meta(newWorkspace)])
-      if (url === "/api/workspaces/ws-old") return jsonResponse(oldWorkspace)
-      if (url === "/api/workspaces/ws-new") return jsonResponse(newWorkspace)
-      if (url === "/api/workspaces/ws-parent") return jsonResponse(parentWorkspace)
-      if (url === "/api/sessions?goal=goal-old") return jsonResponse({ events: [] })
+    globalThis.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url === "/api/index") return Promise.resolve(jsonResponse(parentWorkspace.index))
+      if (url === "/api/test-results") return Promise.resolve(jsonResponse({ status: "idle", results: null, runningSince: null }))
+      if (url === "/api/storybooks") return Promise.resolve(jsonResponse({ urls: {}, states: {} }))
+      if (url === "/api/run-targets") return Promise.resolve(jsonResponse({ targets: [] }))
+      if (url === "/api/runs") return Promise.resolve(jsonResponse({ urls: {}, states: {} }))
+      if (url === "/api/demos") return Promise.resolve(jsonResponse({ active: "test", demos: [] }))
+      if (url === "/api/workspaces") return Promise.resolve(jsonResponse([meta(oldWorkspace), meta(newWorkspace)]))
+      if (url === "/api/workspaces/ws-old") return Promise.resolve(jsonResponse(oldWorkspace))
+      if (url === "/api/workspaces/ws-new") return Promise.resolve(jsonResponse(newWorkspace))
+      if (url === "/api/workspaces/ws-parent") return Promise.resolve(jsonResponse(parentWorkspace))
+      if (url === "/api/sessions?goal=goal-old") return Promise.resolve(jsonResponse({ events: [] }))
       throw new Error(`unhandled fetch: ${url}`)
-    }) as typeof fetch
+    })
 
     render(<App />)
 
@@ -192,7 +192,7 @@ describe("App workspace switching", () => {
     })
   })
 
-  it("uses the full startup screen when switching from a ready workspace to an initializing workspace", async () => {
+  it("keeps the current workspace visible when switching to an initializing workspace", async () => {
     const readyWorkspace = workspace(
       "ws-ready",
       "Ready Workspace",
@@ -219,19 +219,19 @@ describe("App workspace switching", () => {
       },
     )
 
-    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input.toString()
-      if (url === "/api/index") return jsonResponse(readyWorkspace.index)
-      if (url === "/api/test-results") return jsonResponse({ status: "idle", results: null, runningSince: null })
-      if (url === "/api/storybooks") return jsonResponse({ urls: {}, states: {} })
-      if (url === "/api/run-targets") return jsonResponse({ targets: [] })
-      if (url === "/api/runs") return jsonResponse({ urls: {}, states: {} })
-      if (url === "/api/demos") return jsonResponse({ active: "test", demos: [] })
-      if (url === "/api/workspaces") return jsonResponse([meta(readyWorkspace), meta(initializingWorkspace)])
-      if (url === "/api/workspaces/ws-ready") return jsonResponse(readyWorkspace)
-      if (url === "/api/workspaces/ws-init") return jsonResponse(initializingWorkspace)
+    globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url === "/api/index") return Promise.resolve(jsonResponse(readyWorkspace.index))
+      if (url === "/api/test-results") return Promise.resolve(jsonResponse({ status: "idle", results: null, runningSince: null }))
+      if (url === "/api/storybooks") return Promise.resolve(jsonResponse({ urls: {}, states: {} }))
+      if (url === "/api/run-targets") return Promise.resolve(jsonResponse({ targets: [] }))
+      if (url === "/api/runs") return Promise.resolve(jsonResponse({ urls: {}, states: {} }))
+      if (url === "/api/demos") return Promise.resolve(jsonResponse({ active: "test", demos: [] }))
+      if (url === "/api/workspaces") return Promise.resolve(jsonResponse([meta(readyWorkspace), meta(initializingWorkspace)]))
+      if (url === "/api/workspaces/ws-ready") return Promise.resolve(jsonResponse(readyWorkspace))
+      if (url === "/api/workspaces/ws-init") return Promise.resolve(jsonResponse(initializingWorkspace))
       throw new Error(`unhandled fetch: ${url}`)
-    }) as typeof fetch
+    })
 
     render(<App />)
 
@@ -240,10 +240,14 @@ describe("App workspace switching", () => {
 
     fireEvent.click(screen.getByText("Initializing Workspace"))
 
-    expect(await screen.findByText("Initializing")).toBeInTheDocument()
-    expect(screen.getByText("Capture story snapshots")).toBeInTheDocument()
-    expect(document.querySelector(".rail")).not.toBeInTheDocument()
-    expect(document.querySelector(".sidebar")).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith("/api/workspaces/ws-init", expect.objectContaining({ cache: "no-store" }))
+    })
+    expect(screen.queryByText("Initialize workspace")).not.toBeInTheDocument()
+    expect(screen.getByText("ReadyComponent")).toBeInTheDocument()
+    expect(screen.getByText(/initializing/)).toBeInTheDocument()
+    expect(document.querySelector(".rail")).toBeInTheDocument()
+    expect(document.querySelector(".sidebar")).toBeInTheDocument()
     expect(document.querySelector(".workspace-init-shell")).not.toBeInTheDocument()
   })
 })

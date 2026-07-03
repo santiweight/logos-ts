@@ -89,6 +89,7 @@ describe("capture harness", () => {
     expect(captureSource).toContain("from \"vite\"")
     expect(captureSource).toContain("chromium.launch")
     expect(captureSource).toContain("createServer")
+    expect(captureSource).toContain("cacheDir: resolve(projectRoot, \".logos\", \".vite-story-capture\")")
     expect(captureSource).toContain("Promise.all")
     expect(captureSource).toContain("CONCURRENCY")
     expect(captureSource).toContain("writeFileSync(snapshotFile, html)")

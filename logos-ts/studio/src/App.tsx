@@ -33,7 +33,7 @@ const seed = seedData as unknown as StudioIndex
 const SELECTION_STORAGE_KEY = "logos:selection:v1"
 const SIDEBAR_FILTERS_STORAGE_KEY = "logos:sidebar-filters:v1"
 type MobilePanel = "changes" | "thread" | "files" | "main"
-type WorkspaceStartupPhase = "boot" | "reset"
+export type WorkspaceStartupPhase = "boot" | "reset" | "idle"
 
 export interface SidebarFilters {
   functions: boolean
@@ -66,6 +66,13 @@ export function selectActiveWorkspaceView(
   activeWorkspaceId: string | null,
 ): WorkspaceViewState | null {
   return state?.workspaceId === activeWorkspaceId ? state : null
+}
+
+export function shouldShowProjectStartupScreen(
+  workspaceUiReady: boolean,
+  phase: WorkspaceStartupPhase,
+): boolean {
+  return phase === "reset" || (phase === "boot" && !workspaceUiReady)
 }
 
 interface DemoOption {
@@ -465,6 +472,7 @@ export function App() {
   const openWorkspaceAbortRef = useRef<AbortController | null>(null)
   const runCommentModifierActiveRef = useRef(false)
   const [openingWorkspaceId, setOpeningWorkspaceId] = useState<string | null>(null)
+  const [pendingWorkspaceOpenId, setPendingWorkspaceOpenId] = useState<string | null>(null)
   const [workspaceViewState, setWorkspaceViewState] = useState<WorkspaceViewState | null>(null)
   const [selected, setSelected] = useState<{ type: "workspace" | "goal"; id: string } | null>(null)
 
@@ -663,16 +671,19 @@ export function App() {
     return selectWorkspaceReviewBaseIndex(index, ws)
   }, [index])
 
-  const openWorkspace = useCallback(async (id: string, opts?: { resetView?: boolean; goalId?: string | null }) => {
+  const openWorkspace = useCallback(async (id: string, opts?: { resetView?: boolean; goalId?: string | null; loadingScope?: "project" | "workspace" }) => {
     openWorkspaceAbortRef.current?.abort()
     const controller = new AbortController()
     openWorkspaceAbortRef.current = controller
     openWorkspaceSeqRef.current += 1
     const requestSeq = openWorkspaceSeqRef.current
     const resetView = opts?.resetView !== false || activeWorkspaceIdRef.current !== id
+    const activateImmediately = opts?.loadingScope !== "workspace"
     setOpeningWorkspaceId(id)
-    setActiveWorkspaceId(id)
-    if (resetView) {
+    if (activateImmediately) {
+      setActiveWorkspaceId(id)
+    }
+    if (resetView && activateImmediately) {
       setWorkspaceViewState(null)
     }
     try {
@@ -691,12 +702,16 @@ export function App() {
           const reviewIndex = selectWorkspaceReviewIndex(ws, opts?.goalId)
           const baselineIndex = await loadWorkspaceReviewBase(ws, opts?.goalId)
           if (openWorkspaceSeqRef.current !== requestSeq) return
+          setPendingWorkspaceOpenId((current) => current === ws.id ? null : current)
+          setActiveWorkspaceId(ws.id)
           setWorkspaceViewState({
             workspaceId: ws.id,
             index: ws.index,
             reviewIndex,
             baselineIndex,
           })
+        } else if (!activateImmediately) {
+          setPendingWorkspaceOpenId(ws.id)
         }
       }
     } catch (e) {
@@ -732,7 +747,12 @@ export function App() {
   }, [activeWorkspaceId, loadWorkspaceReviewBase, refreshWorkspaces])
 
   const createWorkspace = useCallback(
-    async (fromWorkspaceId?: string | null, kind: WorkspaceKind = "code", name?: string): Promise<string | null> => {
+    async (
+      fromWorkspaceId?: string | null,
+      kind: WorkspaceKind = "code",
+      name?: string,
+      opts?: { loadingScope?: "project" | "workspace" },
+    ): Promise<string | null> => {
       try {
         const res = await fetch("/api/workspaces", {
           method: "POST",
@@ -742,7 +762,7 @@ export function App() {
         if (!res.ok) return null
         const meta = (await res.json()) as WorkspaceMeta
         await refreshWorkspaces()
-        await openWorkspace(meta.id)
+        await openWorkspace(meta.id, { loadingScope: opts?.loadingScope ?? (activeWorkspaceIdRef.current ? "workspace" : "project") })
         return meta.id
       } catch {
         return null
@@ -763,7 +783,7 @@ export function App() {
           const sorted = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
           if (sorted != null) await openWorkspace(sorted.id)
         } else {
-          await createWorkspace()
+          await createWorkspace(null, "code", undefined, { loadingScope: "project" })
         }
       }
     },
@@ -818,7 +838,7 @@ export function App() {
         if (wsList.length > 0) {
           const latest = wsList.sort((a, b) => b.createdAt - a.createdAt)[0]
           if (latest != null) {
-            await openWorkspace(latest.id)
+            await openWorkspace(latest.id, { loadingScope: "project" })
             const targetsRes = await fetch("/api/run-targets").catch(() => null)
             const targets = targetsRes?.ok ? ((await targetsRes.json()) as RunTarget[]) : []
             if (targets.length > 0) {
@@ -841,7 +861,7 @@ export function App() {
             }
           }
         } else {
-          await createWorkspace()
+          await createWorkspace(null, "code", undefined, { loadingScope: "project" })
         }
       })()
     }
@@ -1099,7 +1119,7 @@ export function App() {
       setWorkspacesLoading(false)
       setWorkspaceStartupPhase("boot")
       setBusy("initializing workspace…")
-      await openWorkspace(data.workspace.id)
+      await openWorkspace(data.workspace.id, { loadingScope: "project" })
       setSelection({ file: "", view: "run" })
       await Promise.all([refreshTests(), refreshStorybooks(), refreshRuns()])
     } finally {
@@ -1134,6 +1154,14 @@ export function App() {
     if (!activeWs || !workspaceReadyForDisplay(activeWs)) return
     openWorkspace(activeWorkspaceId)
   }, [activeWorkspaceId, activeWs, openingWorkspaceId, openWorkspace, workspaceIndex])
+
+  useEffect(() => {
+    if (!pendingWorkspaceOpenId || openingWorkspaceId === pendingWorkspaceOpenId) return
+    const pending = workspaces.find((workspace) => workspace.id === pendingWorkspaceOpenId)
+    if (!pending || !workspaceReadyForDisplay(pending)) return
+    setPendingWorkspaceOpenId(null)
+    openWorkspace(pendingWorkspaceOpenId)
+  }, [pendingWorkspaceOpenId, workspaces, openingWorkspaceId, openWorkspace])
 
   // ---- actions ----
   const onSelect = useCallback((sel: Selection) => {
@@ -1615,7 +1643,12 @@ export function App() {
   const activeWorkspaceCanDisplay = activeWs ? workspaceReadyForDisplay(activeWs) : workspaceIndex != null
   const workspaceUiReady = activeWorkspaceId != null && workspaceIndex != null && activeWorkspaceCanDisplay
 
-  if (workspaceStartupPhase === "reset" || !workspaceUiReady) {
+  useEffect(() => {
+    if (!workspaceUiReady) return
+    setWorkspaceStartupPhase("idle")
+  }, [workspaceUiReady])
+
+  if (shouldShowProjectStartupScreen(workspaceUiReady, workspaceStartupPhase)) {
     return (
       <div className="studio" style={studioStyle}>
         {renderTopbar()}
@@ -1640,7 +1673,7 @@ export function App() {
         selected={selected}
         onOpenWorkspace={(id) => {
           setSelected({ type: "workspace", id })
-          openWorkspace(id)
+          openWorkspace(id, { loadingScope: "workspace" })
         }}
         onCreatePullRequest={createWorkspacePullRequest}
         onSelectGoal={selectGoal}

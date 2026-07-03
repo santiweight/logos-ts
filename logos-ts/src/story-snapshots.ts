@@ -292,6 +292,7 @@ export function ensureStoryCaptureHarness(root: string, stories: StoryEntry[], d
     "async function main() {",
     "  const server = await createServer({",
     "    root: projectRoot,",
+    "    cacheDir: resolve(projectRoot, \".logos\", \".vite-story-capture\"),",
     "    configFile: false,",
     "    server: { host: \"127.0.0.1\", port: 0 },",
     "    define: { \"process.env\": \"{}\" },",
