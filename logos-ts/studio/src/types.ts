@@ -213,10 +213,18 @@ export interface RunState {
   error?: string
 }
 
+export type WorkspaceType = "local" | "remote"
+
+export interface WorkspaceTracking {
+  remote: string
+  branch: string
+}
+
 export interface WorkspaceMeta {
   id: string
   name: string
   kind: WorkspaceKind
+  type: WorkspaceType
   parentId: string | null
   createdAt: number
   baseInstanceId: string
@@ -224,6 +232,7 @@ export interface WorkspaceMeta {
   goals: Goal[]
   initialization?: WorkspaceInitialization
   publication?: WorkspacePublication
+  tracking?: WorkspaceTracking
 }
 
 export interface WorkspaceInstance {

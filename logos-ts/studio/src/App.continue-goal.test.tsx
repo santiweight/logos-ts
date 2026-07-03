@@ -84,6 +84,7 @@ function workspace(): Workspace {
     id: "ws-1",
     name: "Workspace",
     kind: "code",
+    type: "local",
     parentId: null,
     createdAt: 1000,
     baseInstanceId: "base",
@@ -117,6 +118,7 @@ function meta(ws: Workspace): WorkspaceMeta {
     id: ws.id,
     name: ws.name,
     kind: ws.kind,
+    type: "local",
     parentId: ws.parentId,
     createdAt: ws.createdAt,
     baseInstanceId: ws.baseInstanceId,
@@ -189,6 +191,7 @@ describe("story comments", () => {
       ...meta(ws),
       id: "ws-2",
       name: "Comment target",
+      type: "local",
       parentId: ws.id,
       createdAt: 1001,
       baseInstanceId: "base-2",
@@ -238,7 +241,7 @@ describe("story comments", () => {
       }
       if (url === "/api/workspaces") {
         if (created) return new Promise<Response>(() => {})
-        return jsonResponse([meta(ws)])
+        return jsonResponse([{ ...meta(ws), type: "local" }])
       }
       if (url === "/api/workspaces/ws-1" && !init?.method) return jsonResponse(ws)
       if (url === "/api/workspaces/ws-2" && !init?.method) return new Promise<Response>(() => {})
@@ -343,9 +346,9 @@ describe("story generation", () => {
         const body = JSON.parse(String(init.body))
         workspaceCreates.push(body)
         created = true
-        return jsonResponse(meta(createdWs))
+        return jsonResponse({ ...meta(createdWs), type: "local" })
       }
-      if (url === "/api/workspaces") return jsonResponse(created ? [meta(ws), meta(createdWs)] : [meta(ws)])
+      if (url === "/api/workspaces") return jsonResponse(created ? [{ ...meta(ws), type: "local" }, { ...meta(createdWs), type: "local" }] : [{ ...meta(ws), type: "local" }])
       if (url === "/api/workspaces/ws-1" && !init?.method) return jsonResponse(ws)
       if (url === "/api/workspaces/ws-2" && !init?.method) return jsonResponse(createdWs)
       throw new Error(`unhandled fetch: ${url} ${init?.method ?? "GET"}`)

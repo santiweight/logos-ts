@@ -20,6 +20,7 @@ function workspace(goals: Goal[], activeInstanceId = "inst-1"): WorkspaceMeta {
     id: "ws-1",
     name: "Workspace",
     kind: "code",
+    type: "local",
     parentId: null,
     createdAt: 1000,
     baseInstanceId: "inst-base",

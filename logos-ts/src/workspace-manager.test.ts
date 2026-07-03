@@ -73,15 +73,14 @@ function initializeOriginMain(projectRoot: string): void {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   })
-  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }).trim()
-  execFileSync("git", ["update-ref", "refs/remotes/origin/main", head], {
-    cwd: projectRoot,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  })
+
+  const bareDir = join(dirname(projectRoot), "origin.git")
+  execFileSync("git", ["clone", "--bare", projectRoot, bareDir], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  execFileSync("git", ["remote", "add", "origin", bareDir], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  execFileSync("git", ["fetch", "origin"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
 }
 
-function createManager(opts?: {
+interface CreateManagerOpts {
   spawned?: FakeAgentProcess[]
   sessions?: ReturnType<typeof createSessions>
   sbManager?: Record<string, unknown>
@@ -90,10 +89,13 @@ function createManager(opts?: {
   initializeWorkspaces?: boolean
   installNodeModules?: boolean
   tsx?: string
-}): WorkspaceManager {
+}
+
+function createManagerWithPaths(opts?: CreateManagerOpts): { mgr: WorkspaceManager; projectRoot: string; bareRemote: string } {
   const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
   tempDirs.push(root)
   const projectRoot = join(root, "project")
+  const bareRemote = join(dirname(projectRoot), "origin.git")
   mkdirSync(projectRoot, { recursive: true })
   writeFileSync(join(projectRoot, "package.json"), "{}")
   opts?.setupProject?.(projectRoot)
@@ -103,7 +105,7 @@ function createManager(opts?: {
   const sbManager = opts?.sbManager ?? { get: () => null, shutdown: () => undefined, shutdownAll: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") }
   const extraCaps = typeof opts?.caps === "function" ? opts.caps(projectRoot) : (opts?.caps ?? {})
 
-  return new WorkspaceManager({
+  const mgr = new WorkspaceManager({
     store,
     runsDir: join(root, ".agent-runs"),
     logosTsSrc: join(LOGOS_TS_ROOT, "src"),
@@ -130,6 +132,11 @@ function createManager(opts?: {
         }
       : {}),
   })
+  return { mgr, projectRoot, bareRemote }
+}
+
+function createManager(opts?: CreateManagerOpts): WorkspaceManager {
+  return createManagerWithPaths(opts).mgr
 }
 
 async function waitFor(assertion: () => void, timeoutMs = 60_000): Promise<void> {
@@ -1470,6 +1477,132 @@ describe("WorkspaceManager workspace kinds", () => {
     })).toBe("from workspace\n")
     expect(existsSync(join(sourceProjectRoot, "src", "generated.txt"))).toBe(false)
   })
+
+  it("creates the root workspace as a remote workspace tracking origin/main", async () => {
+    const mgr = createManager()
+    const root = await mgr.ensureOriginMainWorkspace()
+    expect(root.type).toBe("remote")
+    if (root.type !== "remote") throw new Error("expected remote")
+    expect(root.tracking).toEqual({ remote: "origin", branch: "main" })
+    expect(root.name).toBe("origin/main")
+  })
+
+  it("creates child workspaces as local workspaces", async () => {
+    const mgr = createManager()
+    const root = await mgr.ensureOriginMainWorkspace()
+    const child = await mgr.create({ fromWorkspaceId: root.id, kind: "code" })
+    expect(child.type).toBe("local")
+  })
+
+  it("persists remote workspace type through the database", async () => {
+    const root = mkdtempSync(join(tmpdir(), "logos-workspace-manager-"))
+    tempDirs.push(root)
+    const projectRoot = join(root, "project")
+    mkdirSync(projectRoot, { recursive: true })
+    writeFileSync(join(projectRoot, "package.json"), "{}")
+    initializeOriginMain(projectRoot)
+    const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
+    const sessions = createSessions()
+    const sbManager = { get: () => null, shutdown: () => undefined, shutdownAll: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") }
+
+    const mgrOpts = {
+      store,
+      runsDir: join(root, ".agent-runs"),
+      logosTsSrc: join(LOGOS_TS_ROOT, "src"),
+      logosTsRoot: LOGOS_TS_ROOT,
+      projectRoot,
+      caps: { root: projectRoot, nodeModulesDirs: [] },
+      sbManager: sbManager as any,
+      sessions: sessions as any,
+      secrets: { anthropicApiKey: "test-key" } as any,
+      tsx: TSX,
+      getIndex: async () => ({ root: projectRoot, files: [] }),
+      initializeWorkspaces: false,
+      installNodeModules: false,
+    }
+
+    const mgr1 = new WorkspaceManager(mgrOpts)
+    const rootWs = await mgr1.ensureOriginMainWorkspace()
+    expect(rootWs.type).toBe("remote")
+
+    const mgr2 = new WorkspaceManager(mgrOpts)
+    const reloaded = mgr2.get(rootWs.id)
+    expect(reloaded).toBeTruthy()
+    expect(reloaded!.type).toBe("remote")
+    if (reloaded!.type !== "remote") throw new Error("expected remote")
+    expect(reloaded!.tracking).toEqual({ remote: "origin", branch: "main" })
+  })
+
+  it("pushes merged goal changes to the remote when merging into a remote workspace", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const { mgr, bareRemote } = createManagerWithPaths({
+      spawned,
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "thing.txt"), "base\n")
+      },
+    })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("edit thing", "code"))).goal
+
+    expect(mgr.processById(code.id, task.id, () => undefined)).toBe(task.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "edited\n")
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => {
+      expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" })
+    })
+    const events: { type: string; message?: unknown }[] = []
+    expect(await mgr.mergeGoal(code.id, task.id, (event) => events.push(event))).toEqual({ ok: true, status: "completed" })
+
+    expect(events.some((e) => String(e.message ?? "").includes("pushed to origin/main"))).toBe(true)
+
+    const checkoutDir = mkdtempSync(join(tmpdir(), "logos-verify-push-"))
+    tempDirs.push(checkoutDir)
+    execFileSync("git", ["clone", bareRemote, checkoutDir], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    expect(readFileSync(join(checkoutDir, "thing.txt"), "utf8")).toBe("edited\n")
+  }, 60_000)
+
+  it("rebases onto latest remote and pushes even when remote moved forward", async () => {
+    const spawned: FakeAgentProcess[] = []
+    const { mgr, projectRoot, bareRemote } = createManagerWithPaths({
+      spawned,
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "thing.txt"), "base\n")
+      },
+    })
+    const code = await mgr.create({ kind: "code" })
+    const task = expectGoal(await mgr.addGoal(code.id, goal("edit thing", "code"))).goal
+
+    expect(mgr.processById(code.id, task.id, () => undefined)).toBe(task.id)
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    writeFileSync(join(spawned[0]!.cwd, "thing.txt"), "edited\n")
+    spawned[0]!.emit("close", 0)
+
+    await waitFor(() => {
+      expect(mgr.goalsForWorkspace(code.id).find((g) => g.id === task.id)?.lifecycle).toEqual({ stage: "impl", state: "ready_to_merge" })
+    })
+
+    const interferingDir = mkdtempSync(join(tmpdir(), "logos-interfere-"))
+    tempDirs.push(interferingDir)
+    execFileSync("git", ["clone", bareRemote, interferingDir], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    execFileSync("git", ["config", "user.email", "logos@example.com"], { cwd: interferingDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    execFileSync("git", ["config", "user.name", "Logos Test"], { cwd: interferingDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    writeFileSync(join(interferingDir, "other.txt"), "from elsewhere\n")
+    execFileSync("git", ["add", "-A"], { cwd: interferingDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    execFileSync("git", ["commit", "-m", "external commit"], { cwd: interferingDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    execFileSync("git", ["push"], { cwd: interferingDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+
+    const events: { type: string; message?: unknown }[] = []
+    expect(await mgr.mergeGoal(code.id, task.id, (event) => events.push(event))).toEqual({ ok: true, status: "completed" })
+
+    expect(events.some((e) => String(e.message ?? "").includes("pushed to origin/main"))).toBe(true)
+    const checkoutDir = mkdtempSync(join(tmpdir(), "logos-verify-push-"))
+    tempDirs.push(checkoutDir)
+    execFileSync("git", ["clone", bareRemote, checkoutDir], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    expect(readFileSync(join(checkoutDir, "thing.txt"), "utf8")).toBe("edited\n")
+    expect(readFileSync(join(checkoutDir, "other.txt"), "utf8")).toBe("from elsewhere\n")
+  }, 60_000)
 })
 
 describe("stale index cache cleanup", () => {
@@ -1498,6 +1631,7 @@ describe("stale index cache cleanup", () => {
       id: "ws-stale",
       name: "Stale Workspace",
       kind: "code",
+      type: "local",
       parentId: null,
       createdAt: Date.now(),
       baseInstanceId: "inst-1",
@@ -1572,6 +1706,7 @@ describe("stale index cache cleanup", () => {
       id: "ws-clean",
       name: "Clean Workspace",
       kind: "code",
+      type: "local",
       parentId: null,
       createdAt: Date.now(),
       baseInstanceId: "inst-1",
@@ -1640,6 +1775,7 @@ describe("stale index cache cleanup", () => {
       id: "ws-multi",
       name: "Multi Exclude",
       kind: "code",
+      type: "local",
       parentId: null,
       createdAt: Date.now(),
       baseInstanceId: "inst-1",

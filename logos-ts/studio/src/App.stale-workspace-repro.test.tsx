@@ -82,6 +82,7 @@ function meta(workspace: Workspace): WorkspaceMeta {
     id,
     name,
     kind,
+    type: "local",
     parentId,
     createdAt,
     baseInstanceId,
@@ -105,6 +106,7 @@ function workspace(
     id,
     name,
     kind: "code",
+    type: "local",
     parentId: "ws-parent",
     createdAt,
     baseInstanceId: "base",
@@ -160,7 +162,7 @@ describe("App workspace switching", () => {
       if (url === "/api/run-targets") return Promise.resolve(jsonResponse({ targets: [] }))
       if (url === "/api/runs") return Promise.resolve(jsonResponse({ urls: {}, states: {} }))
       if (url === "/api/demos") return Promise.resolve(jsonResponse({ active: "test", demos: [] }))
-      if (url === "/api/workspaces") return Promise.resolve(jsonResponse([meta(oldWorkspace), meta(newWorkspace)]))
+      if (url === "/api/workspaces") return Promise.resolve(jsonResponse([{ ...meta(oldWorkspace), type: "local" }, { ...meta(newWorkspace), type: "local" }]))
       if (url === "/api/workspaces/ws-old") return Promise.resolve(jsonResponse(oldWorkspace))
       if (url === "/api/workspaces/ws-new") return Promise.resolve(jsonResponse(newWorkspace))
       if (url === "/api/workspaces/ws-parent") return Promise.resolve(jsonResponse(parentWorkspace))

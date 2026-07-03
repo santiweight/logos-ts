@@ -40,8 +40,8 @@ describe("ChangesRail", () => {
 
   it("shows workspace list when loaded with workspaces", () => {
     const workspaces: WorkspaceMeta[] = [
-      { id: "ws-1", name: "feature-branch", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
-      { id: "ws-2", name: "bugfix", kind: "code" as const, parentId: null, createdAt: 2000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
+      { id: "ws-1", name: "feature-branch", kind: "code" as const, type: "local" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-2", name: "bugfix", kind: "code" as const, type: "local" as const, parentId: null, createdAt: 2000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={false} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
@@ -51,7 +51,7 @@ describe("ChangesRail", () => {
 
   it("hides loading indicator once workspaces arrive", () => {
     const workspaces: WorkspaceMeta[] = [
-      { id: "ws-1", name: "my-workspace", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-1", name: "my-workspace", kind: "code" as const, type: "local" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
     ]
     render(<ChangesRail {...baseProps} workspacesLoading={true} workspaces={workspaces} />)
     expect(screen.queryByText("Loading workspaces…")).not.toBeInTheDocument()
@@ -60,8 +60,8 @@ describe("ChangesRail", () => {
 
   it("renders child workspaces under their parent", () => {
     const workspaces = [
-      { id: "ws-parent", name: "Scratch", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
-      { id: "ws-child", name: "Generate Stories for JobCard", kind: "code" as const, parentId: "ws-parent", createdAt: 3000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
+      { id: "ws-parent", name: "Scratch", kind: "code" as const, type: "local" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-child", name: "Generate Stories for JobCard", kind: "code" as const, type: "local" as const, parentId: "ws-parent", createdAt: 3000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
     ]
     render(<ChangesRail {...baseProps} workspaces={workspaces} />)
 
@@ -85,6 +85,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "feature",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -112,6 +113,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "feature",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -139,6 +141,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "active-ws",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 2000,
         baseInstanceId: "inst-1",
@@ -151,6 +154,7 @@ describe("ChangesRail", () => {
         id: "ws-2",
         name: "idle-ws",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-2",
@@ -179,6 +183,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "loading-workspace",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -211,6 +216,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "Make Bold",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -244,6 +250,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "Make Bold",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -271,8 +278,8 @@ describe("ChangesRail", () => {
 
   it("does not render branch text for child workspaces", () => {
     const workspaces = [
-      { id: "ws-parent", name: "Scratch", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
-      { id: "ws-child", name: "Generate Stories for JobCard", kind: "code" as const, parentId: "ws-parent", createdAt: 3000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
+      { id: "ws-parent", name: "Scratch", kind: "code" as const, type: "local" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-child", name: "Generate Stories for JobCard", kind: "code" as const, type: "local" as const, parentId: "ws-parent", createdAt: 3000, baseInstanceId: "inst-2", activeInstanceId: "inst-2", goals: [] },
     ]
 
     render(<ChangesRail {...baseProps} workspaces={workspaces} />)
@@ -286,6 +293,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "Too Many Threads",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -303,7 +311,7 @@ describe("ChangesRail", () => {
   it("does not open a merge request context menu from workspace rows", () => {
     const onCreatePullRequest = vi.fn()
     const workspaces = [
-      { id: "ws-1", name: "feature", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-1", name: "feature", kind: "code" as const, type: "local" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
     ]
     render(
       <ChangesRail
@@ -322,7 +330,7 @@ describe("ChangesRail", () => {
   it("creates pull requests from the workspace row button", () => {
     const onCreatePullRequest = vi.fn()
     const workspaces = [
-      { id: "ws-1", name: "feature", kind: "code" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
+      { id: "ws-1", name: "feature", kind: "code" as const, type: "local" as const, parentId: null, createdAt: 1000, baseInstanceId: "inst-1", activeInstanceId: "inst-1", goals: [] },
     ]
     render(
       <ChangesRail
@@ -343,6 +351,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "feature",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -374,6 +383,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "feature",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -411,6 +421,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "merged-ws",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -442,6 +453,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "active-ws",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",
@@ -472,6 +484,7 @@ describe("ChangesRail", () => {
         id: "ws-1",
         name: "feature",
         kind: "code" as const,
+        type: "local" as const,
         parentId: null,
         createdAt: 1000,
         baseInstanceId: "inst-1",

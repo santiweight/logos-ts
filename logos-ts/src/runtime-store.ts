@@ -90,10 +90,18 @@ export interface StoredWorkspaceInitialization {
   steps: StoredWorkspaceInitializationStep[]
 }
 
+export type StoredWorkspaceType = "local" | "remote"
+
+export interface StoredWorkspaceTracking {
+  remote: string
+  branch: string
+}
+
 export interface StoredWorkspaceRecord {
   id: string
   name: string
   kind: WorkspaceKind
+  type: StoredWorkspaceType
   parentId: string | null
   createdAt: number
   baseInstanceId: string
@@ -102,6 +110,7 @@ export interface StoredWorkspaceRecord {
   instances: Record<string, StoredWorkspaceInstance>
   initialization?: StoredWorkspaceInitialization
   publication?: StoredWorkspacePublication
+  tracking?: StoredWorkspaceTracking
 }
 
 export type WorkspacePolicyEventType =
@@ -301,6 +310,8 @@ export class LogosRuntimeStore {
     `)
     this.addColumnIfMissing("workspaces", "publication_json", "TEXT")
     this.addColumnIfMissing("workspaces", "initialization_json", "TEXT")
+    this.addColumnIfMissing("workspaces", "workspace_type", "TEXT NOT NULL DEFAULT 'local'")
+    this.addColumnIfMissing("workspaces", "tracking_json", "TEXT")
     this.addColumnIfMissing("goals", "lifecycle_json", "TEXT")
     this.addColumnIfMissing("goals", "auto_merge", "INTEGER NOT NULL DEFAULT 1")
     this.addColumnIfMissing("goals", "base_instance_id", "TEXT")
@@ -373,10 +384,12 @@ export class LogosRuntimeStore {
     const instances = this.db.prepare(
       `SELECT * FROM workspace_instances WHERE workspace_id = ? ORDER BY created_at, id`
     ).all(id) as Record<string, unknown>[]
+    const wsType = (row["workspace_type"] as string | undefined) === "remote" ? "remote" as const : "local" as const
     const workspace: StoredWorkspaceRecord = {
       id: row["id"] as string,
       name: row["name"] as string,
       kind: "code",
+      type: wsType,
       parentId: nullableString(row["parent_id"]),
       createdAt: row["created_at"] as number,
       baseInstanceId: row["base_instance_id"] as string,
@@ -391,14 +404,16 @@ export class LogosRuntimeStore {
     if (initialization) workspace.initialization = initialization
     const publication = parsePublication(row["publication_json"])
     if (publication) workspace.publication = publication
+    const tracking = parseTracking(row["tracking_json"])
+    if (tracking) workspace.tracking = tracking
     return workspace
   }
 
   saveWorkspace(ws: StoredWorkspaceRecord): void {
     this.transaction(() => {
       this.db.prepare(`
-        INSERT INTO workspaces (id, name, kind, parent_id, created_at, base_instance_id, active_instance_id, initialization_json, publication_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO workspaces (id, name, kind, parent_id, created_at, base_instance_id, active_instance_id, initialization_json, publication_json, workspace_type, tracking_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           kind = excluded.kind,
@@ -407,7 +422,9 @@ export class LogosRuntimeStore {
           base_instance_id = excluded.base_instance_id,
           active_instance_id = excluded.active_instance_id,
           initialization_json = excluded.initialization_json,
-          publication_json = excluded.publication_json
+          publication_json = excluded.publication_json,
+          workspace_type = excluded.workspace_type,
+          tracking_json = excluded.tracking_json
       `).run(
         ws.id,
         ws.name,
@@ -418,6 +435,8 @@ export class LogosRuntimeStore {
         ws.activeInstanceId,
         ws.initialization ? JSON.stringify(ws.initialization) : null,
         ws.publication ? JSON.stringify(ws.publication) : null,
+        ws.type,
+        ws.tracking ? JSON.stringify(ws.tracking) : null,
       )
 
       this.db.prepare(`DELETE FROM workspace_instances WHERE workspace_id = ?`).run(ws.id)
@@ -687,6 +706,17 @@ export class LogosRuntimeStore {
 
 function nullableString(value: unknown): string | null {
   return typeof value === "string" ? value : null
+}
+
+function parseTracking(value: unknown): StoredWorkspaceTracking | undefined {
+  if (typeof value !== "string" || !value) return undefined
+  try {
+    const parsed = JSON.parse(value) as StoredWorkspaceTracking
+    if (!parsed.remote || !parsed.branch) return undefined
+    return parsed
+  } catch {
+    return undefined
+  }
 }
 
 function parsePublication(value: unknown): StoredWorkspacePublication | undefined {

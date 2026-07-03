@@ -29,6 +29,8 @@ import type {
   StoredWorkspaceInitialization,
   StoredWorkspaceInitializationStep,
   StoredWorkspacePublication,
+  StoredWorkspaceTracking,
+  StoredWorkspaceType,
   WorkspaceKind,
 } from "./runtime-store.js"
 import { ensureStoryCaptureHarnessForRoot, missingStorySnapshotDependencies } from "./story-snapshots.js"
@@ -86,7 +88,7 @@ export interface WorkspaceInstance {
   index: unknown
 }
 
-interface WorkspaceRecord {
+interface WorkspaceRecordBase {
   id: string
   name: string
   kind: WorkspaceKind
@@ -100,7 +102,18 @@ interface WorkspaceRecord {
   publication?: StoredWorkspacePublication
 }
 
-export interface WorkspaceState {
+interface LocalWorkspaceRecord extends WorkspaceRecordBase {
+  type: "local"
+}
+
+interface RemoteWorkspaceRecord extends WorkspaceRecordBase {
+  type: "remote"
+  tracking: StoredWorkspaceTracking
+}
+
+type WorkspaceRecord = LocalWorkspaceRecord | RemoteWorkspaceRecord
+
+interface WorkspaceStateBase {
   id: string
   name: string
   kind: WorkspaceKind
@@ -116,7 +129,18 @@ export interface WorkspaceState {
   publication?: StoredWorkspacePublication
 }
 
-export interface WorkspaceMeta {
+export interface LocalWorkspaceState extends WorkspaceStateBase {
+  type: "local"
+}
+
+export interface RemoteWorkspaceState extends WorkspaceStateBase {
+  type: "remote"
+  tracking: StoredWorkspaceTracking
+}
+
+export type WorkspaceState = LocalWorkspaceState | RemoteWorkspaceState
+
+interface WorkspaceMetaBase {
   id: string
   name: string
   kind: WorkspaceKind
@@ -128,6 +152,17 @@ export interface WorkspaceMeta {
   initialization?: StoredWorkspaceInitialization
   publication?: StoredWorkspacePublication
 }
+
+export interface LocalWorkspaceMeta extends WorkspaceMetaBase {
+  type: "local"
+}
+
+export interface RemoteWorkspaceMeta extends WorkspaceMetaBase {
+  type: "remote"
+  tracking: StoredWorkspaceTracking
+}
+
+export type WorkspaceMeta = LocalWorkspaceMeta | RemoteWorkspaceMeta
 
 export interface PushWorkspaceBranchResult {
   branchName: string
@@ -310,9 +345,30 @@ export class WorkspaceManager {
     this.loadAll()
   }
 
+  private static storedToRecord(stored: import("./runtime-store.js").StoredWorkspaceRecord): WorkspaceRecord {
+    const base = {
+      id: stored.id,
+      name: stored.name,
+      kind: stored.kind,
+      parentId: stored.parentId,
+      createdAt: stored.createdAt,
+      baseInstanceId: stored.baseInstanceId,
+      activeInstanceId: stored.activeInstanceId,
+      goals: stored.goals as Goal[],
+      instances: stored.instances as Record<string, WorkspaceInstance>,
+      ...(stored.initialization ? { initialization: stored.initialization } : {}),
+      ...(stored.publication ? { publication: stored.publication } : {}),
+    }
+    if (stored.type === "remote" && stored.tracking) {
+      return { ...base, type: "remote", tracking: stored.tracking }
+    }
+    return { ...base, type: "local" }
+  }
+
   private loadAll(): void {
     this.workspaces.clear()
-    for (const ws of this.store.listWorkspaces()) {
+    for (const stored of this.store.listWorkspaces()) {
+      const ws = WorkspaceManager.storedToRecord(stored)
       let dirty = false
       for (const goal of ws.goals) {
         if (goal.status === "running") {
@@ -372,7 +428,7 @@ export class WorkspaceManager {
 
   private toState(ws: WorkspaceRecord): WorkspaceState {
     const inst = this.activeInstance(ws)
-    const state: WorkspaceState = {
+    const base = {
       id: ws.id,
       name: ws.name,
       kind: ws.kind,
@@ -384,14 +440,15 @@ export class WorkspaceManager {
       index: inst.index,
       goals: ws.goals,
       instances: ws.instances,
+      ...(ws.initialization ? { initialization: ws.initialization } : {}),
+      ...(ws.publication ? { publication: ws.publication } : {}),
     }
-    if (ws.initialization) state.initialization = ws.initialization
-    if (ws.publication) state.publication = ws.publication
-    return state
+    if (ws.type === "remote") return { ...base, type: "remote", tracking: ws.tracking }
+    return { ...base, type: "local" }
   }
 
   private toMeta(ws: WorkspaceRecord): WorkspaceMeta {
-    const meta: WorkspaceMeta = {
+    const base = {
       id: ws.id,
       name: ws.name,
       kind: ws.kind,
@@ -400,10 +457,11 @@ export class WorkspaceManager {
       baseInstanceId: ws.baseInstanceId,
       activeInstanceId: ws.activeInstanceId,
       goals: ws.goals,
+      ...(ws.initialization ? { initialization: ws.initialization } : {}),
+      ...(ws.publication ? { publication: ws.publication } : {}),
     }
-    if (ws.initialization) meta.initialization = ws.initialization
-    if (ws.publication) meta.publication = ws.publication
-    return meta
+    if (ws.type === "remote") return { ...base, type: "remote", tracking: ws.tracking }
+    return { ...base, type: "local" }
   }
 
   private storybookCapsForInstance(inst?: WorkspaceInstance): StorybookCapsResolution {
@@ -481,6 +539,91 @@ export class WorkspaceManager {
           rmSync(worktreeRoot, { recursive: true, force: true })
         }
       },
+    }
+  }
+
+  private async refreshFromRemote(ws: RemoteWorkspaceRecord): Promise<void> {
+    const { gitRoot, projectRel } = this.sourceProjectGitInfo()
+    const { remote, branch } = ws.tracking
+    await execFileAsync("git", ["-C", gitRoot, "fetch", remote, branch], { encoding: "utf8" })
+
+    const ref = `refs/remotes/${remote}/${branch}`
+    const commit = execFileSync("git", ["-C", gitRoot, "rev-parse", "--verify", `${ref}^{commit}`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim()
+    if (!commit) throw new Error(`${ref} does not exist`)
+
+    const worktreeRoot = mkdtempSync(join(tmpdir(), `logos-${remote}-${branch}-`))
+    try {
+      execFileSync("git", ["-C", gitRoot, "worktree", "add", "--detach", worktreeRoot, commit], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+      const sourceRoot = projectRel ? join(worktreeRoot, projectRel) : worktreeRoot
+      const newInst = await this.createInstance(ws.id, sourceRoot, undefined, { installNodeModules: false })
+      ws.instances[newInst.id] = newInst
+      ws.activeInstanceId = newInst.id
+      this.save(ws)
+    } finally {
+      try {
+        execFileSync("git", ["-C", gitRoot, "worktree", "remove", "--force", worktreeRoot], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+      } catch {
+        rmSync(worktreeRoot, { recursive: true, force: true })
+      }
+    }
+  }
+
+  private async pushToRemote(ws: RemoteWorkspaceRecord, inst: WorkspaceInstance, commitMessage: string): Promise<void> {
+    const { gitRoot, projectRel } = this.sourceProjectGitInfo()
+    const { remote, branch } = ws.tracking
+    const ref = `refs/remotes/${remote}/${branch}`
+
+    const base = execFileSync("git", ["-C", gitRoot, "rev-parse", ref], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim()
+
+    mkdirSync(this.runsDir, { recursive: true })
+    const publishDir = resolve(this.runsDir, `.push-${remote}-${branch}-${Date.now()}`)
+    try {
+      execFileSync("git", ["-C", gitRoot, "worktree", "add", "--detach", publishDir, base], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+
+      const targetRoot = projectRel ? join(publishDir, projectRel) : publishDir
+      this.replaceTreeContents(inst.materializedRoot, targetRoot, { preserveGitDir: projectRel === "" })
+
+      const addPath = projectRel || "."
+      execFileSync("git", ["-C", publishDir, "add", "-A", "--", addPath], { encoding: "utf8" })
+      const changed = execFileSync("git", ["-C", publishDir, "status", "--porcelain", "--", addPath], {
+        encoding: "utf8",
+      }).trim().length > 0
+
+      if (changed) {
+        execFileSync("git", ["-C", publishDir, "commit", "-m", commitMessage], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+      }
+
+      execFileSync("git", ["-C", publishDir, "push", remote, `HEAD:refs/heads/${branch}`], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+    } finally {
+      try {
+        execFileSync("git", ["-C", gitRoot, "worktree", "remove", "--force", publishDir], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+      } catch {
+        rmSync(publishDir, { recursive: true, force: true })
+      }
     }
   }
 
@@ -904,8 +1047,10 @@ export class WorkspaceManager {
       checkout.cleanup()
     }
 
-    const ws: WorkspaceRecord = {
+    const ws: RemoteWorkspaceRecord = {
       id,
+      type: "remote",
+      tracking: { remote: "origin", branch: "main" },
       name: ROOT_WORKSPACE_NAME,
       kind: "code",
       parentId: null,
@@ -946,8 +1091,9 @@ export class WorkspaceManager {
       installNodeModules: !this.initializeWorkspaces,
     })
 
-    const ws: WorkspaceRecord = {
+    const ws: LocalWorkspaceRecord = {
       id,
+      type: "local",
       name: opts?.name ?? defaultWorkspaceName(),
       kind: "code",
       parentId,
@@ -1582,15 +1728,33 @@ export class WorkspaceManager {
     const targetWs = ws.parentId ? this.workspaces.get(ws.parentId) ?? ws : ws
     return this.codeService.withWorkspaceLock(targetWs.id, async () => {
       const resumeOnEvent = opts?.externalOnEvent ?? onEvent
+
+      if (targetWs.type === "remote") {
+        const { remote, branch } = targetWs.tracking
+        onEvent({ type: "status", goalId: goal.id, message: `fetching latest ${remote}/${branch}…` })
+        try {
+          await this.refreshFromRemote(targetWs)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          goal.status = "error"
+          setGoalLifecycle(goal, { stage: "merging", state: "merge_failed" })
+          this.save(ws)
+          onEvent({ type: "error", goalId: goal.id, message: `failed to fetch ${remote}/${branch}: ${message}` })
+          return true
+        }
+      }
+
       const activeInst = this.activeInstance(targetWs)
       setGoalLifecycle(goal, { stage: "merging", state: "rebasing" })
       this.save(ws)
       onEvent({
         type: "status",
         goalId: goal.id,
-        message: targetWs.id === ws.id
-          ? "rebasing workspace instance…"
-          : "rebasing workspace instance onto parent…",
+        message: targetWs.type === "remote"
+          ? `rebasing workspace instance onto ${targetWs.tracking.remote}/${targetWs.tracking.branch}…`
+          : targetWs.id === ws.id
+            ? "rebasing workspace instance…"
+            : "rebasing workspace instance onto parent…",
       })
       let rebase: RebaseInstanceResult
       try {
@@ -1723,6 +1887,24 @@ export class WorkspaceManager {
       } else {
         await this.refreshChildWorkspaces(ws, null)
       }
+
+      if (targetWs.type === "remote") {
+        const { remote, branch } = targetWs.tracking
+        const pushInst = this.activeInstance(targetWs)
+        onEvent({ type: "status", goalId: goal.id, message: `pushing to ${remote}/${branch}…` })
+        try {
+          await this.pushToRemote(targetWs, pushInst, goal.label || goal.text)
+          onEvent({ type: "status", goalId: goal.id, message: `pushed to ${remote}/${branch}` })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          goal.status = "error"
+          setGoalLifecycle(goal, { stage: "merging", state: "merge_failed" })
+          this.save(ws)
+          onEvent({ type: "error", goalId: goal.id, message: `push to ${remote}/${branch} failed: ${message}` })
+          return true
+        }
+      }
+
       goal.status = "done"
       setGoalLifecycle(goal, { stage: "merged", state: "complete" })
       this.goalWorkingInstances.delete(goal.id)

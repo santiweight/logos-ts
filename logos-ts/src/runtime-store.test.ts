@@ -12,6 +12,7 @@ function workspace(id = "ws-1"): StoredWorkspaceRecord {
     id,
     name: "workspace",
     kind: "code",
+    type: "local",
     parentId: null,
     createdAt: 1000,
     baseInstanceId: "inst-1",
