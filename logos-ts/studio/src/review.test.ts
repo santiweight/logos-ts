@@ -12,7 +12,7 @@ import type { FileEntry, StudioIndex, Workspace } from "./types"
 
 function indexWithCapture(
   snapshot: string | null,
-  overrides: { component?: string; exportName?: string } = {}
+  overrides: { component?: string; exportName?: string; screenshotHash?: string | null } = {}
 ): StudioIndex {
   const component = overrides.component ?? "JobRow"
   const exportName = overrides.exportName ?? "Default"
@@ -25,7 +25,12 @@ function indexWithCapture(
       signature: `${component}()`,
       componentCode: "",
       propsFields: [],
-      stories: [{ id: `${component.toLowerCase()}--${exportName.toLowerCase()}`, exportName, snapshot }],
+      stories: [{
+        id: `${component.toLowerCase()}--${exportName.toLowerCase()}`,
+        exportName,
+        snapshot,
+        ...("screenshotHash" in overrides ? { screenshotHash: overrides.screenshotHash } : {}),
+      }],
     },
   }
   return { root: "/test", files: [file] }
@@ -50,6 +55,36 @@ describe("snapshotChanges", () => {
   it("does not report identical snapshots", () => {
     const base = indexWithCapture("<div>same</div>")
     expect(snapshotChanges(base, base)).toEqual([])
+  })
+
+
+
+  it("does not report changes when screenshotHash matches despite snapshot HTML differing", () => {
+    const base = indexWithCapture(
+      '<html><head><style>.a{color:red}</style></head><body><div>same</div></body></html>',
+      { screenshotHash: "abc123" },
+    )
+    const workspace = indexWithCapture(
+      '<html><head><style>.a{color:red}.b{color:blue}</style></head><body><div>same</div></body></html>',
+      { screenshotHash: "abc123" },
+    )
+    expect(snapshotChanges(base, workspace)).toEqual([])
+  })
+
+  it("reports changes when screenshotHash differs", () => {
+    const base = indexWithCapture("<div>before</div>", { screenshotHash: "hash-a" })
+    const workspace = indexWithCapture("<div>after</div>", { screenshotHash: "hash-b" })
+    expect(snapshotChanges(base, workspace)).toEqual([
+      expect.objectContaining({ status: "changed" }),
+    ])
+  })
+
+  it("falls back to snapshot comparison when screenshotHash is absent", () => {
+    const base = indexWithCapture("<div>before</div>")
+    const workspace = indexWithCapture("<div>after</div>")
+    expect(snapshotChanges(base, workspace)).toEqual([
+      expect.objectContaining({ status: "changed" }),
+    ])
   })
 
   it("reports added and removed snapshots", () => {

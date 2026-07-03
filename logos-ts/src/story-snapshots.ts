@@ -1,4 +1,5 @@
 /* eslint-disable no-restricted-syntax */
+import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, relative, resolve, sep } from "node:path"
 import { loadProject } from "./project.js"
@@ -17,6 +18,7 @@ export interface StorySnapshotRecord {
 export interface StorySnapshotStore {
   records: StorySnapshotRecord[]
   get(story: StoryEntry): string | null
+  screenshotHash(story: StoryEntry): string | null
 }
 
 export interface StoryCaptureResult {
@@ -319,8 +321,10 @@ export function ensureStoryCaptureHarness(root: string, stories: StoryEntry[], d
     "        await page.evaluate(() => document.fonts?.ready)",
     "        const html = await page.evaluate(snapshotDocument)",
     "        const snapshotFile = resolve(projectRoot, \".logos\", \"__snapshots__\", \"story-snapshots\", `${story.file}.html`)",
+    "        const screenshotFile = resolve(projectRoot, \".logos\", \"__snapshots__\", \"story-snapshots\", `${story.file}.png`)",
     "        mkdirSync(dirname(snapshotFile), { recursive: true })",
     "        writeFileSync(snapshotFile, html)",
+    "        await page.screenshot({ path: screenshotFile, fullPage: true })",
     "        results.push({ storyId: story.id, file: story.file, ok: true })",
     "      } catch (e) {",
     "        results.push({ storyId: story.id, file: story.file, ok: false, error: e instanceof Error ? e.message : String(e) })",
@@ -456,6 +460,14 @@ export function loadStorySnapshotStore(root: string, opts: { frontendDir?: strin
     .concat(browserRecords)
   const byKey = new Map(records.map((record) => [record.key, record.value]))
 
+  const screenshotHashes = new Map<string, string>()
+  for (const file of files) {
+    if (!file.endsWith(".png") || !file.split(sep).includes("story-snapshots")) continue
+    const storyKey = file.slice(file.lastIndexOf(sep) + 1).replace(/\.png$/, "")
+    const hash = createHash("sha256").update(readFileSync(file)).digest("hex")
+    screenshotHashes.set(`story-id:${storyKey}`, hash)
+  }
+
   const candidatesFor = (story: StoryEntry): string[] => {
     const rootRel = `./${posixPath(relative(absRoot, story.filePath))}`
     const frontendRel = isSubpath(frontendDir, story.filePath)
@@ -477,6 +489,9 @@ export function loadStorySnapshotStore(root: string, opts: { frontendDir?: strin
         if (suffixMatch) return suffixMatch.value
       }
       return null
+    },
+    screenshotHash(story) {
+      return screenshotHashes.get(`story-id:${safeStoryFileName(story.id)}`) ?? null
     },
   }
 }

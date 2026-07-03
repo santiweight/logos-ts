@@ -16,6 +16,7 @@ export interface StoryNode {
   storybookRoot?: string
   storyCode?: string
   snapshot: string | null
+  screenshotHash?: string | null
 }
 export interface FileEntry {
   file: string
@@ -320,6 +321,7 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
       propsFields: component.propsFields,
       stories: entries.map((e) => {
         const storybookRoot = storybookRootForStory(absRoot, e.filePath)
+        const screenshotHash = snapshotStore.screenshotHash(e)
         return {
           id: e.id,
           exportName: e.exportName,
@@ -327,6 +329,7 @@ export function buildStudioIndex(root: string, existingProject?: ReturnType<type
           ...(storybookRoot != null ? { storybookRoot } : {}),
           storyCode: e.code,
           snapshot: snapshotStore.get(e),
+          ...(screenshotHash != null ? { screenshotHash } : {}),
         }
       }),
     }

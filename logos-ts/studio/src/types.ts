@@ -11,6 +11,7 @@ export interface StoryNode {
   storybookRoot?: string
   storyCode?: string
   snapshot: string | null
+  screenshotHash?: string | null
 }
 export interface ComponentEntry {
   name: string

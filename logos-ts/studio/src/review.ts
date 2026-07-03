@@ -20,6 +20,7 @@ interface IndexedSnapshot {
   exportName: string
   storyId: string | null
   snapshot: string | null
+  screenshotHash: string | null
 }
 
 export function selectReviewBaseIndex(projectIndex: StudioIndex, parentWorkspaceIndex: StudioIndex | null): StudioIndex {
@@ -67,6 +68,7 @@ function snapshotMap(index: StudioIndex): Map<string, IndexedSnapshot> {
           exportName: story.exportName,
           storyId: story.id,
           snapshot: story.snapshot,
+          screenshotHash: story.screenshotHash ?? null,
         })
       }
     }
@@ -83,7 +85,13 @@ export function snapshotChanges(base: StudioIndex, workspace: StudioIndex): Snap
   for (const id of ids) {
     const previous = before.get(id)
     const current = after.get(id)
-    if (previous && current && previous.snapshot === current.snapshot) continue
+    if (previous && current) {
+      const canCompareScreenshots = previous.screenshotHash != null && current.screenshotHash != null
+      const equal = canCompareScreenshots
+        ? previous.screenshotHash === current.screenshotHash
+        : previous.snapshot === current.snapshot
+      if (equal) continue
+    }
 
     const snap = current ?? previous
     if (!snap) continue
