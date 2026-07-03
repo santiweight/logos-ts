@@ -233,6 +233,7 @@ export interface WorkspaceMeta {
   initialization?: WorkspaceInitialization
   publication?: WorkspacePublication
   tracking?: WorkspaceTracking
+  status?: string | null
 }
 
 export interface WorkspaceInstance {

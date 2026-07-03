@@ -129,35 +129,43 @@ export function ChangesRail({
             {w.initialization?.status === "error" && <span className="rail-status error"> · init failed</span>}
           </div>
           <div className="rail-actions">
-            {w.initialization?.status === "initializing" && (
-              <span className="rail-agent" title="Workspace initializing">
+            {w.status ? (
+              <span className="rail-agent" title={w.status}>
                 <span className="ag-spin">↻</span>
               </span>
+            ) : (
+              <>
+                {w.initialization?.status === "initializing" && (
+                  <span className="rail-agent" title="Workspace initializing">
+                    <span className="ag-spin">↻</span>
+                  </span>
+                )}
+                {canAccept && (
+                  <button
+                    className="rail-merge"
+                    title="Accept change"
+                    aria-label={`Accept ${w.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onAcceptGoal(thread.id)
+                    }}
+                  >
+                    {mergeIcon}
+                  </button>
+                )}
+                <button
+                  className="rail-del"
+                  title={thread?.lifecycle?.stage === "merged" ? "Archive workspace (⌘⌫)" : "Delete workspace (⌘⌫)"}
+                  aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDeleteWorkspace(w.id)
+                  }}
+                >
+                  {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
+                </button>
+              </>
             )}
-            {canAccept && (
-              <button
-                className="rail-merge"
-                title="Accept change"
-                aria-label={`Accept ${w.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onAcceptGoal(thread.id)
-                }}
-              >
-                {mergeIcon}
-              </button>
-            )}
-            <button
-              className="rail-del"
-              title={thread?.lifecycle?.stage === "merged" ? "Archive workspace (⌘⌫)" : "Delete workspace (⌘⌫)"}
-              aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                onDeleteWorkspace(w.id)
-              }}
-            >
-              {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
-            </button>
           </div>
         </div>
 

@@ -151,6 +151,7 @@ interface WorkspaceMetaBase {
   goals: Goal[]
   initialization?: StoredWorkspaceInitialization
   publication?: StoredWorkspacePublication
+  status?: string | null
 }
 
 export interface LocalWorkspaceMeta extends WorkspaceMetaBase {
@@ -277,6 +278,7 @@ export class WorkspaceManager {
   private workspaceSeq = 0
   private deletingWorkspaces = new Set<string>()
   private initializingWorkspaces = new Set<string>()
+  private workspaceStatuses = new Map<string, string>()
   private store: LogosRuntimeStore
   private runsDir: string
   private logosTsSrc: string
@@ -459,6 +461,7 @@ export class WorkspaceManager {
       goals: ws.goals,
       ...(ws.initialization ? { initialization: ws.initialization } : {}),
       ...(ws.publication ? { publication: ws.publication } : {}),
+      ...(this.workspaceStatuses.has(ws.id) ? { status: this.workspaceStatuses.get(ws.id) } : {}),
     }
     if (ws.type === "remote") return { ...base, type: "remote", tracking: ws.tracking }
     return { ...base, type: "local" }
@@ -1147,6 +1150,7 @@ export class WorkspaceManager {
     const ws = this.workspaces.get(id)
     if (!ws) return
     this.deletingWorkspaces.add(id)
+    this.workspaceStatuses.set(id, "Stopping agents…")
 
     // Reparent children to this workspace's parent (keep their commits intact)
     for (const child of this.workspaces.values()) {
@@ -1163,6 +1167,7 @@ export class WorkspaceManager {
     }
 
     // Shutdown workspace storybooks
+    this.workspaceStatuses.set(id, "Shutting down storybooks…")
     this.shutdownWorkspaceStorybooks(ws)
     this.runManager.shutdownWorkspace(id)
 
@@ -1170,6 +1175,7 @@ export class WorkspaceManager {
     this.sessions.deleteByWorkspace(id)
 
     // Remove materialized instance directories
+    this.workspaceStatuses.set(id, "Removing files…")
     for (const inst of Object.values(ws.instances)) {
       rmSync(inst.materializedRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
     }
@@ -1177,6 +1183,7 @@ export class WorkspaceManager {
     // Remove workspace state
     this.store.deleteWorkspace(id)
     this.workspaces.delete(id)
+    this.workspaceStatuses.delete(id)
   }
 
   resetAll(): void {

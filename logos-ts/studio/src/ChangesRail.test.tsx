@@ -478,6 +478,133 @@ describe("ChangesRail", () => {
     expect(screen.queryByTitle("Archive workspace (⌘⌫)")).not.toBeInTheDocument()
   })
 
+  it("shows spinner with status tooltip when workspace has a status", () => {
+    const workspaces: WorkspaceMeta[] = [
+      {
+        id: "ws-1",
+        name: "archiving-ws",
+        kind: "code" as const,
+        type: "local" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [],
+        status: "Stopping agents…",
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} />)
+
+    expect(screen.getByTitle("Stopping agents…")).toBeInTheDocument()
+    expect(screen.queryByTitle("Delete workspace (⌘⌫)")).not.toBeInTheDocument()
+  })
+
+  it("hides accept button when workspace has a status", () => {
+    const workspaces: WorkspaceMeta[] = [
+      {
+        id: "ws-1",
+        name: "merging-ws",
+        kind: "code" as const,
+        type: "local" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [
+          {
+            id: "g-1",
+            text: "done change",
+            label: "done",
+            target: "component:X",
+            mode: "code" as const,
+            createdAt: 1000,
+            status: "done" as const,
+            lifecycle: { stage: "impl" as const, state: "ready_to_merge" as const },
+          },
+        ],
+        status: "Removing files…",
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} runningGoals={new Set<string>()} />)
+
+    expect(screen.getByTitle("Removing files…")).toBeInTheDocument()
+    expect(screen.queryByTitle("Accept change")).not.toBeInTheDocument()
+  })
+
+  it("shows normal buttons when workspace has no status", () => {
+    const workspaces: WorkspaceMeta[] = [
+      {
+        id: "ws-1",
+        name: "normal-ws",
+        kind: "code" as const,
+        type: "local" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [],
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} />)
+
+    expect(screen.getByTitle("Delete workspace (⌘⌫)")).toBeInTheDocument()
+  })
+
+  it("does not call onDeleteWorkspace when clicking spinner during status", () => {
+    const onDeleteWorkspace = vi.fn()
+    const workspaces: WorkspaceMeta[] = [
+      {
+        id: "ws-1",
+        name: "busy-ws",
+        kind: "code" as const,
+        type: "local" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [],
+        status: "Shutting down storybooks…",
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} onDeleteWorkspace={onDeleteWorkspace} />)
+
+    fireEvent.click(screen.getByTitle("Shutting down storybooks…"))
+
+    expect(onDeleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  it("shows status spinner for one workspace while another shows normal buttons", () => {
+    const workspaces: WorkspaceMeta[] = [
+      {
+        id: "ws-busy",
+        name: "busy-ws",
+        kind: "code" as const,
+        type: "local" as const,
+        parentId: null,
+        createdAt: 2000,
+        baseInstanceId: "inst-1",
+        activeInstanceId: "inst-1",
+        goals: [],
+        status: "Removing files…",
+      },
+      {
+        id: "ws-idle",
+        name: "idle-ws",
+        kind: "code" as const,
+        type: "local" as const,
+        parentId: null,
+        createdAt: 1000,
+        baseInstanceId: "inst-2",
+        activeInstanceId: "inst-2",
+        goals: [],
+      },
+    ]
+    render(<ChangesRail {...baseProps} workspaces={workspaces} />)
+
+    expect(screen.getByTitle("Removing files…")).toBeInTheDocument()
+    expect(screen.getByLabelText("Delete idle-ws")).toBeInTheDocument()
+  })
+
   it("does not show visible trash controls on change rows", () => {
     const workspaces = [
       {
