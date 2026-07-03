@@ -329,7 +329,7 @@ export function ensureStoryCaptureHarness(root: string, stories: StoryEntry[], d
     "      try {",
     "        await page.goto(storyUrl, { waitUntil: STORYBOOK_URL ? \"networkidle\" : \"domcontentloaded\" })",
     "        if (STORYBOOK_URL) {",
-    "          await page.locator(\"#storybook-root > *\").waitFor({ timeout: 30_000 })",
+    "          await page.locator(\"#storybook-root > [data-comment-root], #storybook-root > :only-child\").first().waitFor({ timeout: 30_000 })",
     "        } else {",
     "          await page.locator(`[data-logos-story-rendered='${story.id}']`).waitFor({ timeout: 30_000 })",
     "        }",
