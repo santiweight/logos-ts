@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, resolveSidebarFilters, reviewChangeCount, runCommentPopupFromEvent, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, shouldShowProjectStartupScreen, sidebarFilterScope, workspaceReadyForDisplay } from "./App"
+import { buildStorybookRenderKey, createStoryCommentEventDedupe, resolveAgentPanelGoalId, resolveSidebarFilters, reviewChangeCount, runCommentPopupFromEvent, selectActiveStorybookRuntime, selectActiveWorkspaceView, selectedStorybookRoot, shouldShowProjectStartupScreen, sidebarFilterScope, storyPopoverFromEvent, workspaceReadyForDisplay } from "./App"
 import type { FileEntry, Goal, SbState, StudioIndex, WorkspaceMeta } from "./types"
 
 function goal(overrides: Partial<Goal>): Goal {
@@ -327,5 +327,363 @@ describe("runCommentPopupFromEvent", () => {
     })
 
     iframe.remove()
+  })
+})
+
+describe("storyPopoverFromEvent", () => {
+  it("rejects non-object data", () => {
+    const event = new MessageEvent("message", { data: "not-an-object" })
+    expect(storyPopoverFromEvent(event)).toBeNull()
+  })
+
+  it("rejects messages with wrong type", () => {
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-comment",
+        rect: { right: 100, top: 50 },
+        viewport: { width: 640, height: 400 },
+      },
+    })
+    expect(storyPopoverFromEvent(event)).toBeNull()
+  })
+
+  it("rejects messages missing rect object", () => {
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        viewport: { width: 640, height: 400 },
+      },
+    })
+    expect(storyPopoverFromEvent(event)).toBeNull()
+  })
+
+  it("rejects messages missing viewport object", () => {
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        rect: { right: 100, top: 50 },
+      },
+    })
+    expect(storyPopoverFromEvent(event)).toBeNull()
+  })
+
+  it("rejects messages with missing required numeric fields", () => {
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        rect: { top: 50 }, // missing right
+        viewport: { width: 640, height: 400 },
+      },
+    })
+    expect(storyPopoverFromEvent(event)).toBeNull()
+
+    const event2 = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        rect: { right: 100 }, // missing top
+        viewport: { width: 640, height: 400 },
+      },
+    })
+    expect(storyPopoverFromEvent(event2)).toBeNull()
+
+    const event3 = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        rect: { right: 100, top: 50 },
+        viewport: { height: 400 }, // missing width
+      },
+    })
+    expect(storyPopoverFromEvent(event3)).toBeNull()
+  })
+
+  it("translates iframe coordinates to studio coordinates with default target", () => {
+    const iframe = document.createElement("iframe")
+    const sourceWindow = { postMessage: () => {} } as unknown as Window
+    Object.defineProperty(iframe, "contentWindow", { value: sourceWindow })
+    document.body.appendChild(iframe)
+    iframe.getBoundingClientRect = () => ({
+      left: 100,
+      top: 50,
+      right: 740,
+      bottom: 450,
+      width: 640,
+      height: 400,
+      x: 100,
+      y: 50,
+      toJSON: () => ({}),
+    })
+
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        rect: { right: 120, top: 80 },
+        viewport: { width: 1280, height: 800 },
+      },
+    })
+    Object.defineProperty(event, "source", { value: sourceWindow })
+    const popup = storyPopoverFromEvent(event, iframe)
+
+    expect(popup).toMatchObject({
+      target: "app:/",
+      label: "Comment",
+      x: 172, // 100 + 120 * (640/1280) + 12 = 100 + 60 + 12 = 172
+      y: 90, // 50 + 80 * (400/800) = 50 + 40 = 90
+      storyId: undefined,
+      selector: undefined,
+      component: undefined,
+      htmlContext: undefined,
+      screenshotDataUrl: undefined,
+    })
+
+    iframe.remove()
+  })
+
+  it("uses component as target when present", () => {
+    const iframe = document.createElement("iframe")
+    const sourceWindow = { postMessage: () => {} } as unknown as Window
+    Object.defineProperty(iframe, "contentWindow", { value: sourceWindow })
+    iframe.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        component: "ButtonCard",
+        label: "CustomLabel",
+        rect: { right: 100, top: 50 },
+        viewport: { width: 800, height: 600 },
+      },
+    })
+    Object.defineProperty(event, "source", { value: sourceWindow })
+    const popup = storyPopoverFromEvent(event, iframe)
+
+    expect(popup).toMatchObject({
+      target: "component:ButtonCard",
+      label: "CustomLabel",
+      component: "ButtonCard",
+    })
+
+    iframe.remove()
+  })
+
+  it("uses story id as target when component is missing", () => {
+    const iframe = document.createElement("iframe")
+    const sourceWindow = { postMessage: () => {} } as unknown as Window
+    Object.defineProperty(iframe, "contentWindow", { value: sourceWindow })
+    iframe.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        storyId: "buttoncard--primary",
+        rect: { right: 100, top: 50 },
+        viewport: { width: 800, height: 600 },
+      },
+    })
+    Object.defineProperty(event, "source", { value: sourceWindow })
+    const popup = storyPopoverFromEvent(event, iframe)
+
+    expect(popup).toMatchObject({
+      target: "story:buttoncard--primary",
+      label: "buttoncard--primary",
+      storyId: "buttoncard--primary",
+    })
+
+    iframe.remove()
+  })
+
+  it("clamps coordinates to viewport bounds", () => {
+    // Mock window.innerWidth and innerHeight
+    Object.defineProperty(window, "innerWidth", { value: 1000, writable: true, configurable: true })
+    Object.defineProperty(window, "innerHeight", { value: 600, writable: true, configurable: true })
+
+    const iframe = document.createElement("iframe")
+    const sourceWindow = { postMessage: () => {} } as unknown as Window
+    Object.defineProperty(iframe, "contentWindow", { value: sourceWindow })
+    iframe.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        component: "LargeCard",
+        rect: { right: 2000, top: 2000 }, // Very far right and down
+        viewport: { width: 800, height: 600 },
+      },
+    })
+    Object.defineProperty(event, "source", { value: sourceWindow })
+    const popup = storyPopoverFromEvent(event, iframe)
+
+    // x should be clamped to window.innerWidth - 310 = 690
+    expect(popup?.x).toBeLessThanOrEqual(690)
+    // y should be clamped to window.innerHeight - 200 = 400
+    expect(popup?.y).toBeLessThanOrEqual(400)
+    // y should be at least 8
+    expect(popup?.y).toBeGreaterThanOrEqual(8)
+
+    iframe.remove()
+  })
+
+  it("handles scaling when iframe size differs from viewport", () => {
+    const iframe = document.createElement("iframe")
+    const sourceWindow = { postMessage: () => {} } as unknown as Window
+    Object.defineProperty(iframe, "contentWindow", { value: sourceWindow })
+    document.body.appendChild(iframe)
+    iframe.getBoundingClientRect = () => ({
+      left: 50,
+      top: 100,
+      right: 450,
+      bottom: 300,
+      width: 400, // half the viewport width
+      height: 200, // half the viewport height
+      x: 50,
+      y: 100,
+      toJSON: () => ({}),
+    })
+
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        component: "ScaledComponent",
+        rect: { right: 400, top: 200 }, // coords in iframe space
+        viewport: { width: 800, height: 400 }, // original viewport
+      },
+    })
+    Object.defineProperty(event, "source", { value: sourceWindow })
+    const popup = storyPopoverFromEvent(event, iframe)
+
+    // Scale factors: scaleX = 400/800 = 0.5, scaleY = 200/400 = 0.5
+    // x = 50 + 400 * 0.5 + 12 = 50 + 200 + 12 = 262
+    // y = 100 + 200 * 0.5 = 100 + 100 = 200
+    expect(popup).toMatchObject({
+      target: "component:ScaledComponent",
+      x: 262,
+      y: 200,
+    })
+
+    iframe.remove()
+  })
+
+  it("preserves optional fields", () => {
+    const iframe = document.createElement("iframe")
+    const sourceWindow = { postMessage: () => {} } as unknown as Window
+    Object.defineProperty(iframe, "contentWindow", { value: sourceWindow })
+    iframe.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        component: "DetailedCard",
+        selector: ".card-title",
+        htmlContext: "Card Title: Sales Report",
+        screenshotDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        rect: { right: 100, top: 50 },
+        viewport: { width: 800, height: 600 },
+      },
+    })
+    Object.defineProperty(event, "source", { value: sourceWindow })
+    const popup = storyPopoverFromEvent(event, iframe)
+
+    expect(popup).toMatchObject({
+      component: "DetailedCard",
+      selector: ".card-title",
+      htmlContext: "Card Title: Sales Report",
+      screenshotDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    })
+
+    iframe.remove()
+  })
+
+  it("uses provided frameOverride for iframe resolution", () => {
+    const iframe1 = document.createElement("iframe")
+    const iframe2 = document.createElement("iframe")
+    const sourceWindow = { postMessage: () => {} } as unknown as Window
+    Object.defineProperty(iframe1, "contentWindow", { value: sourceWindow })
+    Object.defineProperty(iframe2, "contentWindow", { value: sourceWindow })
+
+    iframe1.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+
+    iframe2.getBoundingClientRect = () => ({
+      left: 200,
+      top: 100,
+      right: 1000,
+      bottom: 700,
+      width: 800,
+      height: 600,
+      x: 200,
+      y: 100,
+      toJSON: () => ({}),
+    })
+
+    const event = new MessageEvent("message", {
+      data: {
+        type: "logos:story-popover-show",
+        component: "OverriddenFrame",
+        rect: { right: 100, top: 50 },
+        viewport: { width: 800, height: 600 },
+      },
+    })
+    Object.defineProperty(event, "source", { value: sourceWindow })
+
+    // Using iframe2 as override should give different coordinates
+    const popup = storyPopoverFromEvent(event, iframe2)
+
+    // x = 200 + 100 * (800/800) + 12 = 200 + 100 + 12 = 312
+    // y = 100 + 50 * (600/600) = 100 + 50 = 150
+    expect(popup).toMatchObject({
+      x: 312,
+      y: 150,
+    })
+
+    iframe1.remove()
+    iframe2.remove()
   })
 })

@@ -1,18 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  CommentComposer,
-  CommentThread,
   CommentToolbar,
   Highlight,
   Pin,
-  applyPopoverDragOffset,
   overlayStyle,
-  popoverPos,
-  popoverShell,
-  usePopoverDrag,
-  type ReplyPayload,
-  type SubmitPayload,
-} from "./comment-ui"
+} from "./comment-overlay"
 
 export interface StoryComment {
   id: string
@@ -98,38 +90,26 @@ function portableStoryIdentity(): { storyId: string; component?: string } | null
   }
 }
 
-function clientEventId(): string {
-  const randomUUID = globalThis.crypto?.randomUUID
-  return typeof randomUUID === "function"
-    ? randomUUID.call(globalThis.crypto)
-    : `logos-story-comment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-}
 
-function postStoryComment(comment: Omit<StoryComment, "id" | "createdAt">): void {
+function postPopoverShow(payload: {
+  storyId: string
+  component?: string
+  selector: string
+  label: string
+  htmlContext?: string
+  screenshotDataUrl?: string
+  kind: "thread" | "composer"
+  rect: { left: number; top: number; right: number; bottom: number; width: number; height: number }
+  viewport: { width: number; height: number }
+}): void {
   try {
-    const message = { type: "logos:story-comment", clientEventId: clientEventId(), ...comment }
-    window.parent.postMessage(message, "*")
+    window.parent.postMessage({ type: "logos:story-popover-show", ...payload }, "*")
   } catch {}
 }
 
-function postStoryCommentReply(reply: ReplyPayload): void {
+function postPopoverHide(): void {
   try {
-    const message = { type: "logos:story-comment-reply", clientEventId: clientEventId(), ...reply }
-    window.parent.postMessage(message, "*")
-  } catch {}
-}
-
-function postCommentEditing(storyId: string, active: boolean): void {
-  try {
-    const message = { type: "logos:story-comment-editing", storyId, active }
-    window.parent.postMessage(message, "*")
-  } catch {}
-}
-
-function postCommentDraft(draft: StoryDraft | { storyId: string; active: false }): void {
-  try {
-    const message = { type: "logos:story-comment-draft", ...draft }
-    window.parent.postMessage(message, "*")
+    window.parent.postMessage({ type: "logos:story-popover-hide" }, "*")
   } catch {}
 }
 
@@ -343,7 +323,6 @@ export function StorybookCommentLayer({
   const drawingRef = useRef<DrawingSession | null>(null)
   const annotationPreviewRef = useRef<HTMLCanvasElement | null>(null)
   const suppressClickUntilRef = useRef(0)
-  const { offset: popoverOffset, reset: resetPopoverOffset, dragHandleProps } = usePopoverDrag()
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick((t) => t + 1), [])
   const identity = portableStoryIdentity()
@@ -383,13 +362,8 @@ export function StorybookCommentLayer({
     setOpenSelector(null)
     setHover(null)
     clearAnnotationPreview()
-    resetPopoverOffset()
-  }, [clearAnnotationPreview, effectiveStoryId, layerActive, resetPopoverOffset])
-
-  useEffect(() => {
-    if (!layerActive) return
-    resetPopoverOffset()
-  }, [draft?.selector, draft?.kind, layerActive, openSelector, resetPopoverOffset])
+    postPopoverHide()
+  }, [clearAnnotationPreview, effectiveStoryId, layerActive])
 
   const inStory = useCallback((el: Element | null): el is Element => {
     if (el == null) return false
@@ -559,65 +533,62 @@ export function StorybookCommentLayer({
   }, [comments])
 
   const root = rootRef.current
+  const rootLabel = effectiveComponent ?? effectiveStoryId
 
-  const sendComment = (selector: string, label: string, htmlContext: string | undefined, screenshotDataUrl: string | undefined, p: SubmitPayload) => {
-    postStoryComment({
+  const viewportInfo = () => ({ width: window.innerWidth, height: window.innerHeight })
+
+  const rectInfo = (r: DOMRect) => ({
+    left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height,
+  })
+
+  const showPopover = useCallback((kind: "thread" | "composer", selector: string, label: string, rect: DOMRect, extra?: { htmlContext?: string; screenshotDataUrl?: string }) => {
+    postPopoverShow({
       storyId: effectiveStoryId,
       ...(effectiveComponent != null ? { component: effectiveComponent } : {}),
       selector,
       label,
-      ...(htmlContext != null ? { htmlContext } : {}),
-      ...(screenshotDataUrl != null ? { screenshotDataUrl } : {}),
-      text: p.text,
-      author: "you",
+      ...(extra?.htmlContext != null ? { htmlContext: extra.htmlContext } : {}),
+      ...(extra?.screenshotDataUrl != null ? { screenshotDataUrl: extra.screenshotDataUrl } : {}),
+      kind,
+      rect: rectInfo(rect),
+      viewport: viewportInfo(),
     })
-  }
+  }, [effectiveComponent, effectiveStoryId])
 
-  const sendCommentEditing = useCallback((active: boolean) => {
-    postCommentEditing(effectiveStoryId, active)
-  }, [effectiveStoryId])
-
-  const clearCommentDraft = useCallback(() => {
-    postCommentDraft({ storyId: effectiveStoryId, active: false })
-    sendCommentEditing(false)
-  }, [effectiveStoryId, sendCommentEditing])
-
-  const sendCommentDraft = useCallback((draftUpdate: Draft, p: SubmitPayload) => {
-    if (!p.text.trim()) {
-      postCommentDraft({ storyId: effectiveStoryId, active: false })
-      sendCommentEditing(false)
-      return
+  useEffect(() => {
+    if (!layerActive || !root) return
+    if (openSelector != null) {
+      const list = groups.get(openSelector)
+      if (list != null) {
+        const nearest = resolveNearestSelector(root, openSelector)
+        const selector = nearest.selector
+        const label = selector === openSelector ? list[0]?.label ?? openSelector : rootLabel
+        showPopover("thread", selector, label, nearest.element.getBoundingClientRect())
+      }
+    } else if (draft != null && draft.kind !== "reply") {
+      const nearest = resolveNearestSelector(root, draft.selector)
+      const rect = nearest.element.getBoundingClientRect()
+      showPopover("composer", draft.selector, draft.label, rect, {
+        ...(draft.htmlContext != null ? { htmlContext: draft.htmlContext } : {}),
+        ...(draft.screenshotDataUrl != null ? { screenshotDataUrl: draft.screenshotDataUrl } : {}),
+      })
     }
-    postCommentDraft({
-      storyId: effectiveStoryId,
-      ...(effectiveComponent != null ? { component: effectiveComponent } : {}),
-      selector: draftUpdate.selector,
-      label: draftUpdate.label,
-      ...(draftUpdate.htmlContext != null ? { htmlContext: draftUpdate.htmlContext } : {}),
-      ...(draftUpdate.screenshotDataUrl != null ? { screenshotDataUrl: draftUpdate.screenshotDataUrl } : {}),
-      text: p.text,
-      kind: draftUpdate.kind ?? "new",
-    })
-    sendCommentEditing(true)
-  }, [effectiveComponent, effectiveStoryId, sendCommentEditing])
+  })
 
-  useEffect(() => clearCommentDraft, [clearCommentDraft])
-
-  const rootLabel = effectiveComponent ?? effectiveStoryId
-
-  const saveDraft = (p: SubmitPayload) => {
-    if (draft == null) return
-    const rootEl = rootRef.current
-    if (rootEl == null) throw new Error("Cannot attach comment because the story root disappeared.")
-    const { selector } = resolveNearestSelector(rootEl, draft.selector)
-    const label = selector === draft.selector ? draft.label : rootLabel
-    const htmlContext = selector === draft.selector ? draft.htmlContext : describeHtmlContext(rootEl, rootEl)
-    sendComment(selector, label, htmlContext, draft.screenshotDataUrl, p)
-    clearAnnotationPreview()
-    clearCommentDraft()
-    setDraft(null)
-    setOpenSelector(selector)
-  }
+  useEffect(() => {
+    if (!layerActive) return
+    const handler = (e: MessageEvent) => {
+      const data: unknown = e.data
+      if (!isRecord(data)) return
+      if (data["type"] === "logos:story-popover-closed") {
+        setOpenSelector(null)
+        setDraft(null)
+        clearAnnotationPreview()
+      }
+    }
+    window.addEventListener("message", handler)
+    return () => window.removeEventListener("message", handler)
+  }, [clearAnnotationPreview, layerActive])
 
   if (!layerActive) return <>{children}</>
 
@@ -640,92 +611,20 @@ export function StorybookCommentLayer({
               rect={rect}
               count={list.length}
               active={openSelector === selector}
-                onClick={() => {
-                  clearAnnotationPreview()
-                  setOpenSelector((cur) => (cur === selector ? null : selector))
+              onClick={() => {
+                clearAnnotationPreview()
+                if (openSelector === selector) {
+                  setOpenSelector(null)
                   setDraft(null)
+                  postPopoverHide()
+                } else {
+                  setOpenSelector(selector)
+                  setDraft(null)
+                }
               }}
             />
           )
         })}
-
-        {enabled && root != null && openSelector != null && (() => {
-          const list = groups.get(openSelector)
-          if (list == null) return null
-          const nearest = resolveNearestSelector(root, openSelector)
-          const selector = nearest.selector
-          const label = selector === openSelector ? list[0]?.label ?? openSelector : rootLabel
-          const rect = nearest.element.getBoundingClientRect()
-          const initialDraftProps = draft != null && draft.kind === "reply" && draft.selector === openSelector
-            ? { initialDraft: draft }
-            : {}
-          return (
-            <div
-              style={{
-                ...popoverShell,
-                ...applyPopoverDragOffset(popoverPos(rect), popoverOffset),
-                position: "absolute",
-                pointerEvents: "auto",
-              }}
-            >
-              <CommentThread
-                label={label}
-                comments={list}
-                onAdd={(p) => {
-                  sendComment(selector, label, describeHtmlContext(nearest.element, root), undefined, p)
-                  clearCommentDraft()
-                  setDraft(null)
-                }}
-                onReply={(p) => {
-                  postStoryCommentReply(p)
-                  clearCommentDraft()
-                  setDraft(null)
-                }}
-                {...initialDraftProps}
-                onDraftChange={(p) => {
-                  const replyDraft = { selector: openSelector, label, kind: "reply" as const, ...p }
-                  setDraft(replyDraft)
-                  sendCommentDraft(replyDraft, p)
-                }}
-                onEditingChange={sendCommentEditing}
-                onClose={() => { clearAnnotationPreview(); clearCommentDraft(); setOpenSelector(null); setDraft(null) }}
-                dragHandleProps={dragHandleProps}
-              />
-            </div>
-          )
-        })()}
-
-        {enabled && draft != null && draft.kind !== "reply" && (
-          (() => {
-            const rootEl = rootRef.current
-            const nearest = rootEl != null ? resolveNearestSelector(rootEl, draft.selector) : null
-            const rect = nearest == null ? new DOMRect() : nearest.element.getBoundingClientRect()
-            return (
-              <div
-                style={{
-                  ...popoverShell,
-                  ...applyPopoverDragOffset(popoverPos(rect), popoverOffset),
-                  position: "absolute",
-                  pointerEvents: "auto",
-                }}
-              >
-                <CommentComposer
-                  label={draft.label}
-                  onSave={saveDraft}
-                  onCancel={() => { clearAnnotationPreview(); clearCommentDraft(); setDraft(null) }}
-                  initialDraft={draft}
-                  onDraftChange={(p) => {
-                    const next = { ...draft, ...p, kind: "new" as const }
-                    setDraft(next)
-                    sendCommentDraft(next, p)
-                  }}
-                  onEditingChange={sendCommentEditing}
-                  dragHandleProps={dragHandleProps}
-                />
-              </div>
-            )
-          })()
-        )}
 
         <CommentToolbar
           enabled={enabled}

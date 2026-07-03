@@ -406,6 +406,53 @@ export function runCommentPopupFromEvent(event: MessageEvent, frameOverride?: HT
   }
 }
 
+export function storyPopoverFromEvent(event: MessageEvent, frameOverride?: HTMLIFrameElement | null): CommentPopupState | null {
+  const data = event.data
+  if (typeof data !== "object" || data == null) return null
+  const record = data as Record<string, unknown>
+  if (record["type"] !== "logos:story-popover-show") return null
+  const rect = typeof record["rect"] === "object" && record["rect"] != null ? record["rect"] as Record<string, unknown> : null
+  const viewport = typeof record["viewport"] === "object" && record["viewport"] != null ? record["viewport"] as Record<string, unknown> : null
+  if (!rect || !viewport) return null
+
+  const rectRight = numberField(rect, "right")
+  const rectTop = numberField(rect, "top")
+  const viewportWidth = numberField(viewport, "width")
+  const viewportHeight = numberField(viewport, "height")
+  if (rectRight == null || rectTop == null || viewportWidth == null || viewportHeight == null) return null
+
+  const iframe = frameOverride ?? findMessageIframe(event.source)
+  const iframeRect = iframe?.getBoundingClientRect()
+  const scaleX = iframeRect ? iframeRect.width / Math.max(1, viewportWidth) : 1
+  const scaleY = iframeRect ? iframeRect.height / Math.max(1, viewportHeight) : 1
+  const x = (iframeRect?.left ?? 0) + rectRight * scaleX + 12
+  const y = (iframeRect?.top ?? 0) + rectTop * scaleY
+  const component = stringField(record, "component")
+  const storyId = stringField(record, "storyId")
+  const selector = stringField(record, "selector")
+  const htmlContext = stringField(record, "htmlContext")
+  const screenshotDataUrl = stringField(record, "screenshotDataUrl")
+  const label = stringField(record, "label") ?? component ?? storyId ?? "Comment"
+  const target = component
+    ? `component:${component}`
+    : storyId
+      ? `story:${storyId}`
+      : "app:/"
+
+  return {
+    target,
+    label,
+    x: Math.min(x, window.innerWidth - 310),
+    y: Math.min(Math.max(y, 8), window.innerHeight - 200),
+    storyId,
+    selector,
+    component,
+    htmlContext,
+    screenshotDataUrl,
+    sourceWindow: event.source as Window | null,
+  }
+}
+
 function clearRunCommentAnnotation(sourceWindow?: Window | null): void {
   try {
     sourceWindow?.postMessage({ type: "logos:run-comment-clear" }, "*")
@@ -1347,6 +1394,17 @@ export function App() {
         postStoryGoals(e.source as Window | null)
         return
       }
+      if (e.data?.type === "logos:story-popover-show") {
+        const popup = storyPopoverFromEvent(e)
+        if (popup) {
+          setPopup(popup)
+        }
+        return
+      }
+      if (e.data?.type === "logos:story-popover-hide") {
+        setPopup(null)
+        return
+      }
       if (e.data?.type === "logos:story-comment-editing") {
         const storyId = typeof e.data.storyId === "string" ? e.data.storyId : ""
         if (!storyId) return
@@ -1879,6 +1937,7 @@ export function App() {
           onReply={(goalId, text) => { continueGoal(goalId, text) }}
           onClose={() => {
             clearRunCommentAnnotation(popup.sourceWindow)
+            try { popup.sourceWindow?.postMessage({ type: "logos:story-popover-closed" }, "*") } catch {}
             setPopup(null)
           }}
         />

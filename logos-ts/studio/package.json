@@ -26,7 +26,8 @@
     "elkjs": "^0.11.1",
     "react": "^18.3.1",
     "react-arborist": "^3.10.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@storybook/react": "^10.4.4",

@@ -173,7 +173,7 @@ export class StorybookManager {
 
     const bridgeDir = resolve(configDir, ".logos")
     mkdirSync(bridgeDir, { recursive: true })
-    copyFileSync(resolve(this.logosSrc, "../studio/src/comment-ui.tsx"), resolve(bridgeDir, "comment-ui.tsx"))
+    copyFileSync(resolve(this.logosSrc, "../studio/src/comment-overlay.tsx"), resolve(bridgeDir, "comment-overlay.tsx"))
     copyFileSync(resolve(this.logosSrc, "../studio/src/icons.tsx"), resolve(bridgeDir, "icons.tsx"))
     copyFileSync(resolve(this.logosSrc, "../studio/src/storybook-comment-layer.tsx"), resolve(bridgeDir, "storybook-comment-layer.tsx"))
     writeFileSync(resolve(bridgeDir, "CommentLayer.tsx"), STORYBOOK_COMMENT_LAYER_ADAPTER)

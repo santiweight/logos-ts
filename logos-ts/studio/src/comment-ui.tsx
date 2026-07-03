@@ -1,6 +1,7 @@
 /* eslint-disable no-restricted-syntax */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { iconForLabel } from "./icons"
+import { Markdown } from "./Markdown"
 
 export interface GoalReply {
   author: "agent" | "user"
@@ -36,7 +37,7 @@ export interface DragOffset {
   y: number
 }
 
-const FONT = "12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace"
+const FONT = '13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
 type DragHandleProps = React.HTMLAttributes<HTMLDivElement>
 
 // --- Thread: shows existing comments + reply box ------------------------------
@@ -131,7 +132,7 @@ export function CommentThread({
                     </button>
                   )}
                 </div>
-                <div style={{ whiteSpace: "pre-wrap" }}>{c.text}</div>
+                <Markdown>{c.text}</Markdown>
                 {c.agentId != null && c.agentId.length > 0 && (
                   <div style={agentBadgeStyle} title="Agent assigned to this comment">
                     <span>{c.agentId}</span>
@@ -149,7 +150,7 @@ export function CommentThread({
                     </span>
                     <span>{formatTime(r.createdAt)}</span>
                   </div>
-                  <div style={{ whiteSpace: "pre-wrap" }}>{r.text}</div>
+                  <Markdown>{r.text}</Markdown>
                 </div>
               ))}
               {canReply(c) && replyGoalId !== c.id && (

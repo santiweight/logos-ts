@@ -1,4 +1,5 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { Markdown } from "./Markdown"
 import type { Goal, GoalLifecycle, GoalReply } from "./types"
 
 function statusIcon(status: string): string {
@@ -62,7 +63,7 @@ function Reply({ r }: { r: GoalReply }) {
     <div className={`cs-reply cs-reply-${r.author}`}>
       <span className="cs-reply-author">{r.author}</span>
       <span className="cs-reply-time">{formatTime(r.createdAt)}</span>
-      <div className="cs-reply-text">{r.text}</div>
+      <div className="cs-reply-text"><Markdown>{r.text}</Markdown></div>
     </div>
   )
 }
@@ -183,7 +184,7 @@ export function CommentSidebar({
                 <span>you</span>
                 <span>{formatTime(goal.createdAt)}</span>
               </div>
-              <div className="cs-comment-text">{goal.text}</div>
+              <div className="cs-comment-text"><Markdown>{goal.text}</Markdown></div>
             </div>
 
             {goal.replies?.map((r, i) => <Reply key={i} r={r} />)}
