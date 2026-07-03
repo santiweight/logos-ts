@@ -755,6 +755,15 @@ export class WorkspaceManager {
     return ws ? this.toState(ws) : undefined
   }
 
+  screenshotPath(workspaceId: string, instanceId: string, storyFile: string): string | null {
+    const ws = this.workspaces.get(workspaceId)
+    if (!ws) return null
+    const inst = ws.instances[instanceId]
+    if (!inst) return null
+    const file = join(inst.materializedRoot, ".logos", "__snapshots__", "story-snapshots", `${storyFile}.png`)
+    return existsSync(file) ? file : null
+  }
+
   listPolicyEvents(opts?: { workspaceId?: string; limit?: number }): WorkspacePolicyEvent[] {
     return this.store.listPolicyEvents(opts)
   }
@@ -1624,6 +1633,17 @@ export class WorkspaceManager {
     return storybook
   }
 
+  private async ensureStorybookForInstance(inst: WorkspaceInstance): Promise<string | null> {
+    const existing = this.sbManager.get(inst.id)
+    if (existing) return existing
+    try {
+      const urls = await this.startStorybooks(inst)
+      return urls[0] ?? null
+    } catch {
+      return null
+    }
+  }
+
   private async runStorySnapshotAcceptance(inst: WorkspaceInstance): Promise<{ ok: boolean; output: string }> {
     const dirs = this.storybookDirsForInstance(inst)
     if (!dirs) return { ok: true, output: "no Storybook configured" }
@@ -1641,6 +1661,7 @@ export class WorkspaceManager {
         ].join("\n"),
       }
     }
+    const storybookUrl = await this.ensureStorybookForInstance(inst)
     try {
       const { stdout, stderr } = await execFileAsync(this.tsx, [generated.captureScript], {
         cwd: generated.frontendDir,
@@ -1650,6 +1671,7 @@ export class WorkspaceManager {
         env: {
           ...process.env,
           NODE_ENV: "test",
+          ...(storybookUrl ? { LOGOS_STORYBOOK_URL: storybookUrl } : {}),
         },
       })
       return { ok: true, output: `${stdout}${stderr}`.trim() }

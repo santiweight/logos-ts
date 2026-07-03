@@ -161,41 +161,34 @@ describe("ReviewPanel", () => {
     expect(screen.getByText('<div class="row">Platform Engineer</div>')).toBeInTheDocument()
   })
 
-  it("renders before and after visual snapshots from persisted HTML", () => {
+  it("renders before and after screenshot images when screenshots context is provided", () => {
     const base = index([capturedFile("JobRow", "<div>Engineer</div>")])
     const workspace = index([capturedFile("JobRow", "<div>Platform Engineer</div>")])
     const { container } = render(
       <ReviewPanel
         base={base}
         workspace={workspace}
+        screenshots={{ workspaceId: "ws-1", baseInstanceId: "inst-base", workspaceInstanceId: "inst-work" }}
       />
     )
 
-    const frames = [...container.querySelectorAll("iframe.capture-preview-frame")]
-    expect(frames).toHaveLength(2)
-    expect(frames[0]?.getAttribute("srcdoc")).toContain("<div>Engineer</div>")
-    expect(frames[0]?.getAttribute("srcdoc")).not.toContain("Platform Engineer")
-    expect(frames[1]?.getAttribute("srcdoc")).toContain("<div>Platform Engineer</div>")
+    const imgs = [...container.querySelectorAll("img.capture-preview-img")]
+    expect(imgs).toHaveLength(2)
+    expect(imgs[0]?.getAttribute("src")).toBe("/api/screenshots/ws-1/inst-base/jobrow--default.png")
+    expect(imgs[1]?.getAttribute("src")).toBe("/api/screenshots/ws-1/inst-work/jobrow--default.png")
   })
 
-  it("uses live Storybook iframe for after when storybookUrl is provided", () => {
+  it("shows empty message when no screenshots context is provided", () => {
     const base = index([capturedFile("JobRow", "<div>Engineer</div>")])
     const workspace = index([capturedFile("JobRow", "<div>Platform Engineer</div>")])
-    const { container } = render(
+    render(
       <ReviewPanel
         base={base}
         workspace={workspace}
-        storybookUrl="http://localhost:6006"
       />
     )
 
-    const frames = [...container.querySelectorAll("iframe.capture-preview-frame")]
-    expect(frames).toHaveLength(2)
-    expect(frames[0]?.getAttribute("srcdoc")).toContain("<div>Engineer</div>")
-    expect(frames[1]?.getAttribute("src")).toBe(
-      "http://localhost:6006/iframe.html?id=jobrow--default&viewMode=story"
-    )
-    expect(frames[1]?.getAttribute("srcdoc")).toBeNull()
+    expect(screen.getByText("No screenshots available for this story.")).toBeInTheDocument()
   })
 
   it("does not render story implementation changes as architecture diffs", () => {

@@ -3,17 +3,23 @@ import { indexToArchText, lineDiff, type DiffLine } from "./arch-text"
 import { highlightTs } from "./highlight"
 import {
   snapshotChanges,
-  extractSnapshotHtml,
   formatSnapshot,
   type SnapshotChange,
 } from "./review"
 import type { StudioIndex } from "./types"
 
+interface ScreenshotContext {
+  workspaceId: string
+  baseInstanceId: string
+  workspaceInstanceId: string
+}
+
 interface Props {
   base: StudioIndex
   workspace: StudioIndex
   showHeaderTitle?: boolean
-  storybookUrl?: string
+
+  screenshots?: ScreenshotContext
 }
 
 type ReviewTab = "architecture" | "snapshots"
@@ -31,7 +37,7 @@ export function ReviewPanel({
   base,
   workspace,
   showHeaderTitle = true,
-  storybookUrl,
+  screenshots,
 }: Props) {
   const architectureLines = useMemo(
     () => lineDiff(indexToArchText(base), indexToArchText(workspace)),
@@ -66,7 +72,7 @@ export function ReviewPanel({
         {tab === "architecture" ? (
           <ArchitectureReview lines={architectureLines} stats={architectureStats} />
         ) : (
-          <SnapshotReview changes={snapshotChangesList} storybookUrl={storybookUrl} />
+          <SnapshotReview changes={snapshotChangesList} screenshots={screenshots} />
         )}
       </div>
     </section>
@@ -212,10 +218,10 @@ function DiffRow({ line }: { line: DiffLine }) {
 
 function SnapshotReview({
   changes,
-  storybookUrl,
+  screenshots,
 }: {
   changes: SnapshotChange[]
-  storybookUrl?: string
+  screenshots?: ScreenshotContext
 }) {
   const [selectedId, setSelectedId] = useState(changes[0]?.id ?? null)
   const selected = changes.find((change) => change.id === selectedId) ?? changes[0] ?? null
@@ -250,7 +256,7 @@ function SnapshotReview({
       </aside>
       <SnapshotDetail
         change={selected}
-        storybookUrl={storybookUrl}
+        screenshots={screenshots}
       />
     </div>
   )
@@ -258,14 +264,12 @@ function SnapshotReview({
 
 function SnapshotDetail({
   change,
-  storybookUrl,
+  screenshots,
 }: {
   change: SnapshotChange
-  storybookUrl?: string
+  screenshots?: ScreenshotContext
 }) {
   const [view, setView] = useState<CaptureView>("visual")
-  const beforeHtml = extractSnapshotHtml(change.beforeSnapshot)
-  const afterHtml = extractSnapshotHtml(change.afterSnapshot)
   const sourceLines = useMemo(
     () => lineDiff(
       formatSnapshot(change.beforeSnapshot),
@@ -301,9 +305,7 @@ function SnapshotDetail({
       {view === "visual" ? (
         <VisualComparison
           change={change}
-          beforeHtml={beforeHtml}
-          afterHtml={afterHtml}
-          storybookUrl={storybookUrl}
+          screenshots={screenshots}
         />
       ) : (
         <pre className="capture-source-diff">
@@ -314,95 +316,34 @@ function SnapshotDetail({
   )
 }
 
+function screenshotUrl(ctx: ScreenshotContext, instanceId: string, storyId: string): string {
+  const storyFile = storyId.replace(/[^a-zA-Z0-9._-]+/g, "-") || "story"
+  return `/api/screenshots/${ctx.workspaceId}/${instanceId}/${storyFile}.png`
+}
+
 function VisualComparison({
   change,
-  beforeHtml,
-  afterHtml,
-  storybookUrl,
+  screenshots,
 }: {
   change: SnapshotChange
-  beforeHtml: string | null
-  afterHtml: string | null
-  storybookUrl?: string
+  screenshots?: ScreenshotContext
 }) {
-  const afterSrc = storybookUrl && change.storyId
-    ? `${storybookUrl}/iframe.html?id=${encodeURIComponent(change.storyId)}&viewMode=story`
-    : null
-  const hasBefore = beforeHtml != null
-  const hasAfter = afterSrc != null || afterHtml != null
+  if (!screenshots || !change.storyId) {
+    return <div className="empty">No screenshots available for this story.</div>
+  }
+  const beforeSrc = screenshotUrl(screenshots, screenshots.baseInstanceId, change.storyId)
+  const afterSrc = screenshotUrl(screenshots, screenshots.workspaceInstanceId, change.storyId)
   return (
-    <div className={`capture-visuals ${hasBefore && hasAfter ? "split" : "single"}`}>
-      {hasBefore && (
-        <SnapshotPreview
-          label="Before"
-          html={beforeHtml}
-          storyId={change.storyId}
-        />
-      )}
-      {afterSrc != null ? (
-        <div className="capture-preview">
-          <div className="capture-preview-label">After</div>
-          <iframe
-            className="capture-preview-frame"
-            src={afterSrc}
-            title={`After ${change.storyId ?? "captured story"}`}
-          />
-        </div>
-      ) : afterHtml != null ? (
-        <SnapshotPreview
-          label="After"
-          html={afterHtml}
-          storyId={change.storyId}
-        />
-      ) : null}
-      {!hasBefore && !hasAfter && (
-        <div className="empty">This snapshot has no output to render.</div>
-      )}
+    <div className="capture-visuals split">
+      <div className="capture-preview">
+        <div className="capture-preview-label">Before</div>
+        <img className="capture-preview-img" src={beforeSrc} alt={`Before ${change.storyId}`} />
+      </div>
+      <div className="capture-preview">
+        <div className="capture-preview-label">After</div>
+        <img className="capture-preview-img" src={afterSrc} alt={`After ${change.storyId}`} />
+      </div>
     </div>
   )
 }
 
-function SnapshotPreview({
-  label,
-  html,
-  storyId,
-}: {
-  label: string
-  html: string
-  storyId: string | null
-}) {
-  const srcDoc = useMemo(() => snapshotSrcDoc(html), [html])
-
-  return (
-    <div className="capture-preview">
-      <div className="capture-preview-label">{label}</div>
-      <iframe
-        className="capture-preview-frame"
-        sandbox=""
-        srcDoc={srcDoc}
-        title={`${label} ${storyId ?? "captured story"}`}
-      />
-    </div>
-  )
-}
-
-function snapshotSrcDoc(html: string): string {
-  if (/^\s*(?:<!doctype\s+html>|<html[\s>])/i.test(html)) return html
-  return [
-    "<!doctype html>",
-    "<html>",
-    "<head>",
-    "<meta charset=\"utf-8\" />",
-    "<base target=\"_blank\" />",
-    "<style>",
-    "html, body { margin: 0; min-height: 100%; background: #fff; color: #111; font-family: system-ui, sans-serif; }",
-    "body { padding: 16px; box-sizing: border-box; }",
-    "*, *::before, *::after { box-sizing: border-box; }",
-    "</style>",
-    "</head>",
-    "<body>",
-    html,
-    "</body>",
-    "</html>",
-  ].join("")
-}

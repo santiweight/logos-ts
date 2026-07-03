@@ -434,6 +434,27 @@ function studioApi(runtime: StudioRuntime): Plugin {
         })
       })
 
+      server.middlewares.use("/api/screenshots/", (req, res) => {
+        const parts = (req.url || "").replace(/^\//, "").split("/")
+        const wsId = parts[0]
+        const instId = parts[1]
+        const storyFile = decodeURIComponent(parts.slice(2).join("/")).replace(/\.png$/, "")
+        if (!wsId || !instId || !storyFile) {
+          res.statusCode = 400
+          res.end("bad request")
+          return
+        }
+        const file = wsMgr.screenshotPath(wsId, instId, storyFile)
+        if (!file) {
+          res.statusCode = 404
+          res.end("not found")
+          return
+        }
+        res.setHeader("content-type", "image/png")
+        res.setHeader("cache-control", "public, max-age=31536000, immutable")
+        res.end(readFileSync(file))
+      })
+
       server.middlewares.use("/api/storybooks", (_req, res) => {
         res.setHeader("content-type", "application/json")
         res.setHeader("cache-control", "no-store")
