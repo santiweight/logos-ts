@@ -92,7 +92,14 @@ function meta(workspace: Workspace): WorkspaceMeta {
   }
 }
 
-function workspace(id: string, name: string, createdAt: number, activeIndex: StudioIndex, goals: Goal[] = []): Workspace {
+function workspace(
+  id: string,
+  name: string,
+  createdAt: number,
+  activeIndex: StudioIndex,
+  goals: Goal[] = [],
+  overrides: Partial<Workspace> = {},
+): Workspace {
   const baseIndex = index("BaseComponent", "export function BaseComponent() { return null }")
   return {
     id,
@@ -123,6 +130,7 @@ function workspace(id: string, name: string, createdAt: number, activeIndex: Stu
         index: activeIndex,
       },
     },
+    ...overrides,
   }
 }
 
@@ -182,5 +190,60 @@ describe("App workspace switching", () => {
       expect(activeWorkspace).toHaveClass("active")
       expect(within(document.querySelector(".sidebar") as HTMLElement).getByText("NewComponent")).toBeInTheDocument()
     })
+  })
+
+  it("uses the full startup screen when switching from a ready workspace to an initializing workspace", async () => {
+    const readyWorkspace = workspace(
+      "ws-ready",
+      "Ready Workspace",
+      2000,
+      index("ReadyComponent", "export function ReadyComponent() { return <div>ready</div> }"),
+    )
+    const initializingWorkspace = workspace(
+      "ws-init",
+      "Initializing Workspace",
+      1000,
+      index("InitializingComponent", "export function InitializingComponent() { return <div>init</div> }"),
+      [],
+      {
+        initialization: {
+          status: "initializing",
+          updatedAt: 3000,
+          steps: [
+            { id: "materialize", label: "Materialize workspace", status: "done" },
+            { id: "story_snapshots", label: "Capture story snapshots", status: "running" },
+            { id: "commit_baseline", label: "Commit snapshot baseline", status: "pending" },
+            { id: "index", label: "Index workspace", status: "pending" },
+          ],
+        },
+      },
+    )
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url === "/api/index") return jsonResponse(readyWorkspace.index)
+      if (url === "/api/test-results") return jsonResponse({ status: "idle", results: null, runningSince: null })
+      if (url === "/api/storybooks") return jsonResponse({ urls: {}, states: {} })
+      if (url === "/api/run-targets") return jsonResponse({ targets: [] })
+      if (url === "/api/runs") return jsonResponse({ urls: {}, states: {} })
+      if (url === "/api/demos") return jsonResponse({ active: "test", demos: [] })
+      if (url === "/api/workspaces") return jsonResponse([meta(readyWorkspace), meta(initializingWorkspace)])
+      if (url === "/api/workspaces/ws-ready") return jsonResponse(readyWorkspace)
+      if (url === "/api/workspaces/ws-init") return jsonResponse(initializingWorkspace)
+      throw new Error(`unhandled fetch: ${url}`)
+    }) as typeof fetch
+
+    render(<App />)
+
+    expect(await screen.findByText("ReadyComponent")).toBeInTheDocument()
+    expect(document.querySelector(".rail")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("Initializing Workspace"))
+
+    expect(await screen.findByText("Initializing")).toBeInTheDocument()
+    expect(screen.getByText("Capture story snapshots")).toBeInTheDocument()
+    expect(document.querySelector(".rail")).not.toBeInTheDocument()
+    expect(document.querySelector(".sidebar")).not.toBeInTheDocument()
+    expect(document.querySelector(".workspace-init-shell")).not.toBeInTheDocument()
   })
 })

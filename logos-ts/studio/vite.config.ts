@@ -1,9 +1,9 @@
 import { defineConfig, type Plugin, type Connect } from "vite"
 import react from "@vitejs/plugin-react"
 import { execFile, execFileSync } from "node:child_process"
-import { existsSync, readFileSync, writeFileSync, mkdirSync, watch } from "node:fs"
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, watch } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { dirname, resolve, join, relative, sep } from "node:path"
+import { basename, dirname, resolve, join, relative, sep } from "node:path"
 import { homedir } from "node:os"
 import type { StudioIndex } from "./src/types"
 import { authPlugin } from "./server/auth"
@@ -46,6 +46,10 @@ const ALLOWED_HOSTS = [
 
 type DetectProject = typeof import("../src/detect-project")["detectProject"]
 type WorkspaceKind = import("../src/workspace-manager").WorkspaceKind
+type StoredProjectState = {
+  id?: string
+  sourceProject?: string
+}
 
 type StudioRuntime = {
   demoId: DemoId | "custom"
@@ -71,33 +75,85 @@ function demoIdForSource(sourceProject: string): DemoId | "custom" {
   return DEMOS.find((demo) => resolve(demo.root) === resolve(sourceProject))?.id ?? "custom"
 }
 
-function storedDemoId(): DemoId | null {
+function storedProjectState(): StoredProjectState | null {
   try {
     if (!existsSync(DEMO_STATE_FILE)) return null
-    const data = JSON.parse(readFileSync(DEMO_STATE_FILE, "utf8")) as { id?: string }
-    return demoById(data.id)?.id ?? null
+    return JSON.parse(readFileSync(DEMO_STATE_FILE, "utf8")) as StoredProjectState
   } catch {
     return null
   }
+}
+
+function storedSourceProject(): { demoId: DemoId | "custom"; sourceProject: string } | null {
+  const stored = storedProjectState()
+  if (!stored) return null
+  if (stored.sourceProject) {
+    const sourceProject = resolve(stored.sourceProject)
+    if (existsSync(sourceProject)) return { demoId: demoIdForSource(sourceProject), sourceProject }
+  }
+  const demo = demoById(stored.id)
+  return demo ? { demoId: demo.id, sourceProject: demo.root } : null
 }
 
 function sourceProjectForStartup(): { demoId: DemoId | "custom"; sourceProject: string } {
   const envProject = process.env.LOGOS_PROJECT
   if (envProject) {
     const sourceProject = resolve(envProject)
+    persistSourceProject(sourceProject)
     return { demoId: demoIdForSource(sourceProject), sourceProject }
   }
-  const stored = demoById(storedDemoId())
-  if (!stored && existsSync(DEFAULT_SOURCE_PROJECT)) {
+  const stored = storedSourceProject()
+  if (stored) return stored
+  if (existsSync(DEFAULT_SOURCE_PROJECT)) {
     return { demoId: "custom", sourceProject: DEFAULT_SOURCE_PROJECT }
   }
-  const demo = stored ?? DEMOS[0]
-  return { demoId: demo.id, sourceProject: demo.root }
+  return { demoId: DEMOS[0].id, sourceProject: DEMOS[0].root }
 }
 
-function persistDemo(id: DemoId): void {
+function persistSourceProject(sourceProject: string): void {
   mkdirSync(dirname(DEMO_STATE_FILE), { recursive: true })
-  writeFileSync(DEMO_STATE_FILE, JSON.stringify({ id }, null, 2))
+  const demoId = demoIdForSource(sourceProject)
+  writeFileSync(DEMO_STATE_FILE, JSON.stringify({
+    ...(demoId !== "custom" ? { id: demoId } : {}),
+    sourceProject: resolve(sourceProject),
+  }, null, 2))
+}
+
+function killStoredPid(pid: number): void {
+  try { process.kill(pid) } catch {}
+}
+
+function removeDirInBackground(dir: string): void {
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+    return
+  }
+  const trashParent = resolve(dirname(dir), ".trash")
+  mkdirSync(trashParent, { recursive: true })
+  const trashDir = resolve(trashParent, `${basename(dir)}-${Date.now()}-${Math.round(Math.random() * 1e6)}`)
+  try {
+    renameSync(dir, trashDir)
+    mkdirSync(dir, { recursive: true })
+    execFile("rm", ["-rf", trashDir], (err) => {
+      if (err) console.warn(`[logos] failed to remove stale runtime dir ${trashDir}: ${err.message}`)
+    })
+  } catch {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    mkdirSync(dir, { recursive: true })
+  }
+}
+
+function resetStoredWorkspaceRuntime(store: LogosRuntimeStore, sessions: ClaudeSessionManager, runsDir: string): void {
+  for (const entry of Object.values(store.listStorybooks())) killStoredPid(entry.pid)
+  for (const entry of Object.values(store.listRuns())) killStoredPid(entry.pid)
+  sessions.deleteAll()
+  store.deleteAllWorkspaces()
+  store.deleteAllPolicyEvents()
+  store.deleteAllStorybooks()
+  store.deleteAllStorybookStates()
+  store.deleteAllRuns()
+  store.deleteAllRunStates()
+  removeDirInBackground(runsDir)
 }
 
 async function createStudioRuntime(): Promise<StudioRuntime> {
@@ -106,6 +162,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     sourceProject,
     ...(process.env.LOGOS_RUNTIME_DIR ? { runtimeRoot: process.env.LOGOS_RUNTIME_DIR } : {}),
   })
+  const runsDir = process.env.LOGOS_AGENT_RUNS_DIR ? resolve(process.env.LOGOS_AGENT_RUNS_DIR) : runtimePaths.agentRuns
   const projectRoot = createSessionProject(sourceProject, runtimePaths.devSessions).root
   const caps = detectProject(projectRoot)
   console.log(`[logos] source: ${sourceProject}`)
@@ -131,15 +188,18 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     })
   })
 
+  const sessionMgr = new ClaudeSessionManager(runtimeStore)
+  if (process.env.LOGOS_RECOVER_WORKSPACES !== "1") {
+    console.log(`[logos] clearing stored workspaces for fresh dev startup`)
+    resetStoredWorkspaceRuntime(runtimeStore, sessionMgr, runsDir)
+  }
   const sbManager = new StorybookManager(runtimeStore, resolve(LOGOS_TS, "src"), projectRoot)
   const runManager = new RunManager(runtimeStore, projectRoot)
-
-  const sessionMgr = new ClaudeSessionManager(runtimeStore)
   const secrets = new LogosSecrets()
 
   const wsMgr = new WorkspaceManager({
     store: runtimeStore,
-    runsDir: process.env.LOGOS_AGENT_RUNS_DIR ? resolve(process.env.LOGOS_AGENT_RUNS_DIR) : runtimePaths.agentRuns,
+    runsDir,
     logosTsSrc: resolve(LOGOS_TS, "src"),
     logosTsRoot: LOGOS_TS,
     projectRoot,
@@ -257,7 +317,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
             res.end(JSON.stringify({ ok: false, error: "unknown demo" }))
             return
           }
-          persistDemo(demo.id)
+          persistSourceProject(demo.root)
           process.env.LOGOS_PROJECT = demo.root
           res.end(JSON.stringify({ ok: true, active: demo.id }))
           setTimeout(() => {

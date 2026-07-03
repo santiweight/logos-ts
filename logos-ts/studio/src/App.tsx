@@ -33,6 +33,7 @@ const seed = seedData as unknown as StudioIndex
 const SELECTION_STORAGE_KEY = "logos:selection:v1"
 const SIDEBAR_FILTERS_STORAGE_KEY = "logos:sidebar-filters:v1"
 type MobilePanel = "changes" | "thread" | "files" | "main"
+type WorkspaceStartupPhase = "boot" | "reset"
 
 export interface SidebarFilters {
   functions: boolean
@@ -248,12 +249,35 @@ function workspaceMetaFromWorkspace(ws: Workspace): WorkspaceMeta {
 function WorkspaceStartupScreen({
   workspace,
   workspacesLoading,
+  phase = "boot",
 }: {
   workspace: WorkspaceMeta | undefined
   workspacesLoading: boolean
+  phase?: WorkspaceStartupPhase
 }) {
   const initialization = workspace?.initialization
   const hasFailed = initialization?.status === "error"
+
+  if (phase === "reset") {
+    return (
+      <div className="workspace-init-fullscreen">
+        <div className="workspace-init-panel">
+          <div className="workspace-init-spinner" aria-hidden="true" />
+          <div className="workspace-init-title">Deleting workspaces</div>
+          <div className="workspace-init-steps">
+            <div className="workspace-init-step running">
+              <span className="workspace-init-mark"><span className="ag-spin">↻</span></span>
+              <span className="workspace-init-label">Delete old workspaces</span>
+            </div>
+            <div className="workspace-init-step pending">
+              <span className="workspace-init-mark">·</span>
+              <span className="workspace-init-label">Initialize workspace</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const projectDone = !workspacesLoading
   const wsInitializing = initialization?.status === "initializing"
@@ -434,7 +458,7 @@ export function App() {
   const [sidebarFiltersByScope, setSidebarFiltersByScope] = useState<Record<string, SidebarFilters>>(() => readStoredSidebarFilters())
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
-  const hasBootedRef = useRef(false)
+  const [workspaceStartupPhase, setWorkspaceStartupPhase] = useState<WorkspaceStartupPhase>("boot")
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const activeWorkspaceIdRef = useRef<string | null>(null)
   const openWorkspaceSeqRef = useRef(0)
@@ -1046,7 +1070,10 @@ export function App() {
 
   const resetWorkspaces = useCallback(async () => {
     if (!window.confirm("Delete all workspaces, changes, sessions, and generated forks, then start fresh?")) return
-    setBusy("resetting workspace state…")
+    setBusy("deleting workspaces…")
+    setWorkspaceStartupPhase("reset")
+    openWorkspaceAbortRef.current?.abort()
+    openWorkspaceSeqRef.current += 1
     for (const es of esRefs.current.values()) es.close()
     esRefs.current.clear()
     setRunningGoals(new Set())
@@ -1057,20 +1084,32 @@ export function App() {
     setReviewOpen(false)
     setWorkspaceViewState(null)
     setActiveWorkspaceId(null)
+    setOpeningWorkspaceId(null)
+    setWorkspaces([])
+    setWorkspacesLoading(true)
 
     try {
       const resetRes = await fetch("/api/reset", { method: "POST" })
-      if (!resetRes.ok) return
+      if (!resetRes.ok) {
+        await refreshWorkspaces()
+        return
+      }
       const data = await resetRes.json() as { workspace: WorkspaceMeta }
       setWorkspaces([data.workspace])
       setSelected({ type: "workspace", id: data.workspace.id })
+      setActiveWorkspaceId(data.workspace.id)
+      setWorkspacesLoading(false)
+      setWorkspaceStartupPhase("boot")
+      setBusy("initializing workspace…")
       await openWorkspace(data.workspace.id)
       setSelection({ file: "", view: "run" })
       await Promise.all([refreshTests(), refreshStorybooks(), refreshRuns()])
     } finally {
+      setWorkspaceStartupPhase("boot")
+      setWorkspacesLoading(false)
       setBusy(null)
     }
-  }, [openWorkspace, refreshTests, refreshStorybooks, refreshRuns])
+  }, [openWorkspace, refreshWorkspaces, refreshTests, refreshStorybooks, refreshRuns])
 
   // Poll workspace index while agent is running
   useEffect(() => {
@@ -1565,15 +1604,14 @@ export function App() {
   const activeWorkspaceCanDisplay = activeWs ? workspaceReadyForDisplay(activeWs) : workspaceIndex != null
   const workspaceUiReady = activeWorkspaceId != null && workspaceIndex != null && activeWorkspaceCanDisplay
 
-  if (workspaceUiReady) hasBootedRef.current = true
-
-  if (!workspaceUiReady && !hasBootedRef.current) {
+  if (workspaceStartupPhase === "reset" || !workspaceUiReady) {
     return (
       <div className="studio" style={studioStyle}>
         {renderTopbar()}
         <WorkspaceStartupScreen
           workspace={activeWs}
           workspacesLoading={workspacesLoading}
+          phase={workspaceStartupPhase}
         />
       </div>
     )
@@ -1677,14 +1715,6 @@ export function App() {
       </aside>
 
       <GotoCtx.Provider value={gotoCtx}>
-      {!workspaceUiReady ? (
-        <main className="workspace-init-shell">
-          <WorkspaceStartupScreen
-            workspace={activeWs}
-            workspacesLoading={workspacesLoading}
-          />
-        </main>
-      ) : (
       <main className="main">
         <nav className={`main-nav ${mainChrome.showModeTabs ? "" : "single"}`}>
           <div className="main-title-row">
@@ -1754,7 +1784,6 @@ export function App() {
           <AgentPanel events={agentPanelEvents} running={agentPanelRunning} goal={agentPanelGoal} onClose={closeAgent} />
         )}
       </main>
-      )}
       </GotoCtx.Provider>
 
       <footer className="statusbar">
