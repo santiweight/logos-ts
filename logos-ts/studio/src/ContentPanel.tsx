@@ -324,7 +324,6 @@ function StoryView({
       <div className="pane">
         <FittedIframe
           className="story-frame"
-          key={src}
           sandbox="allow-scripts allow-forms allow-same-origin"
           src={src}
           title={storyId}
@@ -372,7 +371,7 @@ function StoryView({
 
   return (
     <div className="pane">
-      <FittedIframe className="story-frame" key={src} src={src} title={storyId} />
+      <FittedIframe className="story-frame" src={src} title={storyId} />
     </div>
   )
 }

@@ -119,6 +119,36 @@ describe("ContentPanel", () => {
     )
   })
 
+  it("does not remount the iframe when storybookRenderKey changes", () => {
+    const { rerender } = renderStory("inst-1:1000:0:0")
+    const iframe = screen.getByTitle("jobcard--default")
+    expect(iframe.tagName).toBe("IFRAME")
+
+    rerender(
+      <ContentPanel
+        file={file}
+        selection={{ file: file.file, view: "story", storyId: "jobcard--default" }}
+        workspaceId="ws-1"
+        storyRenderer="storybook"
+        storybookUrl="http://127.0.0.1:6006"
+        storybookState={{ status: "ready", startedAt: 1000, logs: [] }}
+        storybookRenderKey="inst-1:1000:1:abc"
+        storyCommentEditingByStoryId={{}}
+        onRetryStorybook={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+      />
+    )
+
+    const iframeAfter = screen.getByTitle("jobcard--default")
+    expect(iframeAfter).toBe(iframe)
+    expect(iframeAfter).toHaveAttribute(
+      "src",
+      "http://127.0.0.1:6006/iframe.html?id=jobcard--default&viewMode=story&logosReload=inst-1%3A1000%3A1%3Aabc"
+    )
+  })
+
   it("defers Storybook iframe URL changes while a story comment is being typed", () => {
     const { rerender } = renderStory("inst-1:1000")
     expect(screen.getByTitle("jobcard--default")).toHaveAttribute(
