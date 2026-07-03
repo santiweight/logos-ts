@@ -17,6 +17,7 @@ function makeTempDir(): string {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -53,6 +54,48 @@ describe("RunManager", () => {
       cwd: root,
       command: "pnpm",
       args: ["run", "dev", "--", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+      framework: "vite",
+    }
+
+    const url = await manager.ensure("ws-1", root, target)
+
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+    expect(manager.state("ws-1", "root-app")).toMatchObject({ status: "ready" })
+    manager.shutdownAll()
+  }, 20_000)
+
+  it("adds package manager bins to app run PATH", async () => {
+    const root = makeTempDir()
+    const pnpmHome = join(root, "pnpm-home")
+    mkdirSync(join(root, "scripts"), { recursive: true })
+    mkdirSync(pnpmHome, { recursive: true })
+    vi.stubEnv("PATH", "/usr/bin:/bin")
+    vi.stubEnv("PNPM_HOME", pnpmHome)
+    vi.stubEnv("NVM_BIN", "")
+    vi.stubEnv("VOLTA_HOME", "")
+    writeFileSync(join(root, "scripts/dev.mjs"), [
+      "import http from 'node:http'",
+      `if (!process.env.PATH.split(':').includes(${JSON.stringify(pnpmHome)})) {`,
+      "  console.error(`missing PNPM_HOME in PATH: ${process.env.PATH}`)",
+      "  process.exit(1)",
+      "}",
+      "const port = Number(process.env.PORT || '0')",
+      "const server = http.createServer((_req, res) => res.end('ok'))",
+      "server.listen(port, '127.0.0.1', () => {",
+      "  const address = server.address()",
+      "  console.log(`Local: http://127.0.0.1:${address.port}/`)",
+      "})",
+      "",
+    ].join("\n"))
+
+    const store = new LogosRuntimeStore(join(root, ".logos", "runtime.sqlite"))
+    const manager = new RunManager(store, root)
+    const target: RunTargetCaps = {
+      id: "root-app",
+      label: "App",
+      cwd: root,
+      command: process.execPath,
+      args: ["scripts/dev.mjs"],
       framework: "vite",
     }
 

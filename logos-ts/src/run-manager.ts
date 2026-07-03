@@ -397,6 +397,17 @@ function copyEnv(name: string, env: NodeJS.ProcessEnv, out: Record<string, strin
   if (value != null) out[name] = value
 }
 
+function withPackageManagerBins(path: string | undefined, env: NodeJS.ProcessEnv): string {
+  const parts = path ? path.split(":").filter(Boolean) : []
+  for (const name of ["PNPM_HOME", "NVM_BIN"]) {
+    const value = env[name]
+    if (value && !parts.includes(value)) parts.unshift(value)
+  }
+  const voltaBin = env["VOLTA_HOME"] ? `${env["VOLTA_HOME"]}/bin` : ""
+  if (voltaBin && !parts.includes(voltaBin)) parts.unshift(voltaBin)
+  return parts.join(":")
+}
+
 function runEnv(opts: {
   port: number
   base: string
@@ -420,7 +431,13 @@ function runEnv(opts: {
     "LC_ALL",
     "LC_CTYPE",
     "SSH_AUTH_SOCK",
+    "COREPACK_HOME",
+    "NVM_BIN",
+    "NVM_DIR",
+    "PNPM_HOME",
+    "VOLTA_HOME",
   ]) copyEnv(name, process.env, out)
+  out["PATH"] = withPackageManagerBins(out["PATH"], process.env)
 
   out["PORT"] = String(opts.port)
   out["HOST"] = "127.0.0.1"

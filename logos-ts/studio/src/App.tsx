@@ -751,7 +751,7 @@ export function App() {
       fromWorkspaceId?: string | null,
       kind: WorkspaceKind = "code",
       name?: string,
-      opts?: { loadingScope?: "project" | "workspace" },
+      opts?: { loadingScope?: "project" | "workspace"; waitForOpen?: boolean },
     ): Promise<string | null> => {
       try {
         const res = await fetch("/api/workspaces", {
@@ -761,8 +761,14 @@ export function App() {
         })
         if (!res.ok) return null
         const meta = (await res.json()) as WorkspaceMeta
-        await refreshWorkspaces()
-        await openWorkspace(meta.id, { loadingScope: opts?.loadingScope ?? (activeWorkspaceIdRef.current ? "workspace" : "project") })
+        if (opts?.waitForOpen === false) {
+          refreshWorkspaces().catch(() => {})
+          openWorkspace(meta.id, { loadingScope: opts.loadingScope ?? (activeWorkspaceIdRef.current ? "workspace" : "project") }).catch(() => {})
+        } else {
+          await refreshWorkspaces()
+          const open = openWorkspace(meta.id, { loadingScope: opts?.loadingScope ?? (activeWorkspaceIdRef.current ? "workspace" : "project") })
+          await open
+        }
         return meta.id
       } catch {
         return null
@@ -1186,7 +1192,9 @@ export function App() {
       // 1. Forks are created client-side.
       const shouldFork = fork
       const workspaceName = explicitWorkspaceName ?? goalExtra.goalName ?? label
-      let wsId = shouldFork ? await createWorkspace(activeWorkspaceId, "code", workspaceName) : activeWorkspaceId
+      let wsId = shouldFork
+        ? await createWorkspace(activeWorkspaceId, "code", workspaceName, { waitForOpen: false })
+        : activeWorkspaceId
       if (!wsId) wsId = await createWorkspace(null, "code", workspaceName)
       if (!wsId) return
 
@@ -1275,7 +1283,7 @@ export function App() {
 
   const addStoryWritingGoal = useCallback(
     (target: string, label: string) => {
-      addGoal(target, label, buildStoryWritingPrompt(label), false, {
+      addGoal(target, label, buildStoryWritingPrompt(label), true, {
         component: label,
         goalName: `Generate Stories for ${label}`,
         workspaceName: `Generate Stories for ${label}`,

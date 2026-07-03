@@ -211,7 +211,7 @@ async function createWorkspace(kind: "code" | "arch" = "code", fromWorkspaceId?:
 async function addGoal(
   workspaceId: string,
   mode: "code" | "arch",
-  fork = false,
+  fork = true,
 ): Promise<{ res: Response; body: Goal & { error?: string } }> {
   const res = await jsonPost(`/api/workspaces/${workspaceId}/goals`, {
     target: "fn:answer",

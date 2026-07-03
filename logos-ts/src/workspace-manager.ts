@@ -8,7 +8,8 @@
 //   GoalQueue  — the ordered list of goals for a workspace (one per workspace)
 //   AgentRun   — executes one goal in a workspace instance directory
 //
-import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync, rmSync, cpSync, readdirSync, realpathSync, mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { resolve, relative, join, basename, dirname, sep } from "node:path"
 import { execFileSync, execFile, spawn, type ChildProcess } from "node:child_process"
 import { promisify } from "node:util"
@@ -219,6 +220,8 @@ interface StorybookCapsResolution {
   storybooks: { configDir: string; frontendDir: string }[]
 }
 
+const ROOT_WORKSPACE_NAME = "origin/main"
+
 function defaultWorkspaceName(): string {
   const now = new Date()
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -358,6 +361,10 @@ export class WorkspaceManager {
     return inst
   }
 
+  private rootWorkspace(): WorkspaceRecord | null {
+    return [...this.workspaces.values()].find((ws) => ws.parentId === null) ?? null
+  }
+
   private nextWorkspaceId(): string {
     this.workspaceSeq += 1
     return `ws-${Date.now()}-${this.workspaceSeq}`
@@ -423,6 +430,58 @@ export class WorkspaceManager {
       inst.index = await this.snapshotIndex(inst.materializedRoot)
     }
     return inst
+  }
+
+  private sourceProjectGitInfo(): { gitRoot: string; projectRel: string } {
+    const sourceRoot = realpathSync(resolve(this.sourceProjectRoot))
+    const gitRoot = realpathSync(execFileSync("git", ["-C", sourceRoot, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim())
+    const projectRel = relative(gitRoot, sourceRoot)
+    if (projectRel === ".." || projectRel.startsWith(`..${sep}`)) {
+      throw new Error("source project is outside the git repository")
+    }
+    return { gitRoot, projectRel }
+  }
+
+  private checkoutOriginMainProject(): { root: string; cleanup: () => void } {
+    const { gitRoot, projectRel } = this.sourceProjectGitInfo()
+    let commit = ""
+    try {
+      commit = execFileSync("git", ["-C", gitRoot, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim()
+    } catch {
+      throw new Error("origin/main does not exist")
+    }
+    if (!commit) throw new Error("origin/main does not exist")
+
+    const worktreeRoot = mkdtempSync(join(tmpdir(), "logos-origin-main-"))
+    try {
+      execFileSync("git", ["-C", gitRoot, "worktree", "add", "--detach", worktreeRoot, commit], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+    } catch (e) {
+      rmSync(worktreeRoot, { recursive: true, force: true })
+      throw e
+    }
+
+    return {
+      root: projectRel ? join(worktreeRoot, projectRel) : worktreeRoot,
+      cleanup: () => {
+        try {
+          execFileSync("git", ["-C", gitRoot, "worktree", "remove", "--force", worktreeRoot], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+          })
+        } catch {
+          rmSync(worktreeRoot, { recursive: true, force: true })
+        }
+      },
+    }
   }
 
   private createInitializationState(): StoredWorkspaceInitialization {
@@ -829,22 +888,68 @@ export class WorkspaceManager {
     return "main"
   }
 
-  async create(opts?: { name?: string; fromWorkspaceId?: string; kind?: WorkspaceKind | "arch" }): Promise<WorkspaceMeta> {
+  async ensureOriginMainWorkspace(): Promise<WorkspaceMeta> {
+    const existing = this.rootWorkspace()
+    if (existing) return this.toMeta(existing)
+
     const id = this.nextWorkspaceId()
-    const parentId = opts?.fromWorkspaceId ?? null
-    const parentWs = parentId ? this.workspaces.get(parentId) : null
-    const kind: WorkspaceKind = "code"
-    const parentInst = parentWs ? this.activeInstance(parentWs) : null
-    const sourceRoot = parentInst?.materializedRoot ?? this.projectRoot
-    const sourceIndex = parentInst?.index ?? (this.getIndex ? await this.getIndex() : undefined)
-    const instance = await this.createInstance(id, sourceRoot, sourceIndex, {
+    const checkout = this.checkoutOriginMainProject()
+    let instance: WorkspaceInstance
+    try {
+      const sourceIndex = this.getIndex ? await this.getIndex() : undefined
+      instance = await this.createInstance(id, checkout.root, sourceIndex, {
+        installNodeModules: !this.initializeWorkspaces,
+      })
+    } finally {
+      checkout.cleanup()
+    }
+
+    const ws: WorkspaceRecord = {
+      id,
+      name: ROOT_WORKSPACE_NAME,
+      kind: "code",
+      parentId: null,
+      createdAt: Date.now(),
+      baseInstanceId: instance.id,
+      activeInstanceId: instance.id,
+      goals: [],
+      instances: { [instance.id]: instance },
+      ...(this.initializeWorkspaces ? { initialization: this.createInitializationState() } : {}),
+    }
+    this.workspaces.set(id, ws)
+    this.save(ws)
+
+    if (this.initializeWorkspaces) setTimeout(() => this.initializeWorkspace(id, instance.id), 0)
+    else this.restartWorkspaceServices(ws, instance)
+    return this.toMeta(ws)
+  }
+
+  async create(opts?: { name?: string; fromWorkspaceId?: string; kind?: WorkspaceKind | "arch" }): Promise<WorkspaceMeta> {
+    let parentId = opts?.fromWorkspaceId ?? null
+    let parentWs = parentId ? this.workspaces.get(parentId) : null
+
+    if (parentId && !parentWs) throw new Error(`parent workspace not found: ${parentId}`)
+
+    if (!parentWs) {
+      const hadRoot = this.rootWorkspace() != null
+      const root = await this.ensureOriginMainWorkspace()
+      if (!hadRoot && !opts?.name) return root
+      parentId = root.id
+      parentWs = this.workspaces.get(root.id) ?? null
+    }
+
+    if (!parentId || !parentWs) throw new Error("parent workspace is required")
+
+    const id = this.nextWorkspaceId()
+    const parentInst = this.activeInstance(parentWs)
+    const instance = await this.createInstance(id, parentInst.materializedRoot, parentInst.index, {
       installNodeModules: !this.initializeWorkspaces,
     })
 
     const ws: WorkspaceRecord = {
       id,
       name: opts?.name ?? defaultWorkspaceName(),
-      kind,
+      kind: "code",
       parentId,
       createdAt: Date.now(),
       baseInstanceId: instance.id,

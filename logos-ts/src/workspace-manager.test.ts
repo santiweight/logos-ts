@@ -63,6 +63,24 @@ function createSessions() {
   }
 }
 
+function initializeOriginMain(projectRoot: string): void {
+  execFileSync("git", ["init"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  execFileSync("git", ["config", "user.email", "logos@example.com"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  execFileSync("git", ["config", "user.name", "Logos Test"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  execFileSync("git", ["add", "-A"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  execFileSync("git", ["commit", "--allow-empty", "-m", "origin main"], {
+    cwd: projectRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  })
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }).trim()
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", head], {
+    cwd: projectRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  })
+}
+
 function createManager(opts?: {
   spawned?: FakeAgentProcess[]
   sessions?: ReturnType<typeof createSessions>
@@ -79,6 +97,7 @@ function createManager(opts?: {
   mkdirSync(projectRoot, { recursive: true })
   writeFileSync(join(projectRoot, "package.json"), "{}")
   opts?.setupProject?.(projectRoot)
+  initializeOriginMain(projectRoot)
   const sessions = opts?.sessions ?? createSessions()
   const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
   const sbManager = opts?.sbManager ?? { get: () => null, shutdown: () => undefined, shutdownAll: () => undefined, prepare: () => undefined, ensure: () => Promise.resolve("") }
@@ -269,6 +288,44 @@ describe("WorkspaceManager workspace kinds", () => {
     expect(arch.kind).toBe("code")
     expect(mgr.get(code.id)?.kind).toBe("code")
     expect(mgr.get(arch.id)?.kind).toBe("code")
+  })
+
+  it("creates the root workspace from origin/main", async () => {
+    const mgr = createManager({
+      setupProject: (projectRoot) => {
+        writeFileSync(join(projectRoot, "origin-only.txt"), "from origin main\n")
+      },
+    })
+
+    const root = await mgr.create()
+    const state = mgr.get(root.id)
+    if (!state) throw new Error("missing root workspace")
+
+    expect(root.name).toBe("origin/main")
+    expect(root.parentId).toBeNull()
+    expect(readFileSync(join(state.forkDir, "origin-only.txt"), "utf8")).toBe("from origin main\n")
+  })
+
+  it("forks omitted-parent workspaces from the origin/main root after the root exists", async () => {
+    const mgr = createManager()
+
+    const root = await mgr.create()
+    const child = await mgr.create({ name: "child" })
+
+    expect(child.parentId).toBe(root.id)
+    expect(child.name).toBe("child")
+  })
+
+  it("throws when origin/main is missing for the root workspace", async () => {
+    const mgr = createManager()
+    const sourceRoot = (mgr as unknown as { sourceProjectRoot: string }).sourceProjectRoot
+    execFileSync("git", ["update-ref", "-d", "refs/remotes/origin/main"], {
+      cwd: sourceRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+
+    await expect(mgr.create()).rejects.toThrow(/origin\/main/)
   })
 
   it("resetAll clears workspace state and materialized instances", async () => {
@@ -1267,6 +1324,7 @@ describe("WorkspaceManager workspace kinds", () => {
     const projectRoot = join(root, "project")
     mkdirSync(projectRoot, { recursive: true })
     writeFileSync(join(projectRoot, "package.json"), "{}")
+    initializeOriginMain(projectRoot)
     const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
 
     const mgr = new WorkspaceManager({
@@ -1327,6 +1385,8 @@ describe("WorkspaceManager workspace kinds", () => {
     execFileSync("git", ["commit", "-m", "initial"], { cwd: gitRoot, encoding: "utf8" })
     execFileSync("git", ["init", "--bare", remote], { encoding: "utf8" })
     execFileSync("git", ["remote", "add", "origin", remote], { cwd: gitRoot, encoding: "utf8" })
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: gitRoot, encoding: "utf8" }).trim()
+    execFileSync("git", ["update-ref", "refs/remotes/origin/main", head], { cwd: gitRoot, encoding: "utf8" })
 
     const store = new LogosRuntimeStore(join(root, ".logos", "runtime.db"))
     const mgr = new WorkspaceManager({

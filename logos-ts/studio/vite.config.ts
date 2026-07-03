@@ -505,7 +505,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         }
         try {
           wsMgr.resetAll()
-          const workspace = await wsMgr.create()
+          const workspace = await wsMgr.ensureOriginMainWorkspace()
           res.end(JSON.stringify({ ok: true, workspace }))
         } catch (e) {
           res.statusCode = 500
@@ -669,14 +669,19 @@ function studioApi(runtime: StudioRuntime): Plugin {
         }
 
         if (req.method === "POST") {
-          const body = JSON.parse((await readBody(req)) || "{}")
-          const kind: WorkspaceKind = body.kind === "arch" ? "arch" : "code"
-          const meta = await wsMgr.create({
-            name: body.name,
-            fromWorkspaceId: body.fromWorkspaceId,
-            kind,
-          })
-          res.end(JSON.stringify(meta))
+          try {
+            const body = JSON.parse((await readBody(req)) || "{}")
+            const kind: WorkspaceKind = body.kind === "arch" ? "arch" : "code"
+            const meta = await wsMgr.create({
+              name: body.name,
+              fromWorkspaceId: body.fromWorkspaceId,
+              kind,
+            })
+            res.end(JSON.stringify(meta))
+          } catch (e) {
+            res.statusCode = 500
+            res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }))
+          }
           return
         }
 

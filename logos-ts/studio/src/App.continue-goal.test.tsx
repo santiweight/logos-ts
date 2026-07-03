@@ -5,6 +5,7 @@ import type { Goal, StudioIndex, Workspace, WorkspaceMeta } from "./types"
 
 const originalFetch = globalThis.fetch
 const originalResizeObserver = globalThis.ResizeObserver
+const originalEventSource = globalThis.EventSource
 
 beforeAll(() => {
   globalThis.ResizeObserver = class {
@@ -21,6 +22,7 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   globalThis.fetch = originalFetch
+  globalThis.EventSource = originalEventSource
   window.localStorage.clear()
 })
 
@@ -177,5 +179,203 @@ describe("continueGoal preserves session history", () => {
     })
 
     expect(screen.getByText("I made the card bold.")).toBeInTheDocument()
+  })
+})
+
+describe("story comments", () => {
+  it("posts the goal without waiting for the new workspace to finish opening", async () => {
+    const ws = workspace()
+    const createdWs: WorkspaceMeta = {
+      ...meta(ws),
+      id: "ws-2",
+      name: "Comment target",
+      parentId: ws.id,
+      createdAt: 1001,
+      baseInstanceId: "base-2",
+      activeInstanceId: "active-2",
+      goals: [],
+      initialization: {
+        status: "initializing",
+        updatedAt: 1001,
+        steps: [{ id: "index", label: "Index workspace", status: "running" }],
+      },
+    }
+    const goalPosts: Array<{ url: string; body: unknown }> = []
+    let created = false
+
+    globalThis.EventSource = class {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: (() => void) | null = null
+      close = vi.fn()
+      constructor(public url: string) {}
+    } as unknown as typeof EventSource
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url === "/api/index") return jsonResponse(index())
+      if (url === "/api/test-results") return jsonResponse({ status: "idle", results: null, runningSince: null })
+      if (url === "/api/storybooks") return jsonResponse({ urls: {}, states: {} })
+      if (url === "/api/run-targets") return jsonResponse({ targets: [] })
+      if (url === "/api/runs") return jsonResponse({ urls: {}, states: {} })
+      if (url === "/api/demos") return jsonResponse({ active: "test", demos: [] })
+      if (url === "/api/sessions?goal=goal-created") return jsonResponse({ session: null, events: [] })
+      if (url === "/api/workspaces/ws-2/goals" && init?.method === "POST") {
+        goalPosts.push({ url, body: JSON.parse(String(init.body)) })
+        return jsonResponse({
+          id: "goal-created",
+          text: "Make it clearer",
+          label: "Comment target",
+          target: "component:Card",
+          mode: "code",
+          createdAt: 1002,
+          status: "pending",
+          workspaceId: "ws-2",
+        })
+      }
+      if (url === "/api/workspaces" && init?.method === "POST") {
+        created = true
+        return jsonResponse(createdWs)
+      }
+      if (url === "/api/workspaces") {
+        if (created) return new Promise<Response>(() => {})
+        return jsonResponse([meta(ws)])
+      }
+      if (url === "/api/workspaces/ws-1" && !init?.method) return jsonResponse(ws)
+      if (url === "/api/workspaces/ws-2" && !init?.method) return new Promise<Response>(() => {})
+      throw new Error(`unhandled fetch: ${url} ${init?.method ?? "GET"}`)
+    }) as typeof fetch
+
+    render(<App />)
+
+    await screen.findAllByText("Workspace")
+    await act(async () => {
+      window.postMessage({
+        type: "logos:story-comment",
+        clientEventId: "comment-race",
+        storyId: "card--default",
+        component: "Card",
+        selector: ":scope",
+        label: "Comment target",
+        text: "Make it clearer",
+      }, "*")
+    })
+
+    await waitFor(() => {
+      expect(goalPosts).toHaveLength(1)
+    })
+    expect(goalPosts[0]).toMatchObject({
+      url: "/api/workspaces/ws-2/goals",
+      body: {
+        target: "component:Card",
+        label: "Comment target",
+        text: "Make it clearer",
+        fork: true,
+      },
+    })
+  })
+})
+
+describe("story generation", () => {
+  it("creates a forked workspace before adding a Generate Stories goal", async () => {
+    const ws = workspace()
+    const createdWs: Workspace = {
+      ...ws,
+      id: "ws-2",
+      name: "Generate Stories for Card",
+      parentId: ws.id,
+      createdAt: 1001,
+      baseInstanceId: "base-2",
+      activeInstanceId: "active-2",
+      goals: [],
+      forkDir: "/tmp/ws-2",
+      instances: {
+        ...ws.instances,
+        "base-2": {
+          ...ws.instances.base,
+          id: "base-2",
+          workspaceId: "ws-2",
+          materializedRoot: "/tmp/ws-2/base",
+          createdAt: 1001,
+        },
+        "active-2": {
+          ...ws.instances.active,
+          id: "active-2",
+          workspaceId: "ws-2",
+          materializedRoot: "/tmp/ws-2/active",
+          createdAt: 1002,
+        },
+      },
+    }
+    const workspaceCreates: unknown[] = []
+    const goalPosts: Array<{ url: string; body: unknown }> = []
+    let created = false
+
+    globalThis.EventSource = class {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: (() => void) | null = null
+      close = vi.fn()
+      constructor(public url: string) {}
+    } as unknown as typeof EventSource
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url === "/api/index") return jsonResponse(index())
+      if (url === "/api/test-results") return jsonResponse({ status: "idle", results: null, runningSince: null })
+      if (url === "/api/storybooks") return jsonResponse({ urls: {}, states: {} })
+      if (url === "/api/run-targets") return jsonResponse({ targets: [] })
+      if (url === "/api/runs") return jsonResponse({ urls: {}, states: {} })
+      if (url === "/api/demos") return jsonResponse({ active: "test", demos: [] })
+      if (url === "/api/sessions?goal=goal-generated") return jsonResponse({ session: null, events: [] })
+      if (url === "/api/workspaces/ws-2/goals" && init?.method === "POST") {
+        goalPosts.push({ url, body: JSON.parse(String(init.body)) })
+        return jsonResponse({
+          id: "goal-generated",
+          text: "Generate Storybook stories for `Card`.",
+          label: "Card",
+          target: "component:Card",
+          mode: "code",
+          createdAt: 1002,
+          status: "pending",
+          workspaceId: "ws-2",
+        })
+      }
+      if (url === "/api/workspaces" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body))
+        workspaceCreates.push(body)
+        created = true
+        return jsonResponse(meta(createdWs))
+      }
+      if (url === "/api/workspaces") return jsonResponse(created ? [meta(ws), meta(createdWs)] : [meta(ws)])
+      if (url === "/api/workspaces/ws-1" && !init?.method) return jsonResponse(ws)
+      if (url === "/api/workspaces/ws-2" && !init?.method) return jsonResponse(createdWs)
+      throw new Error(`unhandled fetch: ${url} ${init?.method ?? "GET"}`)
+    }) as typeof fetch
+
+    render(<App />)
+
+    await screen.findAllByText("Workspace")
+    const componentNode = await screen.findByText("Card")
+    fireEvent.contextMenu(componentNode)
+    fireEvent.click(await screen.findByText("Generate stories"))
+
+    await waitFor(() => {
+      expect(workspaceCreates).toEqual([{
+        fromWorkspaceId: "ws-1",
+        kind: "code",
+        name: "Generate Stories for Card",
+      }])
+      expect(goalPosts).toHaveLength(1)
+    })
+    expect(goalPosts[0]).toMatchObject({
+      url: "/api/workspaces/ws-2/goals",
+      body: {
+        target: "component:Card",
+        label: "Card",
+        text: "Generate Storybook stories for `Card`.",
+        fork: true,
+        component: "Card",
+        goalName: "Generate Stories for Card",
+      },
+    })
   })
 })
