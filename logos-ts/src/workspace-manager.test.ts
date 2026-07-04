@@ -1972,20 +1972,22 @@ describe("workspace initialization pipeline", () => {
     ])
   })
 
-  it("sets status to error when story snapshots fail", async () => {
+  it("continues initialization when story snapshots fail", async () => {
     const { mgr } = initManager({
       snapshotBehavior: "fail",
       snapshotError: "Chromium failed to launch",
     })
 
     const ws = await mgr.create({ kind: "code" })
-    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("error"))
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("ready"))
 
     expect(stepStatus(mgr, ws.id, "install_dependencies")).toBe("done")
-    expect(stepStatus(mgr, ws.id, "story_snapshots")).toBe("error")
-    expect(stepError(mgr, ws.id, "story_snapshots")).toBe("Chromium failed to launch")
-    expect(stepStatus(mgr, ws.id, "commit_baseline")).toBe("pending")
-    expect(stepStatus(mgr, ws.id, "index")).toBe("pending")
+    expect(stepStatus(mgr, ws.id, "story_snapshots")).toBe("done")
+    const step = mgr.get(ws.id)!.initialization!.steps.find((s) => s.id === "story_snapshots") as any
+    expect(step.detail).toContain("skipped")
+    expect(step.detail).toContain("Chromium failed to launch")
+    expect(stepStatus(mgr, ws.id, "commit_baseline")).toBe("done")
+    expect(stepStatus(mgr, ws.id, "index")).toBe("done")
   })
 
   it("sets error on the running step when an exception is thrown", async () => {
@@ -2026,8 +2028,8 @@ describe("workspace initialization pipeline", () => {
     expect(mgr.get(ws.id)?.initialization?.status).toBe("ready")
   })
 
-  it("rejects goals when initialization has failed", async () => {
-    const { mgr } = initManager({ snapshotBehavior: "fail" })
+  it("rejects goals when initialization has failed due to exception", async () => {
+    const { mgr } = initManager({ snapshotBehavior: "throw", snapshotError: "fatal crash" })
 
     const ws = await mgr.create({ kind: "code" })
     await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("error"))
@@ -2065,8 +2067,8 @@ describe("workspace initialization pipeline", () => {
     expect(stepStatus(mgr, ws.id, "story_snapshots")).toBe("done")
   })
 
-  it("sends error events to pending goals when initialization fails", async () => {
-    const { mgr } = initManager({ snapshotBehavior: "fail", snapshotError: "crash" })
+  it("sends error events to pending goals when initialization throws", async () => {
+    const { mgr } = initManager({ snapshotBehavior: "throw", snapshotError: "crash" })
 
     const ws = await mgr.create({ kind: "code" })
 

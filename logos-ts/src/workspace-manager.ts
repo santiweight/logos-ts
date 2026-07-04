@@ -708,12 +708,11 @@ export class WorkspaceManager {
       const snapshots = await this.runStorySnapshotAcceptance(inst)
       if (this.deletingWorkspaces.has(workspaceId) || !this.workspaces.has(workspaceId)) return
       if (!snapshots.ok) {
-        this.setInitializationStep(ws, "story_snapshots", "error", snapshots.output)
-        this.failWorkspaceInitialization(ws, snapshots.output)
-        console.warn(`[logos] story snapshot capture failed for ${inst.id}: ${snapshots.output}`)
-        return
+        this.setInitializationStep(ws, "story_snapshots", "done", `skipped: ${snapshots.output}`)
+        console.warn(`[logos] story snapshot capture failed for ${inst.id} (continuing): ${snapshots.output}`)
+      } else {
+        this.setInitializationStep(ws, "story_snapshots", "done", snapshots.output)
       }
-      this.setInitializationStep(ws, "story_snapshots", "done", snapshots.output)
 
       this.setInitializationStep(ws, "commit_baseline", "running")
       await this.codeService.commitWorkspaceChanges(inst, "Logos story snapshots")
