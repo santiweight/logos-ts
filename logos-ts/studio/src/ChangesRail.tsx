@@ -123,6 +123,9 @@ export function ChangesRail({
       && thread.lifecycle?.stage === "impl"
       && thread.lifecycle.state === "ready_to_merge"
     const hasRunningGoal = goals.some((g) => runningGoals.has(g.id))
+    const initStep = w.initialization?.status === "initializing"
+      ? w.initialization.steps?.find((s) => s.status === "running")
+      : undefined
     const hasUpdatesToPush = w.publication
       ? goals.some((g) => g.createdAt > w.publication!.updatedAt)
       : false
@@ -139,7 +142,6 @@ export function ChangesRail({
         >
           <div className="rail-main">
             <span className="rail-title">{w.name}</span>
-            {w.initialization?.status === "initializing" && <span className="rail-status"> · initializing</span>}
             {w.initialization?.status === "error" && <span className="rail-status error"> · init failed</span>}
           </div>
           <div className="rail-actions">
@@ -150,7 +152,7 @@ export function ChangesRail({
             ) : (
               <>
                 {w.initialization?.status === "initializing" && (
-                  <span className="rail-agent" title="Workspace initializing">
+                  <span className="rail-agent" title={`Initializing workspace${initStep ? ` — ${initStep.label}` : ""}`}>
                     <span className="ag-spin">↻</span>
                   </span>
                 )}
@@ -184,10 +186,6 @@ export function ChangesRail({
             )}
           </div>
         </div>
-
-        {isActive && w.initialization?.status === "initializing" && (
-          <div className="rail-loading muted small" style={rowStyle(depth, 18)}>Loading workspace…</div>
-        )}
 
         {isActive && w.initialization && w.initialization.status === "error" && (
           <div className={`rail-initialization ${w.initialization.status}`} style={rowStyle(depth, 18)}>
