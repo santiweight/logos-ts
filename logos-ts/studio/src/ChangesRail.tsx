@@ -116,16 +116,14 @@ export function ChangesRail({
     const threadSelected = selected?.type === "goal" && selected.id === thread?.id
     const goals = w.goals
     const hasRunningGoal = goals.some((g) => runningGoals.has(g.id))
-    const initStep = w.initialization?.status === "initializing"
-      ? w.initialization.steps?.find((s) => s.status === "running")
-      : undefined
+    const isInitializing = w.initialization?.status === "initializing"
     const hasUpdatesToPush = w.publication
       ? goals.some((g) => g.createdAt > w.publication!.updatedAt)
       : false
     return (
       <div key={w.id} className="rail-workspace-group">
         <div
-          className={`rail-row ws ${isActive || wsSelected || threadSelected ? "active" : ""} ${hasRunningGoal ? "running" : ""}`}
+          className={`rail-row ws ${isActive || wsSelected || threadSelected ? "active" : ""} ${hasRunningGoal || isInitializing ? "running" : ""}`}
           style={rowStyle(depth)}
           title={thread ? `${w.name} (${thread.status})` : w.name}
           onClick={() => {
@@ -138,31 +136,18 @@ export function ChangesRail({
             {w.initialization?.status === "error" && <span className="rail-status error"> · init failed</span>}
           </div>
           <div className="rail-actions">
-            {w.status ? (
-              <span className="rail-agent" title={w.status}>
-                <span className="ag-spin">↻</span>
-              </span>
-            ) : (
-              <>
-                {w.initialization?.status === "initializing" && (
-                  <span className="rail-agent" title={`Initializing workspace${initStep ? ` — ${initStep.label}` : ""}`}>
-                    <span className="ag-spin">↻</span>
-                  </span>
-                )}
-                {w.type !== "remote" && (
-                  <button
-                    className="rail-del"
-                    title={thread?.lifecycle?.stage === "merged" ? "Archive workspace" : "Delete workspace"}
-                    aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDeleteWorkspace(w.id)
-                    }}
-                  >
-                    {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
-                  </button>
-                )}
-              </>
+            {w.type !== "remote" && (
+              <button
+                className="rail-del"
+                title={thread?.lifecycle?.stage === "merged" ? "Archive workspace" : "Delete workspace"}
+                aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDeleteWorkspace(w.id)
+                }}
+              >
+                {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
+              </button>
             )}
           </div>
         </div>
