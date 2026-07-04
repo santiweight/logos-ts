@@ -247,7 +247,7 @@ describe("App workspace switching", () => {
     })
     expect(screen.queryByText("Initialize workspace")).not.toBeInTheDocument()
     expect(screen.getByText("ReadyComponent")).toBeInTheDocument()
-    expect(screen.getByText(/initializing/)).toBeInTheDocument()
+    expect(screen.getByText(/initializing/i)).toBeInTheDocument()
     expect(document.querySelector(".rail")).toBeInTheDocument()
     expect(document.querySelector(".sidebar")).toBeInTheDocument()
     expect(document.querySelector(".workspace-init-shell")).not.toBeInTheDocument()

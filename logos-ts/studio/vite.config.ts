@@ -302,6 +302,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
         secrets,
         wsMgr,
       } = runtime
+      let indexReady = runtime.indexReady
 
       server.httpServer?.once("listening", () => {
         const addr = server.httpServer!.address()

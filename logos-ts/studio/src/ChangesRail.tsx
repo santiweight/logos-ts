@@ -138,22 +138,41 @@ export function ChangesRail({
             {w.initialization?.status === "error" && <span className="rail-status error"> · init failed</span>}
           </div>
           <div className="rail-actions">
-            {w.type !== "remote" && !deletingWs.has(w.id) && (
-              <button
-                className="rail-del"
-                title={thread?.lifecycle?.stage === "merged" ? "Archive workspace" : "Delete workspace"}
-                aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
-                onClick={async (e) => {
-                  e.stopPropagation()
-                  setDeletingWs((prev) => new Set(prev).add(w.id))
-                  try { await onDeleteWorkspace(w.id) } finally {
-                    setDeletingWs((prev) => { const next = new Set(prev); next.delete(w.id); return next })
-                  }
-                }}
-              >
-                {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
+            {w.status ? (
+              <button className="rail-status-spinner" title={w.status} onClick={(e) => e.stopPropagation()}>
+                <span className="ag-spin">↻</span>
               </button>
-            )}
+            ) : w.type !== "remote" && !deletingWs.has(w.id) ? (
+              <>
+                {!w.publication && (
+                  <button
+                    className="rail-pr"
+                    title="Make pull request"
+                    aria-label={`Make pull request for ${w.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onCreatePullRequest(w.id)
+                    }}
+                  >
+                    {pushIcon}
+                  </button>
+                )}
+                <button
+                  className="rail-del"
+                  title={thread?.lifecycle?.stage === "merged" ? "Archive workspace" : "Delete workspace"}
+                  aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    setDeletingWs((prev) => new Set(prev).add(w.id))
+                    try { await onDeleteWorkspace(w.id) } finally {
+                      setDeletingWs((prev) => { const next = new Set(prev); next.delete(w.id); return next })
+                    }
+                  }}
+                >
+                  {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
 

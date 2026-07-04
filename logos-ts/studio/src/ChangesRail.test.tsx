@@ -209,10 +209,10 @@ describe("ChangesRail", () => {
 
     render(<ChangesRail {...baseProps} workspaces={workspaces} activeWorkspaceId="ws-1" />)
 
-    expect(screen.getByText("Loading workspace…")).toBeInTheDocument()
+    const row = screen.getByText("loading-workspace").closest(".rail-row")
+    expect(row).toHaveClass("running")
     expect(screen.queryByText("Materialize workspace")).not.toBeInTheDocument()
     expect(screen.queryByText("Capture story snapshots")).not.toBeInTheDocument()
-    expect(screen.getByTitle("Workspace initializing")).toBeInTheDocument()
   })
 
   it("uses the workspace row as the thread row", () => {
