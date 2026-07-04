@@ -1089,6 +1089,18 @@ export function App() {
     [attachAgentStream]
   )
 
+  const rebaseGoal = useCallback(
+    async (goalId: string) => {
+      if (!activeWorkspaceId) return
+      const res = await fetch(`/api/workspaces/${encodeURIComponent(activeWorkspaceId)}/goals/${encodeURIComponent(goalId)}/rebase`, { method: "POST" })
+      if (res.ok) {
+        await refreshWorkspaces()
+        openWorkspace(activeWorkspaceId, { resetView: false, goalId })
+      }
+    },
+    [activeWorkspaceId, refreshWorkspaces, openWorkspace]
+  )
+
   const mergeGoal = useCallback(
     async (goalId: string) => {
       if (!activeWorkspaceId) return
@@ -1696,9 +1708,10 @@ export function App() {
       <CommentSidebar
         goal={selectedGoal}
         running={selectedGoal != null && effectiveRunningGoals.has(selectedGoal.id)}
-        onNavigate={navigateToGoal}
+        stale={selectedGoal?.baseInstanceId != null && selectedGoal.baseInstanceId !== workspaces.find((w) => w.id === activeWs?.parentId)?.activeInstanceId}
         onReply={continueGoal}
         onMerge={mergeGoal}
+        onRebase={rebaseGoal}
         onNewComment={(text) => addGoal("project", "Claude", text, true)}
         onClose={() => setSelected(null)}
         onResizeStart={startCommentResize}

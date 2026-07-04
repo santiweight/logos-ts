@@ -627,6 +627,18 @@ function studioApi(runtime: StudioRuntime): Plugin {
           return
         }
 
+        // POST /api/workspaces/:id/goals/:goalId/rebase — rebase a goal onto latest without merging
+        const rebaseGoalMatch = sub.match(/^([^/]+)\/goals\/([^/]+)\/rebase$/)
+        if (req.method === "POST" && rebaseGoalMatch?.[1] && rebaseGoalMatch[2]) {
+          const wsId = rebaseGoalMatch[1]
+          const goalId = decodeURIComponent(rebaseGoalMatch[2])
+          const events: unknown[] = []
+          const result = await wsMgr.rebaseGoal(wsId, goalId, (event) => events.push(event))
+          res.statusCode = result.ok ? 200 : 400
+          res.end(JSON.stringify({ ...result, events }))
+          return
+        }
+
         // POST /api/workspaces/:id/storybook — start (or restart after failure) its Storybook
         if (req.method === "POST" && sub.endsWith("/storybook")) {
           const wsId = sub.replace(/\/storybook$/, "")

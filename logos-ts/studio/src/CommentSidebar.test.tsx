@@ -23,18 +23,20 @@ function goal(overrides: Partial<Goal> = {}): Goal {
 function renderPanel({
   selectedGoal = goal(),
   running = false,
-  onNavigate = vi.fn(),
+  stale = false,
   onReply = vi.fn(),
   onMerge = vi.fn(),
+  onRebase = vi.fn(),
   onNewComment = vi.fn(),
   onClose = vi.fn(),
   onResizeStart = vi.fn(),
 }: {
   selectedGoal?: Goal | null
   running?: boolean
-  onNavigate?: (goal: Goal) => void
+  stale?: boolean
   onReply?: (goalId: string, text: string) => void
   onMerge?: (goalId: string) => void
+  onRebase?: (goalId: string) => void
   onNewComment?: (text: string) => void
   onClose?: () => void
   onResizeStart?: () => void
@@ -43,15 +45,16 @@ function renderPanel({
     <CommentSidebar
       goal={selectedGoal}
       running={running}
-      onNavigate={onNavigate}
+      stale={stale}
       onReply={onReply}
       onMerge={onMerge}
+      onRebase={onRebase}
       onNewComment={onNewComment}
       onClose={onClose}
       onResizeStart={onResizeStart}
     />
   )
-  return { onNavigate, onReply, onMerge, onNewComment, onClose }
+  return { onReply, onMerge, onRebase, onNewComment, onClose }
 }
 
 describe("CommentSidebar", () => {
@@ -77,16 +80,6 @@ describe("CommentSidebar", () => {
     expect(screen.getByText("Make Postings Bold")).toBeInTheDocument()
     expect(screen.getByText("make this bold")).toBeInTheDocument()
     expect(screen.getByText("Updated postings typography.")).toBeInTheDocument()
-  })
-
-  it("navigates to the selected goal target", () => {
-    const onNavigate = vi.fn()
-    const selectedGoal = goal()
-    renderPanel({ selectedGoal, onNavigate })
-
-    fireEvent.click(screen.getByText("Show target"))
-
-    expect(onNavigate).toHaveBeenCalledWith(selectedGoal)
   })
 
   it("continues a completed goal thread", () => {
@@ -116,7 +109,7 @@ describe("CommentSidebar", () => {
       }),
     })
 
-    fireEvent.click(screen.getByText("Accept"))
+    fireEvent.click(screen.getByText("✓ Accept"))
 
     expect(onMerge).toHaveBeenCalledWith("goal-1")
   })
@@ -177,9 +170,10 @@ describe("CommentSidebar", () => {
       <CommentSidebar
         goal={null}
         running={false}
-        onNavigate={vi.fn()}
+        stale={false}
         onReply={vi.fn()}
         onMerge={vi.fn()}
+        onRebase={vi.fn()}
         onNewComment={vi.fn()}
         onClose={vi.fn()}
         onResizeStart={vi.fn()}
@@ -192,9 +186,10 @@ describe("CommentSidebar", () => {
       <CommentSidebar
         goal={goal()}
         running={false}
-        onNavigate={vi.fn()}
+        stale={false}
         onReply={vi.fn()}
         onMerge={vi.fn()}
+        onRebase={vi.fn()}
         onNewComment={vi.fn()}
         onClose={vi.fn()}
         onResizeStart={vi.fn()}
@@ -228,9 +223,10 @@ describe("CommentSidebar", () => {
       <CommentSidebar
         goal={goal()}
         running={false}
-        onNavigate={vi.fn()}
+        stale={false}
         onReply={vi.fn()}
         onMerge={vi.fn()}
+        onRebase={vi.fn()}
         onNewComment={vi.fn()}
         onClose={vi.fn()}
         onResizeStart={vi.fn()}
@@ -245,9 +241,10 @@ describe("CommentSidebar", () => {
       <CommentSidebar
         goal={goal({ id: "goal-2", label: "Different Goal", text: "different text" })}
         running={false}
-        onNavigate={vi.fn()}
+        stale={false}
         onReply={vi.fn()}
         onMerge={vi.fn()}
+        onRebase={vi.fn()}
         onNewComment={vi.fn()}
         onClose={vi.fn()}
         onResizeStart={vi.fn()}

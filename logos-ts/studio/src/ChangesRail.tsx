@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useState } from "react"
 import type { WorkspaceMeta } from "./types"
 import { svgIcon } from "./icons"
 
@@ -62,7 +62,7 @@ interface Props {
   onOpenWorkspace: (id: string) => void
   onCreatePullRequest: (id: string) => void
   onSelectGoal: (workspaceId: string, goalId: string) => void
-  onDeleteWorkspace: (id: string) => void
+  onDeleteWorkspace: (id: string) => Promise<void> | void
   onDeleteGoal: (wsId: string, goalId: string) => void
   runningGoals: Set<string>
   onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
@@ -97,6 +97,8 @@ export function ChangesRail({
   onResetWorkspaces,
   topbarMenuRef,
 }: Props) {
+  const [deletingWs, setDeletingWs] = useState<Set<string>>(new Set())
+
   if (!open) {
     return (
       <div className="rail collapsed">
@@ -123,7 +125,7 @@ export function ChangesRail({
     return (
       <div key={w.id} className="rail-workspace-group">
         <div
-          className={`rail-row ws ${isActive || wsSelected || threadSelected ? "active" : ""} ${hasRunningGoal || isInitializing ? "running" : ""}`}
+          className={`rail-row ws ${isActive || wsSelected || threadSelected ? "active" : ""} ${hasRunningGoal || isInitializing || deletingWs.has(w.id) ? "running" : ""}`}
           style={rowStyle(depth)}
           title={thread ? `${w.name} (${thread.status})` : w.name}
           onClick={() => {
@@ -136,14 +138,17 @@ export function ChangesRail({
             {w.initialization?.status === "error" && <span className="rail-status error"> · init failed</span>}
           </div>
           <div className="rail-actions">
-            {w.type !== "remote" && (
+            {w.type !== "remote" && !deletingWs.has(w.id) && (
               <button
                 className="rail-del"
                 title={thread?.lifecycle?.stage === "merged" ? "Archive workspace" : "Delete workspace"}
                 aria-label={`${thread?.lifecycle?.stage === "merged" ? "Archive" : "Delete"} ${w.name}`}
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation()
-                  onDeleteWorkspace(w.id)
+                  setDeletingWs((prev) => new Set(prev).add(w.id))
+                  try { await onDeleteWorkspace(w.id) } finally {
+                    setDeletingWs((prev) => { const next = new Set(prev); next.delete(w.id); return next })
+                  }
                 }}
               >
                 {thread?.lifecycle?.stage === "merged" ? archiveIcon : trashIcon}

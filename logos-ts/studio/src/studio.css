@@ -2042,6 +2042,12 @@ body.resizing-comments * {
   line-height: 1.5;
   word-break: break-word;
 }
+.cs-comment-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 .cs-reply {
   margin-top: 8px;
@@ -2161,6 +2167,39 @@ body.resizing-comments * {
 .md-body a:hover {
   text-decoration: underline;
 }
+
+.cs-status-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.cs-status-bar span {
+  font-weight: 600;
+}
+.cs-status-bar button {
+  padding: 2px 10px;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.cs-status-ready span { color: var(--ok); }
+.cs-status-ready button {
+  color: var(--ok);
+  background: transparent;
+  border: 1px solid var(--ok);
+}
+.cs-status-ready button:hover { background: rgba(74,222,128,0.1); }
+.cs-status-stale span { color: #facc15; }
+.cs-status-stale button {
+  color: #facc15;
+  background: transparent;
+  border: 1px solid rgba(250,204,21,0.55);
+}
+.cs-status-stale button:hover { background: rgba(250,204,21,0.1); }
 
 .cs-composer {
   flex: none;

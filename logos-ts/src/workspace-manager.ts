@@ -1267,6 +1267,45 @@ export class WorkspaceManager {
     return { ok: true, status: completed ? "completed" : "resumed" }
   }
 
+  async rebaseGoal(wsId: string, goalId: string, onEvent: AgentEventCallback): Promise<{ ok: boolean }> {
+    const ws = this.workspaces.get(wsId)
+    if (!ws) { onEvent({ type: "error", message: "no such workspace" }); return { ok: false } }
+    const goal = ws.goals.find((g) => g.id === goalId)
+    if (!goal) { onEvent({ type: "error", message: "goal not found" }); return { ok: false } }
+    if (!isGoalReadyToMerge(goal)) {
+      onEvent({ type: "error", message: `goal is ${goalLifecycleLabel(goal.lifecycle)}` })
+      return { ok: false }
+    }
+    const instId = goal.workingInstanceId
+    const inst = instId ? ws.instances[instId] : null
+    if (!inst) { onEvent({ type: "error", message: "working instance not found" }); return { ok: false } }
+
+    const targetWs = ws.parentId ? this.workspaces.get(ws.parentId) ?? ws : ws
+    const activeInst = this.activeInstance(targetWs)
+    if (inst.id === activeInst.id || goal.baseInstanceId === activeInst.id) {
+      onEvent({ type: "status", goalId: goal.id, message: "already up to date" })
+      return { ok: true }
+    }
+
+    onEvent({ type: "status", goalId: goal.id, message: "rebasing onto latest…" })
+    const rebase = await this.codeService.rebaseInstance({
+      workspaceId: targetWs.id,
+      instance: inst,
+      onto: activeInst,
+    })
+
+    if (rebase.status === "conflicts" || rebase.status === "error") {
+      onEvent({ type: "error", goalId: goal.id, message: `rebase failed: ${rebase.message}` })
+      return { ok: false }
+    }
+
+    goal.baseInstanceId = activeInst.id
+    await this.reindexInstance(ws, inst)
+    this.save(ws)
+    onEvent({ type: "status", goalId: goal.id, message: "rebased successfully" })
+    return { ok: true }
+  }
+
   removeGoal(wsId: string, goalId: string): void {
     const ws = this.workspaces.get(wsId)
     if (!ws) return

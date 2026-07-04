@@ -1,6 +1,6 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { Markdown } from "./Markdown"
-import type { Goal, GoalLifecycle, GoalReply } from "./types"
+import type { Goal, GoalReply } from "./types"
 
 function statusIcon(status: string): string {
   switch (status) {
@@ -24,26 +24,6 @@ function statusClass(status: string): string {
     case "merged": return "cs-done"
     default: return ""
   }
-}
-
-function lifecycleFromStatus(status: Goal["status"] | "idle"): GoalLifecycle | null {
-  switch (status) {
-    case "pending": return { stage: "initializing", state: "creating_goal" }
-    case "running": return { stage: "impl", state: "agent_running" }
-    case "done": return { stage: "merged", state: "complete" }
-    case "error": return { stage: "impl", state: "impl_failed" }
-    default: return null
-  }
-}
-
-function lifecycleLabel(lifecycle: GoalLifecycle | null): string {
-  if (!lifecycle) return "Idle"
-  if (lifecycle.stage === "impl" && lifecycle.state === "ready_to_merge") return "Ready to accept"
-  return lifecycle.stage
-}
-
-function lifecycleDetail(lifecycle: GoalLifecycle | null): string {
-  return lifecycle?.state.replace(/_/g, " ") ?? ""
 }
 
 function displayStatus(goal: Goal | null, running: boolean): string {
@@ -77,18 +57,20 @@ const ClaudeLogo = () => (
 export function CommentSidebar({
   goal,
   running,
-  onNavigate,
+  stale,
   onReply,
   onMerge,
+  onRebase,
   onNewComment,
   onClose,
   onResizeStart,
 }: {
   goal: Goal | null
   running: boolean
-  onNavigate: (goal: Goal) => void
+  stale: boolean
   onReply: (goalId: string, text: string) => void
   onMerge: (goalId: string) => void
+  onRebase: (goalId: string) => void
   onNewComment: (text: string) => void
   onClose: () => void
   onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
@@ -96,7 +78,6 @@ export function CommentSidebar({
   const [reply, setReply] = useState("")
   const [newComment, setNewComment] = useState("")
   const status = displayStatus(goal, running)
-  const lifecycle = goal?.lifecycle ?? lifecycleFromStatus(goal?.status ?? "idle")
   const canMerge = goal != null
     && !running
     && goal.lifecycle?.stage === "impl"
@@ -167,25 +148,6 @@ export function CommentSidebar({
                 {status === "running" ? <span className="ag-spin">{statusIcon(status)}</span> : statusIcon(status)}
               </span>
               <span className="cs-target">{goal.label}</span>
-              <span className={`cs-badge ${statusClass(status)}`}>{status}</span>
-            </div>
-            <div className="cs-lifecycle">
-              <span>{lifecycleLabel(lifecycle)}</span>
-              {lifecycleDetail(lifecycle) && <span>{lifecycleDetail(lifecycle)}</span>}
-            </div>
-            <div className="cs-actions">
-              {canMerge && (
-                <button
-                  className="cs-merge"
-                  type="button"
-                  onClick={() => onMerge(goal.id)}
-                >
-                  Accept
-                </button>
-              )}
-              <button className="cs-target-link" type="button" onClick={() => onNavigate(goal)}>
-                Show target
-              </button>
             </div>
           </div>
 
@@ -195,11 +157,24 @@ export function CommentSidebar({
                 <span>you</span>
                 <span>{formatTime(goal.createdAt)}</span>
               </div>
-              <div className="cs-comment-text"><Markdown>{goal.text}</Markdown></div>
+              <div className="cs-comment-text cs-comment-clamp"><Markdown>{goal.text}</Markdown></div>
             </div>
 
             {goal.replies?.map((r, i) => <Reply key={i} r={r} />)}
           </div>
+
+          {canMerge && stale && (
+            <div className="cs-status-bar cs-status-stale">
+              <span>Out of Date</span>
+              <button type="button" onClick={() => onRebase(goal.id)}>✓ Rebase</button>
+            </div>
+          )}
+          {canMerge && !stale && (
+            <div className="cs-status-bar cs-status-ready">
+              <span>Change is Ready</span>
+              <button type="button" onClick={() => onMerge(goal.id)}>✓ Accept</button>
+            </div>
+          )}
 
           <div className="cs-composer">
             <textarea
