@@ -241,14 +241,7 @@ export function ChangesRail({
             className={`rail-head-trigger ${demoMenuOpen ? "active" : ""}`}
             onClick={onToggleDemoMenu}
           >
-            Select Project
-          </button>
-          <span className="rail-head-sep"> · </span>
-          <button
-            className="rail-head-trigger"
-            onClick={() => { onToggleDemoMenu(); onResetWorkspaces() }}
-          >
-            Commands
+            File
           </button>
         </span>
         <span>
@@ -270,6 +263,14 @@ export function ChangesRail({
                   {demo.id === activeDemoId && <span className="demo-current">current project</span>}
                 </button>
               ))}
+            </div>
+            <div className="demo-menu-section commands">
+              <button
+                className="demo-menu-item"
+                onClick={() => { onToggleDemoMenu(); onResetWorkspaces() }}
+              >
+                Reset Workspaces
+              </button>
             </div>
           </div>
         )}
