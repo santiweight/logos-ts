@@ -438,16 +438,7 @@ export function RunView({
 
   return (
     <div className="pane">
-      <div className="pane-path">
-        <span>⟨run⟩ {target.label}</span>
-        {onRun && (
-          <button className="sb-retry-btn" onClick={() => onRun(target.id, true)}>↻ Restart</button>
-        )}
-      </div>
       <FittedIframe className="story-frame" src={runUrl} title={target.label} />
-      <div className="hint">
-        Running from {target.cwd} with hot reload when the underlying dev server supports it.
-      </div>
     </div>
   )
 }

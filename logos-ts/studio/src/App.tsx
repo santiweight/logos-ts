@@ -8,7 +8,6 @@ import { ICONS, svgIcon } from "./icons"
 import { AgentPanel, type AgentMsg } from "./AgentPanel"
 import { CommentSidebar } from "./CommentSidebar"
 import { ReviewPanel } from "./ReviewPanel"
-import { mainChromeState } from "./main-chrome"
 import { GotoCtx } from "./highlight"
 import { diffIndex } from "./diff"
 import { selectGoalReviewBaseIndex, selectReviewBaseIndex, selectWorkspaceReviewBaseIndex, selectWorkspaceReviewIndex, snapshotChanges } from "./review"
@@ -974,7 +973,7 @@ export function App() {
     } catch {}
   }, [sidebarFiltersByScope])
 
-  const [reviewOpen, setReviewOpen] = useState(false)
+  const [topView, setTopView] = useState<"project" | "review">("project")
 
   // ---- agent (per-goal) ----
   const [goalEvents, setGoalEvents] = useState<Record<string, AgentMsg[]>>({})
@@ -1136,7 +1135,6 @@ export function App() {
     setAgentGoalId(null)
     setAgentOpen(false)
     setSelected(null)
-    setReviewOpen(false)
     setWorkspaceViewState(null)
     setActiveWorkspaceId(null)
     setOpeningWorkspaceId(null)
@@ -1550,8 +1548,6 @@ export function App() {
 
   const nComps = view.files.reduce((n, f) => n + (f.components?.length ?? (f.component ? 1 : 0)), 0)
   const totalChanges = workspaces.reduce((n, w) => n + (w.goals?.length ?? 0), 0)
-  const reviewCount = reviewWorkspaceIndex ? reviewChangeCount(reviewBaseIndex, reviewWorkspaceIndex) : 0
-  const mainChrome = mainChromeState({ selection, currentFile, runTarget, reviewOpen, reviewCount })
   const activeProject = demos.find((d) => d.id === activeDemoId)
   const projectLabel = demoSwitching
     ? `Opening project: ${demos.find((d) => d.id === demoSwitching)?.name ?? demoSwitching}`
@@ -1613,82 +1609,23 @@ export function App() {
     window.addEventListener("pointerup", onUp)
   }, [sidebarWidth])
 
-  const renderTopbar = () => (
-    <header className="topbar">
-      <div className="topbar-menu" ref={topbarMenuRef}>
-        <button
-          className={`topbar-trigger ${demoMenuOpen ? "active" : ""}`}
-          onClick={() => setDemoMenuOpen((o) => !o)}
-          aria-label="Open project menu"
-        >
-          ☰
-        </button>
-        <span className="topbar-title">{projectLabel}</span>
-        {demoMenuOpen && (
-          <div className="demo-menu">
-            <div className="demo-menu-section">
-              <div className="demo-menu-title">Projects</div>
-              {demos.map((demo) => (
-                <button
-                  key={demo.id}
-                  className={`demo-menu-item ${demo.id === activeDemoId ? "active" : ""}`}
-                  onClick={() => openDemo(demo.id)}
-                >
-                  <span>{demo.name}</span>
-                  {demo.id === activeDemoId && <span className="demo-current">current project</span>}
-                </button>
-              ))}
-            </div>
-            <div className="demo-menu-section commands">
-              <div className="demo-menu-title">Commands</div>
-              <button
-                className="demo-menu-item"
-                onClick={() => {
-                  setDemoMenuOpen(false)
-                  resetWorkspaces()
-                }}
-              >
-                <span>Reset all workspaces</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      <nav className="mobile-panel-switcher" aria-label="Workspace panels">
-        <button
-          type="button"
-          className={mobilePanel === "changes" ? "active" : ""}
-          aria-pressed={mobilePanel === "changes"}
-          onClick={() => setMobilePanel("changes")}
-        >
-          Workspaces
-        </button>
-        <button
-          type="button"
-          className={mobilePanel === "thread" ? "active" : ""}
-          aria-pressed={mobilePanel === "thread"}
-          onClick={() => setMobilePanel("thread")}
-        >
-          Thread
-        </button>
-        <button
-          type="button"
-          className={mobilePanel === "files" ? "active" : ""}
-          aria-pressed={mobilePanel === "files"}
-          onClick={() => setMobilePanel("files")}
-        >
-          Files
-        </button>
-        <button
-          type="button"
-          className={mobilePanel === "main" ? "active" : ""}
-          aria-pressed={mobilePanel === "main"}
-          onClick={() => setMobilePanel("main")}
-        >
-          Main
-        </button>
-      </nav>
-    </header>
+  const renderViewToggle = () => (
+    <nav className="view-toggle" aria-label="View switcher">
+      <button
+        type="button"
+        className={`view-toggle-btn ${topView === "project" ? "active" : ""}`}
+        onClick={() => setTopView("project")}
+      >
+        Project
+      </button>
+      <button
+        type="button"
+        className={`view-toggle-btn ${topView === "review" ? "active" : ""}`}
+        onClick={() => setTopView("review")}
+      >
+        Review
+      </button>
+    </nav>
   )
   const activeWorkspaceCanDisplay = activeWs ? workspaceReadyForDisplay(activeWs) : workspaceIndex != null
   const workspaceUiReady = activeWorkspaceId != null && workspaceIndex != null && activeWorkspaceCanDisplay
@@ -1698,22 +1635,8 @@ export function App() {
     setWorkspaceStartupPhase("idle")
   }, [workspaceUiReady])
 
-  if (shouldShowProjectStartupScreen(workspaceUiReady, workspaceStartupPhase)) {
-    return (
-      <div className="studio" style={studioStyle}>
-        {renderTopbar()}
-        <WorkspaceStartupScreen
-          workspace={activeWs}
-          workspacesLoading={workspacesLoading}
-          phase={workspaceStartupPhase}
-        />
-      </div>
-    )
-  }
-
   return (
     <div className={`studio ${railOpen ? "rail-open" : "rail-closed"} mobile-${mobilePanel}`} style={studioStyle}>
-      {renderTopbar()}
       <ChangesRail
         open={railOpen}
         onToggle={() => setRailOpen((o) => !o)}
@@ -1732,6 +1655,13 @@ export function App() {
         onAcceptGoal={mergeGoal}
         runningGoals={effectiveRunningGoals}
         onResizeStart={startRailResize}
+        demos={demos}
+        activeDemoId={activeDemoId}
+        onOpenDemo={openDemo}
+        demoMenuOpen={demoMenuOpen}
+        onToggleDemoMenu={() => setDemoMenuOpen((o) => !o)}
+        onResetWorkspaces={resetWorkspaces}
+        topbarMenuRef={topbarMenuRef}
       />
 
       <CommentSidebar
@@ -1810,38 +1740,15 @@ export function App() {
 
       <GotoCtx.Provider value={gotoCtx}>
       <main className="main">
-        <nav className={`main-nav ${mainChrome.showModeTabs ? "" : "single"}`}>
-          <div className="main-title-row">
-            {navHistory.length > 0 && (
-              <button className="nav-back" onClick={goBack} title="Go back">←</button>
-            )}
-            <span className="main-title">{mainChrome.title}</span>
-          </div>
-          {mainChrome.showModeTabs && (
-            <div className="main-tabs" role="tablist" aria-label="Main view">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={!mainChrome.changesOpen}
-                className={!mainChrome.changesOpen ? "active" : ""}
-                onClick={() => setReviewOpen(false)}
-              >
-                Live
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mainChrome.changesOpen}
-                className={mainChrome.changesOpen ? "active" : ""}
-                onClick={() => setReviewOpen(true)}
-              >
-                {mainChrome.changesLabel}
-              </button>
-            </div>
-          )}
-        </nav>
+        <div className="main-header">
+          {renderViewToggle()}
+        </div>
         <div className="main-view">
-          {mainChrome.changesOpen ? (
+          {!workspaceUiReady ? (
+            <div className="empty">
+              {workspacesLoading ? "Workspaces still loading" : "Select a workspace"}
+            </div>
+          ) : topView === "review" ? (
             <ReviewPanel
               base={reviewBaseIndex}
               workspace={(reviewWorkspaceIndex ?? workspaceIndex)!}
@@ -1879,7 +1786,7 @@ export function App() {
             <div className="empty">No files indexed.</div>
           )}
         </div>
-        {agentOpen && (
+        {topView === "project" && agentOpen && (
           <AgentPanel events={agentPanelEvents} running={agentPanelRunning} goal={agentPanelGoal} onClose={closeAgent} />
         )}
       </main>

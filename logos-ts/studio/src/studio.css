@@ -24,9 +24,8 @@ body {
   --comment-width: 320px;
   --sidebar-width: 260px;
   display: grid;
-  grid-template-rows: 24px 1fr 22px;
+  grid-template-rows: 1fr 22px;
   grid-template-areas:
-    "topbar topbar topbar topbar"
     "rail comments sidebar main"
     "status status status status";
   height: 100vh;
@@ -36,49 +35,56 @@ body {
 .studio.rail-open { grid-template-columns: var(--rail-width) var(--comment-width) var(--sidebar-width) 1fr; }
 .studio.rail-closed { grid-template-columns: 44px var(--comment-width) var(--sidebar-width) 1fr; }
 
-.topbar {
-  grid-area: topbar;
-  position: relative;
-  z-index: 20;
+/* ---- view toggle (Project / Review in main-nav) ---- */
+.view-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding: 0 6px;
-  background: #151518;
-  border-bottom: 1px solid var(--border);
+  gap: 2px;
+  margin-left: auto;
 }
-.topbar-menu {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.topbar-trigger {
-  width: 20px;
+.view-toggle-btn {
   height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.view-toggle-btn:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.06);
+}
+.view-toggle-btn.active {
+  color: var(--text);
+  border-color: rgba(74,158,255,0.55);
+  background: rgba(74,158,255,0.14);
+}
+
+/* ---- rail head menu triggers ---- */
+.rail-head-trigger {
   padding: 0;
   border: 0;
   border-radius: 3px;
   color: var(--muted);
   background: transparent;
   font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.06em;
   cursor: pointer;
-}
-.topbar-trigger:hover,
-.topbar-trigger.active {
-  color: var(--text);
-  background: rgba(255,255,255,0.07);
-}
-.topbar-title {
-  color: var(--muted);
-  font-size: 11px;
   white-space: nowrap;
+}
+.rail-head-trigger:hover,
+.rail-head-trigger.active {
+  color: var(--text);
+}
+.rail-head-sep {
+  color: var(--border);
+  font-size: 10px;
+  user-select: none;
 }
 .mobile-panel-switcher {
   display: none;
@@ -108,7 +114,8 @@ body {
 }
 .demo-menu {
   position: absolute;
-  top: 23px;
+  z-index: 30;
+  top: 100%;
   left: 0;
   width: 220px;
   padding: 4px;
@@ -207,6 +214,7 @@ body.resizing-rail * {
 .rail-toggle:hover { color: var(--text); background: rgba(255,255,255,0.06); }
 .rail-count { color: var(--accent); font-size: 11px; }
 .rail-head {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -214,7 +222,6 @@ body.resizing-rail * {
   color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.1em;
-  opacity: 0.7;
 }
 .rail-sec { padding: 4px 8px 2px; color: var(--muted); font-size: 10px; letter-spacing: 0.04em; }
 .rail-empty { padding: 2px 8px; color: var(--muted); font-size: 11px; }
@@ -876,7 +883,47 @@ body.resizing-sidebar * {
   color: var(--muted);
   cursor: pointer;
 }
-.main-nav .nav-back:hover { color: var(--text); }
+.main-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: #18181c;
+  border-bottom: 1px solid var(--border);
+}
+.main-header .view-toggle { margin-left: 0; }
+.main-subtabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 8px;
+  background: #18181c;
+  border-bottom: 1px solid var(--border);
+}
+.main-subtabs button {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 2px 12px 4px;
+  cursor: pointer;
+}
+.main-subtabs button:hover { color: var(--text); }
+.main-subtabs button.active { color: #fff; border-bottom-color: var(--accent); }
+.main-subtabs .nav-back {
+  flex: none;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0 8px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.main-subtabs .nav-back:hover { color: var(--text); }
 .main-view { flex: 1; min-height: 0; overflow: hidden; }
 
 .content { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
@@ -1154,7 +1201,7 @@ body.resizing-sidebar * {
 
 .workspace-init-fullscreen {
   grid-column: 1 / -1;
-  grid-row: 2;
+  grid-row: 1;
   display: grid;
   place-items: center;
   background: #18181c;

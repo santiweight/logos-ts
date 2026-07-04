@@ -22,15 +22,21 @@ const baseProps = {
   onAcceptGoal: noop as (goalId: string) => void,
   runningGoals: new Set<string>(),
   onResizeStart: noop,
+  demos: [] as { id: string; name: string }[],
+  activeDemoId: null as string | null,
+  onOpenDemo: noop as (id: string) => void,
+  demoMenuOpen: false,
+  onToggleDemoMenu: noop,
+  onResetWorkspaces: noop,
+  topbarMenuRef: { current: null },
 }
 
 describe("ChangesRail", () => {
-  it("labels the rail as workspaces and keeps create/reset actions out of the rail header", () => {
+  it("labels the rail header with Switch Project and Commands", () => {
     render(<ChangesRail {...baseProps} />)
 
-    expect(screen.getByText("WORKSPACES")).toBeInTheDocument()
-    expect(screen.queryByTitle("New workspace")).not.toBeInTheDocument()
-    expect(screen.queryByTitle("Reset all workspaces")).not.toBeInTheDocument()
+    expect(screen.getByText("Switch Project")).toBeInTheDocument()
+    expect(screen.getByText("Commands")).toBeInTheDocument()
   })
 
   it("shows loading indicator while workspaces are loading", () => {

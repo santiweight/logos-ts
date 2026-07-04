@@ -68,6 +68,13 @@ interface Props {
   onAcceptGoal: (goalId: string) => void
   runningGoals: Set<string>
   onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
+  demos: { id: string; name: string }[]
+  activeDemoId: string | null
+  onOpenDemo: (id: string) => void
+  demoMenuOpen: boolean
+  onToggleDemoMenu: () => void
+  onResetWorkspaces: () => void
+  topbarMenuRef: React.Ref<HTMLDivElement>
 }
 
 export function ChangesRail({
@@ -85,6 +92,13 @@ export function ChangesRail({
   onAcceptGoal,
   runningGoals,
   onResizeStart,
+  demos,
+  activeDemoId,
+  onOpenDemo,
+  demoMenuOpen,
+  onToggleDemoMenu,
+  onResetWorkspaces,
+  topbarMenuRef,
 }: Props) {
   if (!open) {
     return (
@@ -234,13 +248,44 @@ export function ChangesRail({
   return (
     <div className="rail">
       <div className="rail-resize" title="Resize workspaces sidebar" onPointerDown={onResizeStart} />
-      <div className="rail-head">
-        <span>WORKSPACES</span>
+      <div className="rail-head" ref={topbarMenuRef}>
+        <span>
+          <button
+            className={`rail-head-trigger ${demoMenuOpen ? "active" : ""}`}
+            onClick={onToggleDemoMenu}
+          >
+            Switch Project
+          </button>
+          <span className="rail-head-sep"> · </span>
+          <button
+            className="rail-head-trigger"
+            onClick={() => { onToggleDemoMenu(); onResetWorkspaces() }}
+          >
+            Commands
+          </button>
+        </span>
         <span>
           <button className="rail-toggle" onClick={onToggle} title="Collapse" aria-label="Collapse workspaces">
             {collapseIcon}
           </button>
         </span>
+        {demoMenuOpen && (
+          <div className="demo-menu">
+            <div className="demo-menu-section">
+              <div className="demo-menu-title">Projects</div>
+              {demos.map((demo) => (
+                <button
+                  key={demo.id}
+                  className={`demo-menu-item ${demo.id === activeDemoId ? "active" : ""}`}
+                  onClick={() => onOpenDemo(demo.id)}
+                >
+                  <span>{demo.name}</span>
+                  {demo.id === activeDemoId && <span className="demo-current">current project</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {workspacesLoading && workspaces.length === 0 && (
