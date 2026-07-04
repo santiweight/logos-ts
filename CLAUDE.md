@@ -32,9 +32,6 @@ logos-ts/        the tool
   evals/           eval harness (cases + checks + run.ts)
 hn-jobs/           embedded demo app — a real TS port of the HN "who is hiring"
                    directory used as the subject codebase for the studio + evals
-vinyl-collection/  Storybook/Vite demo app for crate browsing and selection QA
-investment-portfolio/ Storybook/Vite demo app for portfolio review QA
-household-maintenance/ Storybook/Vite demo app for operations queue QA
 ```
 
 ## Run the studio
@@ -78,31 +75,3 @@ cd hn-jobs && node scripts/healthcheck.mjs          # whole suite, JSON summary
 cd hn-jobs && node scripts/healthcheck.mjs job-filters   # scope by path substring
 ```
 
-The smaller demo apps each have frontend typecheck, unit/component tests, e2e
-browser tests, Vite builds, Storybook builds, and strict lint:
-
-```bash
-pnpm --filter vinyl-collection-frontend typecheck
-pnpm --filter vinyl-collection-frontend test:run
-pnpm --filter vinyl-collection-frontend test:e2e
-pnpm --filter vinyl-collection-frontend build
-pnpm --filter vinyl-collection-frontend build-storybook
-pnpm --filter vinyl-collection-frontend lint:strict
-
-pnpm --filter investment-portfolio-frontend typecheck
-pnpm --filter investment-portfolio-frontend test:run
-pnpm --filter investment-portfolio-frontend test:e2e
-pnpm --filter investment-portfolio-frontend build
-pnpm --filter investment-portfolio-frontend build-storybook
-pnpm --filter investment-portfolio-frontend lint:strict
-
-pnpm --filter household-maintenance-frontend typecheck
-pnpm --filter household-maintenance-frontend test:run
-pnpm --filter household-maintenance-frontend test:e2e
-pnpm --filter household-maintenance-frontend build
-pnpm --filter household-maintenance-frontend build-storybook
-pnpm --filter household-maintenance-frontend lint:strict
-```
-
-Strict linting is intentionally optional. Use typecheck/tests as the regular
-verification gate; run `pnpm lint:strict` only for deliberate cleanup passes.

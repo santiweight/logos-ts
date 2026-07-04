@@ -15,10 +15,6 @@ COPY package.json pnpm-lock.yaml ./
 COPY pnpm-workspace.deploy.yaml ./pnpm-workspace.yaml
 COPY logos-ts/package.json ./logos-ts/
 COPY logos-ts/studio/package.json ./logos-ts/studio/
-COPY investment-portfolio/package.json ./investment-portfolio/
-COPY investment-portfolio/frontend/package.json ./investment-portfolio/frontend/
-COPY vinyl-collection/package.json ./vinyl-collection/
-COPY vinyl-collection/frontend/package.json ./vinyl-collection/frontend/
 
 RUN mkdir -p "$PNPM_HOME" \
     && corepack enable \
@@ -31,7 +27,6 @@ COPY --chown=node:node . .
 ENV DISABLE_AUTOUPDATER=1 \
     LOGOS_DISABLE_HMR=1 \
     LOGOS_HOST=0.0.0.0 \
-    LOGOS_PROJECT=/app/investment-portfolio \
     LOGOS_PUBLIC_PORT=443 \
     LOGOS_PUBLIC_PROTOCOL=wss \
     LOGOS_REQUIRE_AUTH=1 \

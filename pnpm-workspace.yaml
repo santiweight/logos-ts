@@ -2,12 +2,6 @@ packages:
   - "logos-ts"
   - "logos-ts/studio"
   - "logos-ts/demos/hn-jobs"
-  - "investment-portfolio"
-  - "investment-portfolio/frontend"
-  - "vinyl-collection"
-  - "vinyl-collection/frontend"
-  - "household-maintenance"
-  - "household-maintenance/frontend"
 onlyBuiltDependencies:
   - "@prisma/client"
   - "@prisma/engines"
