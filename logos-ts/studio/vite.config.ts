@@ -31,6 +31,7 @@ const PROJECTS = [
   { id: "logos-studio", name: "logos-studio", repo: "santiweight/logos-ts", branch: "main" },
   { id: "santiweightdotcom", name: "santiweightdotcom", repo: "santiweight/santiweightdotcom", branch: "main" },
   { id: "hn-jobs", name: "hn-jobs", repo: "edrickwong/hn-jobs", branch: "santi" },
+  { id: "logos-interviews", name: "logos-interviews", repo: "santiweight/logos-interviews", branch: "main" },
 ] as const
 type ProjectId = typeof PROJECTS[number]["id"]
 
