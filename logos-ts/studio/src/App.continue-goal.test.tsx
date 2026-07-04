@@ -294,18 +294,22 @@ describe("story generation", () => {
       instances: {
         ...ws.instances,
         "base-2": {
-          ...ws.instances.base,
+          ...ws.instances['base'],
           id: "base-2",
           workspaceId: "ws-2",
           materializedRoot: "/tmp/ws-2/base",
           createdAt: 1001,
+          mutability: "immutable",
+          index: ws.index,
         },
         "active-2": {
-          ...ws.instances.active,
+          ...ws.instances['active'],
           id: "active-2",
           workspaceId: "ws-2",
           materializedRoot: "/tmp/ws-2/active",
           createdAt: 1002,
+          mutability: "writable",
+          index: ws.index,
         },
       },
     }

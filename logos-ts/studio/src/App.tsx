@@ -1784,11 +1784,13 @@ export function App() {
               base={reviewBaseIndex}
               workspace={(reviewWorkspaceIndex ?? workspaceIndex)!}
               showHeaderTitle={false}
-              screenshots={activeWorkspaceId && activeWs ? {
-                workspaceId: activeWorkspaceId,
-                baseInstanceId: activeWs.baseInstanceId,
-                workspaceInstanceId: activeWs.activeInstanceId,
-              } : undefined}
+              {...(activeWorkspaceId && activeWs ? {
+                screenshots: {
+                  workspaceId: activeWorkspaceId,
+                  baseInstanceId: activeWs.baseInstanceId,
+                  workspaceInstanceId: activeWs.activeInstanceId,
+                },
+              } : {})}
             />
           ) : selection.view === "run" ? (
             <RunView

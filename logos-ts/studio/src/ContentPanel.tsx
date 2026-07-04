@@ -396,8 +396,10 @@ export function RunView({
 
   useEffect(() => {
     const hasRun = !!(runUrl || runState)
-    if (prevHadRun.current && !hasRun && runState?.status !== "failed") {
-      setStopped(true)
+    if (prevHadRun.current && !hasRun) {
+      // If we previously had a run and now we don't, mark as stopped
+      // unless the runState failed status is "failed"
+      setStopped(runState === null || (runState as RunState).status !== "failed")
     }
     if (hasRun) setStopped(false)
     prevHadRun.current = hasRun

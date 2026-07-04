@@ -72,7 +72,7 @@ export function ReviewPanel({
         {tab === "architecture" ? (
           <ArchitectureReview lines={architectureLines} stats={architectureStats} />
         ) : (
-          <SnapshotReview changes={snapshotChangesList} screenshots={screenshots} />
+          <SnapshotReview changes={snapshotChangesList} {...(screenshots ? { screenshots } : {})} />
         )}
       </div>
     </section>
@@ -256,7 +256,7 @@ function SnapshotReview({
       </aside>
       <SnapshotDetail
         change={selected}
-        screenshots={screenshots}
+        {...(screenshots ? { screenshots } : {})}
       />
     </div>
   )
@@ -305,7 +305,7 @@ function SnapshotDetail({
       {view === "visual" ? (
         <VisualComparison
           change={change}
-          screenshots={screenshots}
+          {...(screenshots ? { screenshots } : {})}
         />
       ) : (
         <pre className="capture-source-diff">
