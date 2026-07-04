@@ -81,6 +81,7 @@ export function CommentSidebar({
   onReply,
   onMerge,
   onNewComment,
+  onClose,
   onResizeStart,
 }: {
   goal: Goal | null
@@ -89,6 +90,7 @@ export function CommentSidebar({
   onReply: (goalId: string, text: string) => void
   onMerge: (goalId: string) => void
   onNewComment: (text: string) => void
+  onClose: () => void
   onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
 }) {
   const [reply, setReply] = useState("")
@@ -108,6 +110,15 @@ export function CommentSidebar({
   useEffect(() => {
     setReply("")
   }, [goal?.id])
+
+  useEffect(() => {
+    if (!goal) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [goal, onClose])
 
   const submitReply = () => {
     if (!goal || !canReply) return

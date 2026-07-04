@@ -27,6 +27,7 @@ function renderPanel({
   onReply = vi.fn(),
   onMerge = vi.fn(),
   onNewComment = vi.fn(),
+  onClose = vi.fn(),
   onResizeStart = vi.fn(),
 }: {
   selectedGoal?: Goal | null
@@ -35,6 +36,7 @@ function renderPanel({
   onReply?: (goalId: string, text: string) => void
   onMerge?: (goalId: string) => void
   onNewComment?: (text: string) => void
+  onClose?: () => void
   onResizeStart?: () => void
 } = {}) {
   render(
@@ -45,10 +47,11 @@ function renderPanel({
       onReply={onReply}
       onMerge={onMerge}
       onNewComment={onNewComment}
+      onClose={onClose}
       onResizeStart={onResizeStart}
     />
   )
-  return { onNavigate, onReply, onMerge, onNewComment }
+  return { onNavigate, onReply, onMerge, onNewComment, onClose }
 }
 
 describe("CommentSidebar", () => {
@@ -178,6 +181,7 @@ describe("CommentSidebar", () => {
         onReply={vi.fn()}
         onMerge={vi.fn()}
         onNewComment={vi.fn()}
+        onClose={vi.fn()}
         onResizeStart={vi.fn()}
       />
     )
@@ -192,12 +196,31 @@ describe("CommentSidebar", () => {
         onReply={vi.fn()}
         onMerge={vi.fn()}
         onNewComment={vi.fn()}
+        onClose={vi.fn()}
         onResizeStart={vi.fn()}
       />
     )
 
     expect(screen.queryByPlaceholderText("Ask Claude anything...")).not.toBeInTheDocument()
     expect(screen.getByText("Make Postings Bold")).toBeInTheDocument()
+  })
+
+  it("closes the panel when Escape is pressed", () => {
+    const onClose = vi.fn()
+    renderPanel({ onClose })
+
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it("does not fire onClose on Escape when no goal is selected", () => {
+    const onClose = vi.fn()
+    renderPanel({ selectedGoal: null, onClose })
+
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it("clears reply input when switching between goals", () => {
@@ -209,6 +232,7 @@ describe("CommentSidebar", () => {
         onReply={vi.fn()}
         onMerge={vi.fn()}
         onNewComment={vi.fn()}
+        onClose={vi.fn()}
         onResizeStart={vi.fn()}
       />
     )
@@ -225,6 +249,7 @@ describe("CommentSidebar", () => {
         onReply={vi.fn()}
         onMerge={vi.fn()}
         onNewComment={vi.fn()}
+        onClose={vi.fn()}
         onResizeStart={vi.fn()}
       />
     )

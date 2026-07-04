@@ -1741,6 +1741,7 @@ export function App() {
         onReply={continueGoal}
         onMerge={mergeGoal}
         onNewComment={(text) => addGoal("project", "Claude", text, true)}
+        onClose={() => setSelected(null)}
         onResizeStart={startCommentResize}
       />
 
