@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
-import { spawn, type ChildProcess } from "node:child_process"
+import { execFileSync, spawn, type ChildProcess } from "node:child_process"
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -71,6 +71,16 @@ function createProject(): string {
   mkdirSync(join(root, "src"), { recursive: true })
   writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }))
   writeFileSync(join(root, "src/index.ts"), "export function answer(): number { return 42 }\n")
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  git("init", "-b", "main")
+  git("config", "user.email", "logos@example.com")
+  git("config", "user.name", "Logos Test")
+  git("add", "-A")
+  git("commit", "-m", "initial")
+  const bare = join(dirname(root), `${root.split("/").pop()}-origin.git`)
+  execFileSync("git", ["clone", "--bare", root, bare], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  git("remote", "add", "origin", bare)
+  git("fetch", "origin")
   return root
 }
 

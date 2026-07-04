@@ -5,7 +5,7 @@
  * workspace reaps the process.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
-import { spawn, execSync, type ChildProcess } from "node:child_process"
+import { execFileSync, spawn, execSync, type ChildProcess } from "node:child_process"
 import { resolve, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -57,6 +57,17 @@ function createProject(): string {
     type: "module",
     dependencies: { storybook: "file:./fake-sb" },
   }))
+
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  git("init", "-b", "main")
+  git("config", "user.email", "logos@example.com")
+  git("config", "user.name", "Logos Test")
+  git("add", "-A")
+  git("commit", "-m", "initial")
+  const bare = join(dirname(root), `${root.split("/").pop()}-origin.git`)
+  execFileSync("git", ["clone", "--bare", root, bare], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  git("remote", "add", "origin", bare)
+  git("fetch", "origin")
 
   return root
 }
