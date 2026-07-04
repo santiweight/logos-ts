@@ -241,7 +241,7 @@ export function ChangesRail({
             className={`rail-head-trigger ${demoMenuOpen ? "active" : ""}`}
             onClick={onToggleDemoMenu}
           >
-            Switch Project
+            Select Project
           </button>
           <span className="rail-head-sep"> · </span>
           <button
