@@ -664,6 +664,16 @@ export function App() {
     refreshRuns()
   }, [activeWorkspaceId, refreshRuns])
 
+  const stopRun = useCallback(async (targetId: string) => {
+    if (!activeWorkspaceId) return
+    try {
+      await fetch(`/api/workspaces/${activeWorkspaceId}/runs/${encodeURIComponent(targetId)}`, {
+        method: "DELETE",
+      })
+    } catch {}
+    refreshRuns()
+  }, [activeWorkspaceId, refreshRuns])
+
   const diff = useMemo(() => {
     if (!activeWorkspaceId || !reviewWorkspaceIndex) return {}
     return diffIndex(reviewBaseIndex, reviewWorkspaceIndex)
@@ -1731,6 +1741,7 @@ export function App() {
           runTargets={runTargets}
           runStates={activeRunStatesByTarget}
           onRun={startRun}
+          onStop={stopRun}
           showFunctions={sidebarFilters.functions}
           showClasses={sidebarFilters.classes}
           showComponents={sidebarFilters.components}

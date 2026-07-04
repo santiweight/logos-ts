@@ -475,7 +475,10 @@ function studioApi(runtime: StudioRuntime): Plugin {
         res.setHeader("content-type", "application/json")
         res.setHeader("cache-control", "no-store")
         for (const ws of wsMgr.list()) {
-          for (const target of caps.runs) runManager.get(ws.id, target.id)
+          for (const target of caps.runs) {
+            runManager.get(ws.id, target.id)
+            if (target.mode === "preview") runManager.checkStale(ws.id, target.id)
+          }
         }
         const entries = runManager.all()
         const states = runManager.allStates()
@@ -612,7 +615,15 @@ function studioApi(runtime: StudioRuntime): Plugin {
         }
 
         // POST /api/workspaces/:id/runs/:targetId — start or restart a run target
+        // DELETE /api/workspaces/:id/runs/:targetId — stop a run target
         const runMatch = sub.match(/^(.+)\/runs\/([^/]+)$/)
+        if (req.method === "DELETE" && runMatch?.[1] && runMatch[2]) {
+          const wsId = runMatch[1]
+          const targetId = decodeURIComponent(runMatch[2])
+          runManager.shutdown(wsId, targetId)
+          res.end(JSON.stringify({ ok: true }))
+          return
+        }
         if (req.method === "POST" && runMatch?.[1] && runMatch[2]) {
           const wsId = runMatch[1]
           const targetId = decodeURIComponent(runMatch[2])

@@ -247,7 +247,7 @@ interface ProjectCaps {
   storybook?: { configDir: string; frontendDir: string }
   storybooks?: { configDir: string; frontendDir: string }[]
   tests?: { command: string[]; watchDirs: string[] }
-  runs?: { id: string; label: string; cwd: string; command: string; args: string[]; framework: "vite" | "next"; env?: Record<string, string> }[]
+  runs?: { id: string; label: string; cwd: string; command: string; args: string[]; framework: "vite" | "next"; mode: "dev" | "preview"; env?: Record<string, string> }[]
   nodeModulesDirs: string[]
 }
 

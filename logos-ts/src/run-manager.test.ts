@@ -55,6 +55,7 @@ describe("RunManager", () => {
       command: "pnpm",
       args: ["run", "dev", "--", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
       framework: "vite",
+      mode: "dev",
     }
 
     const url = await manager.ensure("ws-1", root, target)
@@ -97,6 +98,7 @@ describe("RunManager", () => {
       command: process.execPath,
       args: ["scripts/dev.mjs"],
       framework: "vite",
+      mode: "dev",
     }
 
     const url = await manager.ensure("ws-1", root, target)
@@ -143,6 +145,7 @@ describe("RunManager", () => {
       command: "pnpm",
       args: ["run", "dev"],
       framework: "vite",
+      mode: "dev",
     }
 
     const startedAt = Date.now()

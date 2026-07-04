@@ -200,6 +200,7 @@ export interface RunTarget {
   command: string
   args: string[]
   framework?: "vite" | "next"
+  mode?: "dev" | "preview"
   env?: Record<string, string>
 }
 
@@ -211,6 +212,8 @@ export interface RunState {
   startedAt: number
   logs: string[]
   error?: string
+  builtAt?: number
+  stale?: boolean
 }
 
 export type WorkspaceType = "local" | "remote"

@@ -388,16 +388,39 @@ export function RunView({
   onRun: ((targetId: string, restart?: boolean) => void) | null
 }) {
   const logsEndRef = useRef<HTMLDivElement>(null)
+  const prevHadRun = useRef(false)
+  const [stopped, setStopped] = useState(false)
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [runState?.logs.length])
 
-  const shouldAutoStart = !!target && !!onRun && !runUrl && !runState
+  useEffect(() => {
+    const hasRun = !!(runUrl || runState)
+    if (prevHadRun.current && !hasRun && runState?.status !== "failed") {
+      setStopped(true)
+    }
+    if (hasRun) setStopped(false)
+    prevHadRun.current = hasRun
+  }, [runUrl, runState])
+
+  const shouldAutoStart = !!target && !!onRun && !runUrl && !runState && !stopped
   useEffect(() => {
     if (shouldAutoStart && target) onRun(target.id)
   }, [shouldAutoStart, target, onRun])
 
   if (!target) return <div className="empty">No run selected.</div>
+
+  if (!runUrl && !runState && stopped) {
+    return (
+      <div className="sb-startup">
+        <div className="sb-startup-header">{target.label}</div>
+        <div className="run-stopped-msg">Press play to restart</div>
+        {onRun && (
+          <button className="sb-retry-btn" onClick={() => { setStopped(false); onRun(target.id) }}>▶ Play</button>
+        )}
+      </div>
+    )
+  }
 
   if (!runUrl) {
     if (runState?.status === "failed") {

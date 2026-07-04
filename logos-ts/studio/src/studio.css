@@ -781,6 +781,11 @@ body.resizing-sidebar * {
 .run-tree-btn.ready { color: var(--ok); }
 .run-tree-btn.starting { color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 .run-tree-btn.failed { color: #e5847d; }
+.run-tree-btn.stop { color: var(--muted); }
+.run-tree-btn.stop:hover { color: #e5847d; }
+
+.stale-badge { color: #e5a33d; font-size: 11px; margin-right: 2px; }
+.run-stopped-msg { color: var(--muted); font-size: 13px; margin: 8px 0; }
 
 /* diff tints carry over from the old tree */
 .anode.diff-added { border-left-color: var(--ok); }

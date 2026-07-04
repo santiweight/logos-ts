@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/prefer-readonly, @typescript-eslint/no-dynamic-delete */
-import { spawn, type ChildProcess } from "node:child_process"
+import { spawn, execSync, type ChildProcess } from "node:child_process"
+import { readdirSync, statSync } from "node:fs"
 import { request as httpRequest } from "node:http"
 import { createServer } from "node:net"
-import { basename, isAbsolute, relative, resolve } from "node:path"
+import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import type { LogosRuntimeStore } from "./runtime-store.js"
 import type { RunTargetCaps } from "./detect-project.js"
 
@@ -31,6 +32,8 @@ export interface RunState {
   updatedAt: number
   logs: string[]
   error?: string
+  builtAt?: number
+  stale?: boolean
 }
 
 type Registry = Record<string, RunEntry>
@@ -216,6 +219,45 @@ export class RunManager {
       .replace(/\$\{BASE\}/g, base))
     const url = `http://127.0.0.1:${port}`
 
+    if (target.mode === "preview") {
+      this.pushLog(id, "Building for preview...")
+      const env = runEnv({
+        port,
+        base,
+        workspaceId,
+        targetId: target.id,
+        projectRoot: this.projectRoot,
+        workspaceRoot,
+        cwd,
+        targetEnv: target.env,
+      })
+      const buildCmd = target.framework === "next"
+        ? "pnpm exec next build"
+        : "pnpm exec vite build --base " + JSON.stringify(base)
+      const buildTimeout = target.framework === "next" ? 120_000 : 60_000
+      try {
+        execSync(buildCmd, {
+          cwd,
+          env,
+          stdio: "pipe",
+          timeout: buildTimeout,
+        })
+      } catch (e: any) {
+        const msg = e?.stderr?.toString() || e?.message || "build failed"
+        state.status = "failed"
+        state.error = msg
+        state.updatedAt = Date.now()
+        this.pushLog(id, `Build failed: ${msg}`)
+        this.saveState(id)
+        throw new Error(`preview build failed: ${msg}`)
+      }
+      state.builtAt = Date.now()
+      state.stale = false
+      state.updatedAt = Date.now()
+      this.pushLog(id, "Build complete, starting preview server...")
+      this.saveState(id)
+    }
+
     return new Promise<string>((resolve_, reject) => {
       const child = spawn(command, args, {
         cwd,
@@ -384,6 +426,22 @@ export class RunManager {
   shutdownAll(): void {
     for (const entry of Object.values(this.registry)) this.shutdown(entry.workspaceId, entry.targetId)
   }
+
+  checkStale(workspaceId: string, targetId: string): boolean {
+    const id = RunManager.key(workspaceId, targetId)
+    const state = this.states.get(id)
+    if (!state?.builtAt) return false
+    const entry = this.registry[id]
+    if (!entry) return false
+    const newest = newestSourceMtime(entry.cwd)
+    const stale = newest > state.builtAt
+    if (stale !== state.stale) {
+      state.stale = stale
+      state.updatedAt = Date.now()
+      this.saveState(id)
+    }
+    return stale
+  }
 }
 
 function commandForCwd(cwd: string, command: string): string {
@@ -503,4 +561,29 @@ function isReadyLog(target: RunTargetCaps, line: string): boolean {
   if (target.framework === "next") return /\bready\b/i.test(line)
   if (target.framework === "vite") return /\blocal:\s+http:\/\//i.test(line)
   return false
+}
+
+const SOURCE_EXTS = /\.(tsx?|jsx?|css|scss|html|json|svg)$/
+
+function newestSourceMtime(cwd: string): number {
+  let newest = 0
+  const walk = (dir: string, depth: number) => {
+    if (depth > 5) return
+    let entries: string[]
+    try { entries = readdirSync(dir) } catch { return }
+    for (const name of entries) {
+      if (name === "node_modules" || name === "dist" || name === ".git" || name.startsWith(".")) continue
+      const full = join(dir, name)
+      try {
+        const st = statSync(full)
+        if (st.isDirectory()) {
+          walk(full, depth + 1)
+        } else if (SOURCE_EXTS.test(name)) {
+          if (st.mtimeMs > newest) newest = st.mtimeMs
+        }
+      } catch { /* skip */ }
+    }
+  }
+  walk(cwd, 0)
+  return newest
 }

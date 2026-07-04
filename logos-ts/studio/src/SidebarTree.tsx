@@ -31,6 +31,7 @@ interface SNode {
   fns?: number
   stories?: number
   runStatus?: RunState["status"] | "stopped"
+  runStale?: boolean
   runTargetId?: string
   sel?: Selection
 }
@@ -47,6 +48,7 @@ interface Props {
   runTargets?: RunTarget[]
   runStates?: Record<string, RunState | undefined>
   onRun?: (targetId: string, restart?: boolean) => void
+  onStop?: (targetId: string) => void
   showFunctions?: boolean
   showClasses?: boolean
   showComponents?: boolean
@@ -60,6 +62,7 @@ interface Ctx {
   onComponentContextMenu: (target: string, label: string, x: number, y: number) => void
   onSelect: Props["onSelect"]
   onRun: NonNullable<Props["onRun"]>
+  onStop: NonNullable<Props["onStop"]>
 }
 const SidebarCtx = createContext<Ctx>({
   selectedId: null,
@@ -68,6 +71,7 @@ const SidebarCtx = createContext<Ctx>({
   onComponentContextMenu: () => {},
   onSelect: () => {},
   onRun: () => {},
+  onStop: () => {},
 })
 
 const testsOf = (it: FileItem): number =>
@@ -366,6 +370,7 @@ export function buildData(
       kind: "run",
       runTargetId: target.id,
       runStatus: state?.status ?? "stopped",
+      runStale: state?.stale ?? false,
       sel: { file: "", view: "run", runTargetId: target.id },
     }
   })
@@ -388,7 +393,7 @@ const GLYPH: Record<Kind, ReactNode> = {
 
 function Node({ node, style }: NodeRendererProps<SNode>) {
   const d = node.data
-  const { selectedId, testsRunning, onComment, onComponentContextMenu, onSelect, onRun } = useContext(SidebarCtx)
+  const { selectedId, testsRunning, onComment, onComponentContextMenu, onSelect, onRun, onStop } = useContext(SidebarCtx)
   const isActive = selectedId === d.id
   const showDot = d.testStatus && (node.isLeaf || !node.isOpen)
 
@@ -448,6 +453,22 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
         </span>
       ) : null}
       {!showDot && d.tests ? <span className="count ok">✓{d.tests}</span> : null}
+      {d.kind === "run" && d.runStale ? (
+        <span className="stale-badge" title="Source changed since last build">⚠</span>
+      ) : null}
+      {d.kind === "run" && d.runTargetId && (d.runStatus === "ready" || d.runStatus === "starting") ? (
+        <button
+          className="run-tree-btn stop"
+          title="Stop"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onStop(d.runTargetId!)
+          }}
+        >
+          ⏹
+        </button>
+      ) : null}
       {d.kind === "run" && d.runTargetId ? (
         <button
           className={`run-tree-btn ${d.runStatus ?? "stopped"}`}
@@ -499,6 +520,7 @@ export function SidebarTree({
   runTargets = [],
   runStates = {},
   onRun = () => {},
+  onStop = () => {},
   showFunctions = true,
   showClasses = true,
   showComponents = true,
@@ -553,8 +575,9 @@ export function SidebarTree({
       },
       onSelect,
       onRun,
+      onStop,
     }),
-    [selectedId, testsRunning, onComment, onSelect, onRun, canWriteStories]
+    [selectedId, testsRunning, onComment, onSelect, onRun, onStop, canWriteStories]
   )
 
   const [ref, size] = useSize()

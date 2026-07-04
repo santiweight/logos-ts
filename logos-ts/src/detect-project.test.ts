@@ -28,7 +28,14 @@ describe("detectProject", () => {
       dependencies: { next: "14.2.35" },
     }))
 
-    expect(detectProject(root).runs[0]).toMatchObject({
+    const runs = detectProject(root).runs
+    expect(runs[0]).toMatchObject({
+      mode: "preview",
+      command: "pnpm",
+      args: ["exec", "next", "start", "--hostname", "127.0.0.1", "--port", "${PORT}"],
+    })
+    expect(runs[1]).toMatchObject({
+      mode: "dev",
       command: "pnpm",
       args: ["dev", "--hostname", "127.0.0.1", "--port", "${PORT}"],
     })
@@ -44,7 +51,14 @@ describe("detectProject", () => {
       devDependencies: { vite: "7.2.7" },
     }))
 
-    expect(detectProject(root).runs[0]).toMatchObject({
+    const runs = detectProject(root).runs
+    expect(runs[0]).toMatchObject({
+      mode: "preview",
+      command: "pnpm",
+      args: ["exec", "vite", "preview", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+    })
+    expect(runs[1]).toMatchObject({
+      mode: "dev",
       command: "pnpm",
       args: ["dev", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
     })

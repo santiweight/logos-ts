@@ -19,6 +19,7 @@ export interface RunTargetCaps {
   command: string
   args: string[]
   framework: "vite" | "next"
+  mode: "dev" | "preview"
   env?: Record<string, string>
 }
 
@@ -142,10 +143,21 @@ function detectRuns(root: string): RunTargetCaps[] {
     const isFirstTarget = targets.length === 0
 
     if (hasNext && hasNextEntrypoint) {
+      const appLabel = isFirstTarget ? "App" : `${labelBase} App`
+      targets.push({
+        id: `${idBase}-preview`,
+        label: appLabel,
+        cwd: dir,
+        command: "pnpm",
+        args: ["exec", "next", "start", "--hostname", "127.0.0.1", "--port", "${PORT}"],
+        framework: "next",
+        mode: "preview",
+        ...(env ? { env } : {}),
+      })
       if (miniScript) {
         const miniLabel = typeof pkg.name === "string" && pkg.name
           ? `${pkgNameLabel(pkg.name)} (mini)`
-          : `${isFirstTarget ? "App" : `${labelBase} App`} (mini)`
+          : `${appLabel} (mini)`
         targets.push({
           id: `${idBase}-mini`,
           label: miniLabel,
@@ -153,44 +165,70 @@ function detectRuns(root: string): RunTargetCaps[] {
           command: "pnpm",
           args: ["dev:mini", "--", "-H", "127.0.0.1", "-p", "${PORT}"],
           framework: "next",
+          mode: "dev",
           ...(env ? { env } : {}),
         })
       }
       targets.push({
         id: `${idBase}-app`,
-        label: isFirstTarget ? "App" : `${labelBase} App`,
+        label: `${appLabel} (auto-reloading)`,
         cwd: dir,
         command: devScript ? "pnpm" : "node_modules/.bin/next",
         args: devScript
           ? ["dev", "--hostname", "127.0.0.1", "--port", "${PORT}"]
           : ["dev", "--hostname", "127.0.0.1", "--port", "${PORT}"],
         framework: "next",
+        mode: "dev",
         ...(env ? { env } : {}),
       })
       continue
     }
 
     if (devScript && hasViteEntrypoint && (hasVite || /\bvite\b/.test(devScript))) {
+      const appLabel = isFirstTarget ? "App" : `${labelBase} App`
+      targets.push({
+        id: `${idBase}-preview`,
+        label: appLabel,
+        cwd: dir,
+        command: "pnpm",
+        args: ["exec", "vite", "preview", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+        framework: "vite",
+        mode: "preview",
+        ...(env ? { env } : {}),
+      })
       targets.push({
         id: `${idBase}-app`,
-        label: isFirstTarget ? "App" : `${labelBase} App`,
+        label: `${appLabel} (auto-reloading)`,
         cwd: dir,
         command: "pnpm",
         args: ["dev", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
         framework: "vite",
+        mode: "dev",
         ...(env ? { env } : {}),
       })
       continue
     }
 
     if (hasVite && hasViteEntrypoint) {
+      const appLabel = targets.length === 0 ? "App" : `${labelBase} App`
+      targets.push({
+        id: `${idBase}-preview`,
+        label: appLabel,
+        cwd: dir,
+        command: "node_modules/.bin/vite",
+        args: ["preview", "--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
+        framework: "vite",
+        mode: "preview",
+        ...(env ? { env } : {}),
+      })
       targets.push({
         id: `${idBase}-app`,
-        label: targets.length === 0 ? "App" : `${labelBase} App`,
+        label: `${appLabel} (auto-reloading)`,
         cwd: dir,
         command: "node_modules/.bin/vite",
         args: ["--host", "127.0.0.1", "--port", "${PORT}", "--base", "${BASE}"],
         framework: "vite",
+        mode: "dev",
         ...(env ? { env } : {}),
       })
     }
