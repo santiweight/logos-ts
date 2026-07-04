@@ -31,10 +31,10 @@ const baseProps = {
 }
 
 describe("ChangesRail", () => {
-  it("labels the rail header with Switch Project and Commands", () => {
+  it("labels the rail header with Select Project and Commands", () => {
     render(<ChangesRail {...baseProps} />)
 
-    expect(screen.getByText("Switch Project")).toBeInTheDocument()
+    expect(screen.getByText("Select Project")).toBeInTheDocument()
     expect(screen.getByText("Commands")).toBeInTheDocument()
   })
 

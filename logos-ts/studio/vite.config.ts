@@ -28,6 +28,7 @@ const STUDIO_RUNTIME_DIR = resolve(process.env.LOGOS_STUDIO_RUNTIME_DIR ?? defau
 const PROJECT_STATE_FILE = resolve(STUDIO_RUNTIME_DIR, "active-project.json")
 const REPOS_DIR = resolve(homedir(), ".logos/repos")
 const PROJECTS = [
+  { id: "logos-studio", name: "logos-studio", repo: "santiweight/logos-ts" },
   { id: "santiweightdotcom", name: "santiweightdotcom", repo: "santiweight/santiweightdotcom" },
 ] as const
 type ProjectId = typeof PROJECTS[number]["id"]
