@@ -435,6 +435,8 @@ body.resizing-rail * {
   cursor: pointer;
 }
 .sidebar-context-menu button:hover { background: rgba(255,255,255,0.08); }
+.sidebar-context-menu button.destructive { color: #f85149; }
+.sidebar-context-menu button.destructive:hover { background: rgba(248,81,73,0.15); }
 
 .rail-head span { display: flex; align-items: center; gap: 2px; }
 .rail-head span button + button { margin-left: 0; }

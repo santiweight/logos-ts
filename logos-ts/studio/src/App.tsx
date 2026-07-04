@@ -1333,6 +1333,24 @@ export function App() {
     [addGoal]
   )
 
+  const deleteItem = useCallback(async (path: string) => {
+    try {
+      const res = await fetch("/api/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path }),
+      })
+      if (res.ok) {
+        if (activeWorkspaceId) {
+          await reindexWorkspace()
+        } else {
+          const r = await fetch("/api/index?rebuild")
+          if (r.ok) setIndex((await r.json()) as StudioIndex)
+        }
+      }
+    } catch {}
+  }, [activeWorkspaceId, reindexWorkspace])
+
   const storyGoalsMessage = useMemo(() => {
     const storyGoals = activeGoals
       .filter((g) => g.storyId)
@@ -1738,6 +1756,7 @@ export function App() {
           comments={goalsByTarget}
           onComment={openComment}
           onWriteStories={addStoryWritingGoal}
+          onDelete={deleteItem}
           diff={diff}
           testState={testState}
           runTargets={runTargets}

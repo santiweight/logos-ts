@@ -43,6 +43,7 @@ interface Props {
   comments: Record<string, Goal[] | undefined>
   onComment: (target: string, label: string, x: number, y: number) => void
   onWriteStories?: (target: string, label: string) => void
+  onDelete?: (path: string) => void
   diff: Record<string, DiffStatus>
   testState: TestState | null
   runTargets?: RunTarget[]
@@ -55,11 +56,20 @@ interface Props {
   showTypes?: boolean
 }
 
+interface ContextMenu {
+  kind: Kind
+  target: string
+  label: string
+  file?: string
+  x: number
+  y: number
+}
+
 interface Ctx {
   selectedId: string | null
   testsRunning: boolean
   onComment: Props["onComment"]
-  onComponentContextMenu: (target: string, label: string, x: number, y: number) => void
+  onNodeContextMenu: (menu: ContextMenu) => void
   onSelect: Props["onSelect"]
   onRun: NonNullable<Props["onRun"]>
   onStop: NonNullable<Props["onStop"]>
@@ -68,7 +78,7 @@ const SidebarCtx = createContext<Ctx>({
   selectedId: null,
   testsRunning: false,
   onComment: () => {},
-  onComponentContextMenu: () => {},
+  onNodeContextMenu: () => {},
   onSelect: () => {},
   onRun: () => {},
   onStop: () => {},
@@ -393,7 +403,7 @@ const GLYPH: Record<Kind, ReactNode> = {
 
 function Node({ node, style }: NodeRendererProps<SNode>) {
   const d = node.data
-  const { selectedId, testsRunning, onComment, onComponentContextMenu, onSelect, onRun, onStop } = useContext(SidebarCtx)
+  const { selectedId, testsRunning, onComment, onNodeContextMenu, onSelect, onRun, onStop } = useContext(SidebarCtx)
   const isActive = selectedId === d.id
   const showDot = d.testStatus && (node.isLeaf || !node.isOpen)
 
@@ -412,11 +422,11 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
   }
 
   const onContextMenu = (e: React.MouseEvent) => {
-    if (d.kind !== "comp" || !d.target) return
+    if (d.kind === "run" || d.kind === "section" || !d.target) return
     e.preventDefault()
     e.stopPropagation()
     if (d.sel) onSelect(d.sel)
-    onComponentContextMenu(d.target, d.label ?? d.name, e.clientX, e.clientY)
+    onNodeContextMenu({ kind: d.kind, target: d.target, label: d.label ?? d.name, ...(d.sel?.file ? { file: d.sel.file } : {}), x: e.clientX, y: e.clientY })
   }
 
   const guides = []
@@ -430,7 +440,7 @@ function Node({ node, style }: NodeRendererProps<SNode>) {
       style={style}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      title={d.kind === "comp" ? "Right-click for component actions" : undefined}
+      title={d.kind !== "run" && d.kind !== "section" && d.target ? "Right-click for actions" : undefined}
     >
       {guides}
       {showDot ? (
@@ -515,6 +525,7 @@ export function SidebarTree({
   comments,
   onComment,
   onWriteStories,
+  onDelete,
   diff,
   testState,
   runTargets = [],
@@ -526,7 +537,7 @@ export function SidebarTree({
   showComponents = true,
   showTypes = true,
 }: Props) {
-  const [componentMenu, setComponentMenu] = useState<{ target: string; label: string; x: number; y: number } | null>(null)
+  const [nodeMenu, setNodeMenu] = useState<ContextMenu | null>(null)
   const canWriteStories = onWriteStories != null
   const results = testState?.results ?? null
   const testsRunning = testState?.status === "running"
@@ -570,29 +581,27 @@ export function SidebarTree({
       selectedId,
       testsRunning,
       onComment,
-      onComponentContextMenu: (target, label, x, y) => {
-        if (canWriteStories) setComponentMenu({ target, label, x, y })
-      },
+      onNodeContextMenu: (menu) => setNodeMenu(menu),
       onSelect,
       onRun,
       onStop,
     }),
-    [selectedId, testsRunning, onComment, onSelect, onRun, onStop, canWriteStories]
+    [selectedId, testsRunning, onComment, onSelect, onRun, onStop]
   )
 
   const [ref, size] = useSize()
   useEffect(() => {
-    if (!componentMenu) return
+    if (!nodeMenu) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setComponentMenu(null)
+      if (e.key === "Escape") setNodeMenu(null)
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [componentMenu])
+  }, [nodeMenu])
 
   return (
     <SidebarCtx.Provider value={ctx}>
-      <div className="sidebar-tree" ref={ref} onClick={() => setComponentMenu(null)}>
+      <div className="sidebar-tree" ref={ref} onClick={() => setNodeMenu(null)}>
         <Tree<SNode>
           key={`${showFunctions ? "fn" : ""}:${showClasses ? "cls" : ""}:${showComponents ? "comp" : ""}:${showTypes ? "type" : ""}:${runTargets.map(t => `${t.id}:${runStates[t.id]?.status ?? "stopped"}`).join("\0")}:${files.map(f => f.file).join("\0")}`}
           data={data}
@@ -610,24 +619,41 @@ export function SidebarTree({
         >
           {Node}
         </Tree>
-        {componentMenu && (
+        {nodeMenu && (
           <div
             className="sidebar-context-menu"
             style={{
-              left: Math.min(componentMenu.x, window.innerWidth - 180),
-              top: Math.min(componentMenu.y, window.innerHeight - 60),
+              left: Math.min(nodeMenu.x, window.innerWidth - 180),
+              top: Math.min(nodeMenu.y, window.innerHeight - 80),
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              onClick={() => {
-                onWriteStories?.(componentMenu.target, componentMenu.label)
-                setComponentMenu(null)
-              }}
-            >
-              Generate stories
-            </button>
+            {nodeMenu.kind === "comp" && canWriteStories && (
+              <button
+                type="button"
+                onClick={() => {
+                  onWriteStories?.(nodeMenu.target, nodeMenu.label)
+                  setNodeMenu(null)
+                }}
+              >
+                Generate stories
+              </button>
+            )}
+            {onDelete && (nodeMenu.kind === "dir" || nodeMenu.kind === "file" || nodeMenu.file) && (
+              <button
+                type="button"
+                className="destructive"
+                onClick={() => {
+                  const path = nodeMenu.kind === "dir" || nodeMenu.kind === "file"
+                    ? nodeMenu.target.replace(/^(dir|file):/, "")
+                    : nodeMenu.file!
+                  if (confirm(`Delete "${nodeMenu.label}"?`)) onDelete(path)
+                  setNodeMenu(null)
+                }}
+              >
+                Delete {nodeMenu.kind === "dir" ? "folder" : nodeMenu.kind === "file" ? "file" : "file"}
+              </button>
+            )}
           </div>
         )}
       </div>

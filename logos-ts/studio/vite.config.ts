@@ -191,17 +191,20 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   const studioPortFile = resolve(runtimePaths.root, "studio-port")
   const runtimeStore = new LogosRuntimeStore(resolve(runtimePaths.root, "runtime.db"))
 
-  const indexReady: Promise<StudioIndex> = new Promise((res, rej) => {
-    const t0 = Date.now()
-    console.log(`[logos] building index (background)...`)
-    execFile(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), projectRoot, "-"], {
-      cwd: LOGOS_TS, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
-    }, (err, stdout) => {
-      if (err) { rej(err); return }
-      console.log(`[logos] index ready in ${Date.now() - t0}ms`)
-      res(JSON.parse(stdout) as StudioIndex)
+  function buildIndex(): Promise<StudioIndex> {
+    return new Promise((res, rej) => {
+      const t0 = Date.now()
+      console.log(`[logos] building index (background)...`)
+      execFile(tsx, [resolve(LOGOS_TS, "src/build-index.ts"), projectRoot, "-"], {
+        cwd: LOGOS_TS, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+      }, (err, stdout) => {
+        if (err) { rej(err); return }
+        console.log(`[logos] index ready in ${Date.now() - t0}ms`)
+        res(JSON.parse(stdout) as StudioIndex)
+      })
     })
-  })
+  }
+  let indexReady: Promise<StudioIndex> = buildIndex()
 
   const sessionMgr = new ClaudeSessionManager(runtimeStore)
   if (process.env.LOGOS_RECOVER_WORKSPACES !== "1") {
@@ -309,8 +312,11 @@ function studioApi(runtime: StudioRuntime): Plugin {
         }
       })
 
-      server.middlewares.use("/api/index", async (_req, res) => {
+      server.middlewares.use("/api/index", async (req, res) => {
         res.setHeader("content-type", "application/json")
+        if (new URL(req.url || "", "http://x").searchParams.has("rebuild")) {
+          indexReady = buildIndex()
+        }
         res.end(JSON.stringify(await indexReady))
       })
 
@@ -432,6 +438,25 @@ function studioApi(runtime: StudioRuntime): Plugin {
           if (err) { res.statusCode = 500; res.end(JSON.stringify({ error: String(err) })) }
           else res.end(JSON.stringify({ ok: true }))
         })
+      })
+
+      server.middlewares.use("/api/delete", async (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; return res.end() }
+        const body = JSON.parse((await readBody(req)) || "{}")
+        const path = body.path as string | undefined
+        if (!path) { res.statusCode = 400; return res.end(JSON.stringify({ error: "path required" })) }
+        const abs = resolve(PROJECT_ROOT, path)
+        if (!abs.startsWith(PROJECT_ROOT + sep)) {
+          res.statusCode = 403; return res.end(JSON.stringify({ error: "path outside project" }))
+        }
+        res.setHeader("content-type", "application/json")
+        try {
+          rmSync(abs, { recursive: true })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e: any) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ error: e.message }))
+        }
       })
 
       server.middlewares.use("/api/screenshots/", (req, res) => {

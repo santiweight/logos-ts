@@ -357,6 +357,199 @@ describe("SidebarTree", () => {
 
     expect(onRun).toHaveBeenCalledWith("root-app", true)
   })
+
+  it("shows Delete folder in context menu for directories", () => {
+    const onDelete = vi.fn()
+    window.confirm = vi.fn(() => true)
+    render(
+      <SidebarTree
+        files={[
+          {
+            file: "src/utils/helpers.ts",
+            code: "",
+            items: [{ kind: "function", name: "helpers", signature: "helpers()", code: "", deps: [], tests: [] }],
+          },
+        ]}
+        selection={{ file: "src/utils/helpers.ts", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        onDelete={onDelete}
+        diff={{}}
+        testState={null}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText("src"))
+
+    const deleteBtn = screen.getByRole("button", { name: "Delete folder" })
+    expect(deleteBtn).toBeInTheDocument()
+    fireEvent.click(deleteBtn)
+
+    expect(window.confirm).toHaveBeenCalled()
+    expect(onDelete).toHaveBeenCalledWith("src")
+  })
+
+  it("shows Delete file in context menu for files", () => {
+    const onDelete = vi.fn()
+    window.confirm = vi.fn(() => true)
+    render(
+      <SidebarTree
+        files={[
+          {
+            file: "src/utils/format.ts",
+            code: "",
+            items: [
+              { kind: "function", name: "formatDate", signature: "formatDate()", code: "", deps: [], tests: [] },
+              { kind: "function", name: "formatName", signature: "formatName()", code: "", deps: [], tests: [] },
+            ],
+          },
+        ]}
+        selection={{ file: "src/utils/format.ts", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        onDelete={onDelete}
+        diff={{}}
+        testState={null}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText("format"))
+
+    const deleteBtn = screen.getByRole("button", { name: "Delete file" })
+    expect(deleteBtn).toBeInTheDocument()
+    fireEvent.click(deleteBtn)
+
+    expect(onDelete).toHaveBeenCalledWith("src/utils/format.ts")
+  })
+
+  it("shows Delete file for function symbols (deletes containing file)", () => {
+    const onDelete = vi.fn()
+    window.confirm = vi.fn(() => true)
+    render(
+      <SidebarTree
+        files={[
+          {
+            file: "src/utils/parse.ts",
+            code: "",
+            items: [
+              { kind: "function", name: "parseInput", signature: "parseInput()", code: "", deps: [], tests: [] },
+              { kind: "function", name: "validateInput", signature: "validateInput()", code: "", deps: [], tests: [] },
+            ],
+          },
+        ]}
+        selection={{ file: "src/utils/parse.ts", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        onDelete={onDelete}
+        diff={{}}
+        testState={null}
+      />
+    )
+
+    fireEvent.click(screen.getByText("parse"))
+    fireEvent.contextMenu(screen.getByText("parseInput"))
+
+    const deleteBtn = screen.getByRole("button", { name: "Delete file" })
+    fireEvent.click(deleteBtn)
+
+    expect(onDelete).toHaveBeenCalledWith("src/utils/parse.ts")
+  })
+
+  it("shows both Generate stories and Delete for components", () => {
+    const onWriteStories = vi.fn()
+    const onDelete = vi.fn()
+    window.confirm = vi.fn(() => true)
+    render(
+      <SidebarTree
+        files={files}
+        selection={{ file: "src/components/JobCard.tsx", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        onWriteStories={onWriteStories}
+        onDelete={onDelete}
+        diff={{}}
+        testState={null}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText("JobCard"))
+
+    expect(screen.getByRole("button", { name: "Generate stories" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Delete file" })).toBeInTheDocument()
+  })
+
+  it("does not call onDelete when confirm is cancelled", () => {
+    const onDelete = vi.fn()
+    window.confirm = vi.fn(() => false)
+    render(
+      <SidebarTree
+        files={files}
+        selection={{ file: "src/components/JobCard.tsx", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        onDelete={onDelete}
+        diff={{}}
+        testState={null}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText("JobCard"))
+    fireEvent.click(screen.getByRole("button", { name: "Delete file" }))
+
+    expect(window.confirm).toHaveBeenCalled()
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+
+  it("does not show context menu for run targets", () => {
+    const onDelete = vi.fn()
+    render(
+      <SidebarTree
+        files={files}
+        selection={{ file: "src/components/JobCard.tsx", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        onDelete={onDelete}
+        diff={{}}
+        testState={null}
+        runTargets={[{
+          id: "root-app",
+          label: "App",
+          cwd: "/tmp/app",
+          command: "pnpm",
+          args: ["dev"],
+          framework: "vite",
+        }]}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText("App"))
+
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument()
+  })
+
+  it("does not show delete button when onDelete is not provided", () => {
+    render(
+      <SidebarTree
+        files={files}
+        selection={{ file: "src/components/JobCard.tsx", view: "code" }}
+        onSelect={() => {}}
+        comments={{}}
+        onComment={() => {}}
+        diff={{}}
+        testState={null}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText("JobCard"))
+
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument()
+  })
 })
 
 function makeGoal(overrides: Partial<Goal> & { target: string }): Goal {
