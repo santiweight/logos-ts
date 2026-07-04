@@ -57,15 +57,17 @@ This repo uses **worktrees** — feature branches live under
 `main` is checked out at `/Users/santiagoweight/projects/logos-ts`. Because of
 this, `git checkout main` will fail inside a worktree.
 
-**Pushing a branch to main from a worktree:**
+**Merging a branch to main from a worktree:**
 
 ```bash
 git fetch origin main
 git rebase origin/main          # get on top of latest main
-git push origin <branch>:main   # push directly to remote main
+git push -u origin <branch>     # push the branch
+gh pr create --fill              # open a PR
+gh pr merge --merge              # merge it
 ```
 
-No PRs required — push directly to `origin/main` after rebasing.
+`main` is branch-protected — direct pushes are blocked. Always use a PR.
 
 ## Tests / health check
 
