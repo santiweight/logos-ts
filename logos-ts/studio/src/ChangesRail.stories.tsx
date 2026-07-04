@@ -106,7 +106,6 @@ const baseArgs = {
   onSelectGoal: noop,
   onDeleteWorkspace: noop,
   onDeleteGoal: noop,
-  onAcceptGoal: noop,
   runningGoals: new Set<string>(),
   onResizeStart: noop,
 }

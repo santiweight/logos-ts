@@ -1682,7 +1682,6 @@ export function App() {
         onSelectGoal={selectGoal}
         onDeleteWorkspace={deleteWorkspace}
         onDeleteGoal={deleteGoal}
-        onAcceptGoal={mergeGoal}
         runningGoals={effectiveRunningGoals}
         onResizeStart={startRailResize}
         demos={demos}

@@ -5,7 +5,6 @@ import { svgIcon } from "./icons"
 
 const listIcon = svgIcon("M5 7h14M5 12h14M5 17h14", 12)
 const collapseIcon = svgIcon("M15 18l-6-6 6-6", 12)
-const mergeIcon = svgIcon("M7 3v11a4 4 0 0 0 4 4h6M17 18l-3-3M17 18l-3 3M7 7h5", 12)
 const trashIcon = svgIcon("M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7", 12)
 const archiveIcon = svgIcon("M3 6h18M5 6v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6M10 12h4", 12)
 const pushIcon = svgIcon("M12 21V5M7 10l5-5 5 5M5 21h14", 12)
@@ -65,7 +64,6 @@ interface Props {
   onSelectGoal: (workspaceId: string, goalId: string) => void
   onDeleteWorkspace: (id: string) => void
   onDeleteGoal: (wsId: string, goalId: string) => void
-  onAcceptGoal: (goalId: string) => void
   runningGoals: Set<string>
   onResizeStart: (e: ReactPointerEvent<HTMLDivElement>) => void
   demos: { id: string; name: string }[]
@@ -89,7 +87,6 @@ export function ChangesRail({
   onSelectGoal,
   onDeleteWorkspace,
   onDeleteGoal,
-  onAcceptGoal,
   runningGoals,
   onResizeStart,
   demos,
@@ -118,10 +115,6 @@ export function ChangesRail({
     const wsSelected = selected?.type === "workspace" && selected.id === w.id
     const threadSelected = selected?.type === "goal" && selected.id === thread?.id
     const goals = w.goals
-    const canAccept = thread != null
-      && !runningGoals.has(thread.id)
-      && thread.lifecycle?.stage === "impl"
-      && thread.lifecycle.state === "ready_to_merge"
     const hasRunningGoal = goals.some((g) => runningGoals.has(g.id))
     const initStep = w.initialization?.status === "initializing"
       ? w.initialization.steps?.find((s) => s.status === "running")
@@ -155,19 +148,6 @@ export function ChangesRail({
                   <span className="rail-agent" title={`Initializing workspace${initStep ? ` — ${initStep.label}` : ""}`}>
                     <span className="ag-spin">↻</span>
                   </span>
-                )}
-                {canAccept && (
-                  <button
-                    className="rail-merge"
-                    title="Accept change"
-                    aria-label={`Accept ${w.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onAcceptGoal(thread.id)
-                    }}
-                  >
-                    {mergeIcon}
-                  </button>
                 )}
                 {w.type !== "remote" && (
                   <button

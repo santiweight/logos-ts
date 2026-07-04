@@ -19,7 +19,6 @@ const baseProps = {
   onSelectGoal: noop as (workspaceId: string, goalId: string) => void,
   onDeleteWorkspace: noop as (id: string) => void,
   onDeleteGoal: noop as (wsId: string, goalId: string) => void,
-  onAcceptGoal: noop as (goalId: string) => void,
   runningGoals: new Set<string>(),
   onResizeStart: noop,
   demos: [] as { id: string; name: string }[],
@@ -523,38 +522,6 @@ describe("ChangesRail", () => {
 
     expect(screen.getByTitle("Stopping agents…")).toBeInTheDocument()
     expect(screen.queryByTitle("Delete workspace")).not.toBeInTheDocument()
-  })
-
-  it("hides accept button when workspace has a status", () => {
-    const workspaces: WorkspaceMeta[] = [
-      {
-        id: "ws-1",
-        name: "merging-ws",
-        kind: "code" as const,
-        type: "local" as const,
-        parentId: null,
-        createdAt: 1000,
-        baseInstanceId: "inst-1",
-        activeInstanceId: "inst-1",
-        goals: [
-          {
-            id: "g-1",
-            text: "done change",
-            label: "done",
-            target: "component:X",
-            mode: "code" as const,
-            createdAt: 1000,
-            status: "done" as const,
-            lifecycle: { stage: "impl" as const, state: "ready_to_merge" as const },
-          },
-        ],
-        status: "Removing files…",
-      },
-    ]
-    render(<ChangesRail {...baseProps} workspaces={workspaces} runningGoals={new Set<string>()} />)
-
-    expect(screen.getByTitle("Removing files…")).toBeInTheDocument()
-    expect(screen.queryByTitle("Accept change")).not.toBeInTheDocument()
   })
 
   it("shows normal buttons when workspace has no status", () => {

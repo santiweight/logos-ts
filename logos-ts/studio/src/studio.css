@@ -311,24 +311,6 @@ body.resizing-rail * {
   font-size: 11px;
 }
 .rail-dot.fork { color: var(--accent); display: inline-flex; vertical-align: middle; margin-right: 2px; }
-.rail-merge {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.rail-merge:hover {
-  color: var(--text);
-  border-color: var(--border);
-  background: rgba(255,255,255,0.06);
-}
 .rail-publication {
   display: flex;
   align-items: center;
