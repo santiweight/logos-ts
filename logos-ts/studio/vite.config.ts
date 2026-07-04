@@ -53,6 +53,7 @@ function projectRoot(project: typeof PROJECTS[number]): string {
 }
 const ALLOWED_HOSTS = [
   "logos-ts-santiweight.fly.dev",
+  "logos-studio.fly.dev",
   ...(process.env.LOGOS_ALLOWED_HOSTS || "")
     .split(",")
     .map((host) => host.trim())
