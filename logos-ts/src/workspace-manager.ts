@@ -256,7 +256,7 @@ interface StorybookCapsResolution {
   storybooks: { configDir: string; frontendDir: string }[]
 }
 
-const ROOT_WORKSPACE_NAME = "origin/main"
+const DEFAULT_BRANCH = "main"
 
 function defaultWorkspaceName(): string {
   const now = new Date()
@@ -298,6 +298,7 @@ export class WorkspaceManager {
   private secrets: LogosSecrets
   private codeService: WorkspaceCodeService
   private studioInstanceId: string
+  private defaultBranch: string
   private goalWorkingInstances = new Map<string, string>()
   private acceptanceRepairAttempts = new Map<string, number>()
 
@@ -319,6 +320,7 @@ export class WorkspaceManager {
     initializeWorkspaces?: boolean
     installNodeModules?: boolean
     studioInstanceId?: string
+    defaultBranch?: string
   }) {
     this.store = opts.store
     this.runsDir = opts.runsDir
@@ -337,6 +339,7 @@ export class WorkspaceManager {
     this.secrets = opts.secrets
     this.spawnAgent = opts.spawnAgent ?? spawn
     this.studioInstanceId = opts.studioInstanceId ?? process.env["LOGOS_STUDIO_INSTANCE_ID"] ?? basename(this.projectRoot)
+    this.defaultBranch = opts.defaultBranch ?? DEFAULT_BRANCH
     this.codeService = new WorkspaceCodeService({
       runsDir: this.runsDir,
       projectRoot: this.projectRoot,
@@ -506,26 +509,27 @@ export class WorkspaceManager {
     return { gitRoot, projectRel }
   }
 
-  private checkoutOriginMainProject(): { root: string; cleanup: () => void } {
+  private checkoutDefaultBranchProject(): { root: string; cleanup: () => void } {
     const { gitRoot, projectRel } = this.sourceProjectGitInfo()
+    const branch = this.defaultBranch
     try {
-      execFileSync("git", ["-C", gitRoot, "fetch", "origin", "main"], {
+      execFileSync("git", ["-C", gitRoot, "fetch", "origin", branch], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       })
     } catch {}
     let commit = ""
     try {
-      commit = execFileSync("git", ["-C", gitRoot, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], {
+      commit = execFileSync("git", ["-C", gitRoot, "rev-parse", "--verify", `refs/remotes/origin/${branch}^{commit}`], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       }).trim()
     } catch {
-      throw new Error("origin/main does not exist")
+      throw new Error(`origin/${branch} does not exist`)
     }
-    if (!commit) throw new Error("origin/main does not exist")
+    if (!commit) throw new Error(`origin/${branch} does not exist`)
 
-    const worktreeRoot = mkdtempSync(join(tmpdir(), "logos-origin-main-"))
+    const worktreeRoot = mkdtempSync(join(tmpdir(), `logos-origin-${branch}-`))
     try {
       execFileSync("git", ["-C", gitRoot, "worktree", "add", "--detach", worktreeRoot, commit], {
         encoding: "utf8",
@@ -1054,7 +1058,7 @@ export class WorkspaceManager {
     if (existing) return this.toMeta(existing)
 
     const id = this.nextWorkspaceId()
-    const checkout = this.checkoutOriginMainProject()
+    const checkout = this.checkoutDefaultBranchProject()
     let instance: WorkspaceInstance
     try {
       const sourceIndex = this.getIndex ? await this.getIndex() : undefined
@@ -1068,8 +1072,8 @@ export class WorkspaceManager {
     const ws: RemoteWorkspaceRecord = {
       id,
       type: "remote",
-      tracking: { remote: "origin", branch: "main" },
-      name: ROOT_WORKSPACE_NAME,
+      tracking: { remote: "origin", branch: this.defaultBranch },
+      name: `origin/${this.defaultBranch}`,
       kind: "code",
       parentId: null,
       createdAt: Date.now(),

@@ -28,12 +28,13 @@ const STUDIO_RUNTIME_DIR = resolve(process.env.LOGOS_STUDIO_RUNTIME_DIR ?? defau
 const PROJECT_STATE_FILE = resolve(STUDIO_RUNTIME_DIR, "active-project.json")
 const REPOS_DIR = resolve(homedir(), ".logos/repos")
 const PROJECTS = [
-  { id: "logos-studio", name: "logos-studio", repo: "santiweight/logos-ts" },
-  { id: "santiweightdotcom", name: "santiweightdotcom", repo: "santiweight/santiweightdotcom" },
+  { id: "logos-studio", name: "logos-studio", repo: "santiweight/logos-ts", branch: "main" },
+  { id: "santiweightdotcom", name: "santiweightdotcom", repo: "santiweight/santiweightdotcom", branch: "main" },
+  { id: "hn-jobs", name: "hn-jobs", repo: "edrickwong/hn-jobs", branch: "santi" },
 ] as const
 type ProjectId = typeof PROJECTS[number]["id"]
 
-function ensureRepoClone(repo: string): string {
+function ensureRepoClone(repo: string, branch?: string): string {
   const repoDir = resolve(REPOS_DIR, repo.replace("/", "--"))
   if (existsSync(resolve(repoDir, ".git"))) {
     try {
@@ -42,15 +43,32 @@ function ensureRepoClone(repo: string): string {
         stdio: ["ignore", "pipe", "pipe"],
       })
     } catch {}
+    if (branch) {
+      try {
+        execFileSync("git", ["-C", repoDir, "checkout", branch], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+      } catch {
+        try {
+          execFileSync("git", ["-C", repoDir, "checkout", "-b", branch, `origin/${branch}`], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+          })
+        } catch {}
+      }
+    }
     return repoDir
   }
   mkdirSync(REPOS_DIR, { recursive: true })
-  execFileSync("git", ["clone", `git@github.com:${repo}.git`, repoDir], { encoding: "utf8" })
+  const cloneArgs = ["clone", `git@github.com:${repo}.git`, repoDir]
+  if (branch) cloneArgs.splice(2, 0, "-b", branch)
+  execFileSync("git", cloneArgs, { encoding: "utf8" })
   return repoDir
 }
 
 function projectRoot(project: typeof PROJECTS[number]): string {
-  return ensureRepoClone(project.repo)
+  return ensureRepoClone(project.repo, project.branch)
 }
 const ALLOWED_HOSTS = [
   "logos-ts-santiweight.fly.dev",
@@ -234,6 +252,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   const runManager = new RunManager(runtimeStore, projectRoot)
   const secrets = new LogosSecrets()
 
+  const project = projectById(projectId)
   const wsMgr = new WorkspaceManager({
     store: runtimeStore,
     runsDir,
@@ -249,6 +268,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     tsx,
     studioInstanceId: instanceId,
     getIndex: () => indexReady,
+    defaultBranch: project?.branch,
   })
 
   const portableStories = createPortableStoryResolver({
