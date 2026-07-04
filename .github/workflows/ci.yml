@@ -44,14 +44,3 @@ jobs:
         working-directory: logos-ts/studio
         run: pnpm exec vitest run --config vitest.integration.config.ts workspace-api.integration.test.ts workspace-storybook.integration.test.ts
 
-      - name: Run sample app healthchecks
-        run: |
-          cd investment-portfolio
-          node scripts/healthcheck.mjs
-          cd ../vinyl-collection
-          node scripts/healthcheck.mjs
-
-      - name: Typecheck sample frontends
-        run: |
-          pnpm --dir investment-portfolio/frontend typecheck
-          pnpm --dir vinyl-collection/frontend typecheck

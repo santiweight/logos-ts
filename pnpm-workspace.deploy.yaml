@@ -1,10 +1,6 @@
 packages:
   - "logos-ts"
   - "logos-ts/studio"
-  - "investment-portfolio"
-  - "investment-portfolio/frontend"
-  - "vinyl-collection"
-  - "vinyl-collection/frontend"
 onlyBuiltDependencies:
   - "@prisma/client"
   - "@prisma/engines"

@@ -221,9 +221,6 @@ class QaApi {
   ]
   readonly demos = [
     { id: "hn-jobs", name: "HN Jobs", root: "/qa/hn-jobs" },
-    { id: "vinyl-collection", name: "Vinyl Collection", root: "/qa/vinyl-collection" },
-    { id: "investment-portfolio", name: "Investment Portfolio", root: "/qa/investment-portfolio" },
-    { id: "household-maintenance", name: "Household Maintenance", root: "/qa/household-maintenance" },
   ]
   workspaces = new Map<string, Workspace>()
   runUrls: Record<string, string> = {}
@@ -649,11 +646,10 @@ describe("Studio QA workflow", () => {
       expect(demoMenu).toContain("COMMANDS")
       expect(demoMenu).not.toContain("Reload current project")
       expect(demoMenu).toContain("Reset all workspaces")
-      expect(demoMenu).toContain("Vinyl Collection")
-      expect(demoMenu).toContain("Household Maintenance")
+      expect(demoMenu).toContain("HN Jobs")
 
-      await page.locator(".demo-menu-item", { hasText: "Vinyl Collection" }).click()
-      await waitFor(() => api.demoPosts.includes("vinyl-collection"))
+      await page.locator(".demo-menu-item", { hasText: "HN Jobs" }).click()
+      await waitFor(() => api.demoPosts.includes("hn-jobs"))
       await page.locator(".rail-row.ws", { hasText: "Main workspace" }).waitFor({ timeout: 15_000 })
 
       expect(actionablePageErrors(pageErrors)).toEqual([])
