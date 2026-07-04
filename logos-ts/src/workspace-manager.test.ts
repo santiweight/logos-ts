@@ -1905,3 +1905,234 @@ describe("stale index cache cleanup", () => {
     expect(files).toEqual(["src/app.ts"])
   })
 })
+
+// ---------------------------------------------------------------------------
+// Workspace initialization pipeline
+// ---------------------------------------------------------------------------
+
+describe("workspace initialization pipeline", () => {
+  function initManager(overrides?: Partial<CreateManagerOpts> & {
+    snapshotBehavior?: "succeed" | "fail" | "hang" | "throw"
+    snapshotError?: string
+    onInstall?: () => void
+    onSnapshot?: () => void
+  }) {
+    const spawned: FakeAgentProcess[] = []
+    const state = { release: () => {} }
+
+    const mgr = createManager({
+      initializeWorkspaces: true,
+      spawned,
+      ...overrides,
+    })
+
+    ;(mgr as any).codeService.ensureNodeModules = () => {
+      overrides?.onInstall?.()
+    }
+
+    const behavior = overrides?.snapshotBehavior ?? "succeed"
+    ;(mgr as any).runStorySnapshotAcceptance = async () => {
+      overrides?.onSnapshot?.()
+      if (behavior === "succeed") return { ok: true, output: "2 stories captured" }
+      if (behavior === "fail") return { ok: false, output: overrides?.snapshotError ?? "chromium crashed" }
+      if (behavior === "throw") throw new Error(overrides?.snapshotError ?? "unexpected error")
+      await new Promise<void>((resolve) => { state.release = resolve })
+      return { ok: true, output: "snapshots done" }
+    }
+
+    return { mgr, spawned, releaseSnapshot: () => state.release() }
+  }
+
+  function stepStatus(mgr: WorkspaceManager, wsId: string, stepId: string): string | undefined {
+    return mgr.get(wsId)?.initialization?.steps.find((s) => s.id === stepId)?.status
+  }
+
+  function stepError(mgr: WorkspaceManager, wsId: string, stepId: string): string | undefined {
+    const step = mgr.get(wsId)?.initialization?.steps.find((s) => s.id === stepId) as any
+    return step?.error
+  }
+
+  it("runs all five steps to completion in order", async () => {
+    const order: string[] = []
+    const { mgr } = initManager({
+      onInstall: () => order.push("install"),
+      onSnapshot: () => order.push("snapshot"),
+    })
+
+    const ws = await mgr.create({ kind: "code" })
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("ready"))
+
+    expect(order[0]).toBe("install")
+    expect(order[1]).toBe("snapshot")
+    expect(order.indexOf("install")).toBeLessThan(order.indexOf("snapshot"))
+    const steps = mgr.get(ws.id)!.initialization!.steps
+    expect(steps.every((s) => s.status === "done")).toBe(true)
+    expect(steps.map((s) => s.id)).toEqual([
+      "materialize", "install_dependencies", "story_snapshots", "commit_baseline", "index",
+    ])
+  })
+
+  it("continues initialization when story snapshots fail", async () => {
+    const { mgr } = initManager({
+      snapshotBehavior: "fail",
+      snapshotError: "Chromium failed to launch",
+    })
+
+    const ws = await mgr.create({ kind: "code" })
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("ready"))
+
+    expect(stepStatus(mgr, ws.id, "install_dependencies")).toBe("done")
+    expect(stepStatus(mgr, ws.id, "story_snapshots")).toBe("done")
+    const step = mgr.get(ws.id)!.initialization!.steps.find((s) => s.id === "story_snapshots") as any
+    expect(step.detail).toContain("skipped")
+    expect(step.detail).toContain("Chromium failed to launch")
+    expect(stepStatus(mgr, ws.id, "commit_baseline")).toBe("done")
+    expect(stepStatus(mgr, ws.id, "index")).toBe("done")
+  })
+
+  it("sets error on the running step when an exception is thrown", async () => {
+    const { mgr } = initManager({
+      snapshotBehavior: "throw",
+      snapshotError: "tsx binary not found",
+    })
+
+    const ws = await mgr.create({ kind: "code" })
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("error"))
+
+    expect(stepStatus(mgr, ws.id, "story_snapshots")).toBe("error")
+    expect(stepError(mgr, ws.id, "story_snapshots")).toBe("tsx binary not found")
+  })
+
+  it("queues goals added during initialization and runs them after", async () => {
+    const { mgr, spawned, releaseSnapshot } = initManager({ snapshotBehavior: "hang" })
+
+    const ws = await mgr.create({ kind: "code" })
+    // wait for the snapshot step to actually start (the "hang" mock is now awaiting)
+    await waitFor(() => expect(stepStatus(mgr, ws.id, "story_snapshots")).toBe("running"))
+
+    const addResult = await mgr.addGoal(ws.id, goal("g1", "code"))
+    expect("goal" in addResult).toBe(true)
+
+    const events: { type: string; message?: unknown; goalId?: unknown }[] = []
+    mgr.processNext(ws.id, (event) => events.push(event))
+
+    expect(events[0]).toMatchObject({
+      type: "queued",
+      goalId: "g1",
+      message: "goal queued behind workspace initialization",
+    })
+    expect(spawned).toHaveLength(0)
+
+    releaseSnapshot()
+    await waitFor(() => expect(spawned).toHaveLength(1))
+    expect(mgr.get(ws.id)?.initialization?.status).toBe("ready")
+  })
+
+  it("rejects goals when initialization has failed due to exception", async () => {
+    const { mgr } = initManager({ snapshotBehavior: "throw", snapshotError: "fatal crash" })
+
+    const ws = await mgr.create({ kind: "code" })
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("error"))
+
+    const addResult = await mgr.addGoal(ws.id, goal("g1", "code"))
+    expect("goal" in addResult).toBe(true)
+    const events: { type: string; message?: unknown }[] = []
+    const result = mgr.processNext(ws.id, (event) => events.push(event))
+
+    expect(result).toBeNull()
+    expect(events[0]).toMatchObject({
+      type: "error",
+      message: "workspace initialization failed",
+    })
+  })
+
+  it("does not block workspace creation on slow initialization", async () => {
+    const { mgr } = initManager({ snapshotBehavior: "hang" })
+
+    const ws = await Promise.race([
+      mgr.create({ kind: "code" }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 200)),
+    ])
+
+    expect(ws).not.toBeNull()
+    expect(mgr.get(ws!.id)?.initialization?.status).toBe("initializing")
+  })
+
+  it("skips snapshot step for projects without storybook", async () => {
+    const mgr = createManager({ initializeWorkspaces: true })
+    // no storybook configured — runStorySnapshotAcceptance returns ok: true with "no Storybook configured"
+    const ws = await mgr.create({ kind: "code" })
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("ready"))
+
+    expect(stepStatus(mgr, ws.id, "story_snapshots")).toBe("done")
+  })
+
+  it("sends error events to pending goals when initialization throws", async () => {
+    const { mgr } = initManager({ snapshotBehavior: "throw", snapshotError: "crash" })
+
+    const ws = await mgr.create({ kind: "code" })
+
+    // Add goals before initialization completes
+    const addResult = await mgr.addGoal(ws.id, goal("g1", "code"))
+    expect("goal" in addResult).toBe(true)
+
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("error"))
+
+    // Now try to process the goal — should get an error
+    const events: { type: string; message?: unknown }[] = []
+    const result = mgr.processNext(ws.id, (event) => events.push(event))
+    expect(result).toBeNull()
+    expect(events[0]).toMatchObject({ type: "error", message: "workspace initialization failed" })
+  })
+
+  it("prevents concurrent initialization of the same workspace", async () => {
+    let snapshotCount = 0
+    const { mgr } = initManager({
+      snapshotBehavior: "succeed",
+      onSnapshot: () => { snapshotCount++ },
+    })
+
+    const ws = await mgr.create({ kind: "code" })
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("ready"))
+    expect(snapshotCount).toBe(1)
+
+    // calling initializeWorkspace again while the id is in the guard set is a no-op
+    ;(mgr as any).initializingWorkspaces.add(ws.id)
+    const inst = (mgr as any).workspaces.get(ws.id)
+    await (mgr as any).initializeWorkspace(ws.id, Object.keys(inst.instances)[0])
+    ;(mgr as any).initializingWorkspaces.delete(ws.id)
+
+    expect(snapshotCount).toBe(1)
+  })
+
+  it("records step detail on success", async () => {
+    const { mgr } = initManager({ snapshotBehavior: "succeed" })
+
+    const ws = await mgr.create({ kind: "code" })
+    await waitFor(() => expect(mgr.get(ws.id)?.initialization?.status).toBe("ready"))
+
+    const snapshotStep = mgr.get(ws.id)!.initialization!.steps.find((s) => s.id === "story_snapshots") as any
+    expect(snapshotStep.status).toBe("done")
+    expect(snapshotStep.detail).toBe("2 stories captured")
+    expect(snapshotStep.error).toBeUndefined()
+  })
+
+  it("aborts initialization if workspace is deleted mid-flight", async () => {
+    let installCalled = false
+    const { mgr, releaseSnapshot } = initManager({
+      snapshotBehavior: "hang",
+      onInstall: () => { installCalled = true },
+    })
+
+    const ws = await mgr.create({ kind: "code" })
+    await waitFor(() => expect(stepStatus(mgr, ws.id, "install_dependencies")).toBe("done"))
+    expect(installCalled).toBe(true)
+
+    mgr.delete(ws.id)
+    releaseSnapshot()
+
+    // After deletion, commit_baseline should NOT run — workspace is gone
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(mgr.get(ws.id)).toBeUndefined()
+  })
+})
