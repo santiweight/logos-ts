@@ -807,7 +807,7 @@ export function App() {
       fromWorkspaceId?: string | null,
       kind: WorkspaceKind = "code",
       name?: string,
-      opts?: { loadingScope?: "project" | "workspace"; waitForOpen?: boolean },
+      opts?: { loadingScope?: "project" | "workspace"; waitForOpen?: boolean; skipOpen?: boolean },
     ): Promise<string | null> => {
       try {
         const res = await fetch("/api/workspaces", {
@@ -817,7 +817,9 @@ export function App() {
         })
         if (!res.ok) return null
         const meta = (await res.json()) as WorkspaceMeta
-        if (opts?.waitForOpen === false) {
+        if (opts?.skipOpen) {
+          refreshWorkspaces().catch(() => {})
+        } else if (opts?.waitForOpen === false) {
           refreshWorkspaces().catch(() => {})
           openWorkspace(meta.id, { loadingScope: opts.loadingScope ?? (activeWorkspaceIdRef.current ? "workspace" : "project") }).catch(() => {})
         } else {
@@ -1232,7 +1234,7 @@ export function App() {
       const shouldFork = fork
       const workspaceName = explicitWorkspaceName ?? goalExtra.goalName ?? label
       let wsId = shouldFork
-        ? await createWorkspace(activeWorkspaceId, "code", workspaceName, { waitForOpen: false })
+        ? await createWorkspace(activeWorkspaceId, "code", workspaceName, { skipOpen: true })
         : activeWorkspaceId
       if (!wsId) wsId = await createWorkspace(null, "code", workspaceName)
       if (!wsId) return
