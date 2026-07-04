@@ -315,9 +315,9 @@ function studioApi(runtime: StudioRuntime): Plugin {
       server.middlewares.use("/api/index", async (req, res) => {
         res.setHeader("content-type", "application/json")
         if (new URL(req.url || "", "http://x").searchParams.has("rebuild")) {
-          indexReady = buildIndex()
+          runtime.indexReady = buildIndex()
         }
-        res.end(JSON.stringify(await indexReady))
+        res.end(JSON.stringify(await runtime.indexReady))
       })
 
       server.middlewares.use("/api/demos", async (req, res) => {
@@ -408,7 +408,7 @@ function studioApi(runtime: StudioRuntime): Plugin {
       })
 
       server.middlewares.use("/api/arch", createArchApi({
-        projectIndex: () => indexReady,
+        projectIndex: () => runtime.indexReady,
         wsMgr,
         sbManager,
         runManager,
