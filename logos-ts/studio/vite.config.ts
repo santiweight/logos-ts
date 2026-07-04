@@ -62,7 +62,7 @@ function ensureRepoClone(repo: string, branch?: string): string {
     return repoDir
   }
   mkdirSync(REPOS_DIR, { recursive: true })
-  const cloneArgs = ["clone", `git@github.com:${repo}.git`, repoDir]
+  const cloneArgs = ["clone", `https://github.com/${repo}.git`, repoDir]
   if (branch) cloneArgs.splice(2, 0, "-b", branch)
   execFileSync("git", cloneArgs, { encoding: "utf8" })
   return repoDir
