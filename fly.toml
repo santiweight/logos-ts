@@ -1,3 +1,4 @@
+app = "logos-studio"
 primary_region = "iad"
 
 [build]
