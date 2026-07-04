@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-syntax, @typescript-eslint/no-unnecessary-type-assertion */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { ICONS } from "./icons"
-import { Tree, type NodeApi, type NodeRendererProps } from "react-arborist"
+import { Tree, TreeApi, type NodeApi, type NodeRendererProps } from "react-arborist"
 import type {
   ComponentEntry,
   Goal,
@@ -548,8 +548,29 @@ export function SidebarTree({
     return set
   }, [results])
   const { data, openIds } = useMemo(
-    () => buildData(files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents, showTypes),
-    [files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents, showTypes]
+    () => {
+      const result = buildData(files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents, showTypes)
+      if (selection.view === "story" && selection.storyId && selection.file) {
+        const fe = files.find((f) => f.file === selection.file)
+        if (fe && selection.component) {
+          result.openIds[`comp:${fe.file}:${selection.component}`] = true
+          result.openIds[`file:${fe.file}`] = true
+        } else if (fe) {
+          const comps = componentsOf(fe)
+          if (comps.length === 1) {
+            result.openIds[`comp:${comps[0]!.name}`] = true
+          }
+        }
+      } else if (selection.component && selection.file) {
+        const fe = files.find((f) => f.file === selection.file)
+        if (fe) {
+          result.openIds[`comp:${fe.file}:${selection.component}`] = true
+          result.openIds[`file:${fe.file}`] = true
+        }
+      }
+      return result
+    },
+    [files, diff, comments, failingTests, runTargets, runStates, showFunctions, showClasses, showComponents, showTypes, selection.view, selection.storyId, selection.file, selection.component]
   )
 
   const selectedId = selection.view === "run" && selection.runTargetId
@@ -590,6 +611,16 @@ export function SidebarTree({
   )
 
   const [ref, size] = useSize()
+  const treeRef = useRef<TreeApi<SNode> | null>(null)
+  useEffect(() => {
+    const tree = treeRef.current
+    if (!tree || !selectedId) return
+    const node = tree.get(selectedId)
+    if (node) {
+      tree.openParents(node)
+      tree.scrollTo(node)
+    }
+  }, [selectedId])
   useEffect(() => {
     if (!nodeMenu) return
     const onKeyDown = (e: KeyboardEvent) => {
@@ -603,6 +634,7 @@ export function SidebarTree({
     <SidebarCtx.Provider value={ctx}>
       <div className="sidebar-tree" ref={ref} onClick={() => setNodeMenu(null)}>
         <Tree<SNode>
+          ref={treeRef}
           key={`${showFunctions ? "fn" : ""}:${showClasses ? "cls" : ""}:${showComponents ? "comp" : ""}:${showTypes ? "type" : ""}:${runTargets.map(t => `${t.id}:${runStates[t.id]?.status ?? "stopped"}`).join("\0")}:${files.map(f => f.file).join("\0")}`}
           data={data}
           idAccessor="id"
