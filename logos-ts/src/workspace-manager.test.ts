@@ -64,7 +64,7 @@ function createSessions() {
 }
 
 function initializeOriginMain(projectRoot: string): void {
-  execFileSync("git", ["init"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+  execFileSync("git", ["init", "-b", "main"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
   execFileSync("git", ["config", "user.email", "logos@example.com"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
   execFileSync("git", ["config", "user.name", "Logos Test"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
   execFileSync("git", ["add", "-A"], { cwd: projectRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
@@ -326,7 +326,7 @@ describe("WorkspaceManager workspace kinds", () => {
   it("throws when origin/main is missing for the root workspace", async () => {
     const mgr = createManager()
     const sourceRoot = (mgr as unknown as { sourceProjectRoot: string }).sourceProjectRoot
-    execFileSync("git", ["update-ref", "-d", "refs/remotes/origin/main"], {
+    execFileSync("git", ["remote", "remove", "origin"], {
       cwd: sourceRoot,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -1430,7 +1430,7 @@ describe("WorkspaceManager workspace kinds", () => {
     const remote = join(root, "remote.git")
     mkdirSync(sourceProjectRoot, { recursive: true })
     writeFileSync(join(sourceProjectRoot, "package.json"), "{}")
-    execFileSync("git", ["init"], { cwd: gitRoot, encoding: "utf8" })
+    execFileSync("git", ["init", "-b", "main"], { cwd: gitRoot, encoding: "utf8" })
     execFileSync("git", ["config", "user.email", "logos@example.com"], { cwd: gitRoot, encoding: "utf8" })
     execFileSync("git", ["config", "user.name", "Logos Test"], { cwd: gitRoot, encoding: "utf8" })
     execFileSync("git", ["add", "."], { cwd: gitRoot, encoding: "utf8" })
