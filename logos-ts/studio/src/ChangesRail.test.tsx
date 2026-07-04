@@ -31,11 +31,10 @@ const baseProps = {
 }
 
 describe("ChangesRail", () => {
-  it("labels the rail header with Select Project and Commands", () => {
+  it("labels the rail header with File menu", () => {
     render(<ChangesRail {...baseProps} />)
 
-    expect(screen.getByText("Select Project")).toBeInTheDocument()
-    expect(screen.getByText("Commands")).toBeInTheDocument()
+    expect(screen.getByText("File")).toBeInTheDocument()
   })
 
   it("shows loading indicator while workspaces are loading", () => {
