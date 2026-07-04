@@ -214,7 +214,10 @@ async function waitForServer(proc: ChildProcess, timeoutMs = 30_000): Promise<st
 
 async function createWorkspace(kind: "code" | "arch" = "code", fromWorkspaceId?: string): Promise<WorkspaceMeta> {
   const res = await jsonPost("/api/workspaces", { kind, fromWorkspaceId })
-  expect(res.ok).toBe(true)
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`createWorkspace failed (${res.status}): ${body}`)
+  }
   return await res.json() as WorkspaceMeta
 }
 
