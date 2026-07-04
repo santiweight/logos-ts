@@ -25,17 +25,32 @@ import { createLogosDevInstanceId, defaultLogosDevInstanceRuntimeDir, defaultLog
 const STUDIO = dirname(fileURLToPath(import.meta.url))
 const LOGOS_TS = resolve(STUDIO, "..")
 const STUDIO_RUNTIME_DIR = resolve(process.env.LOGOS_STUDIO_RUNTIME_DIR ?? defaultLogosRuntimeDir(LOGOS_TS))
-const DEMO_STATE_FILE = resolve(STUDIO_RUNTIME_DIR, "active-demo.json")
-const DEFAULT_SOURCE_PROJECT = resolve(homedir(), "projects/santiweightdotcom")
-const EMBEDDED_HN_JOBS = resolve(LOGOS_TS, "demos/hn-jobs")
-const DEMOS = [
-  { id: "hn-jobs", name: "HN Jobs", root: EMBEDDED_HN_JOBS },
-  { id: "vinyl-collection", name: "Vinyl Collection", root: resolve(STUDIO, "../../vinyl-collection") },
-  { id: "investment-portfolio", name: "Investment Portfolio", root: resolve(STUDIO, "../../investment-portfolio") },
-  { id: "household-maintenance", name: "Household Maintenance", root: resolve(STUDIO, "../../household-maintenance") },
-  { id: "logos-studio", name: "Logos Studio", root: LOGOS_TS },
+const PROJECT_STATE_FILE = resolve(STUDIO_RUNTIME_DIR, "active-project.json")
+const REPOS_DIR = resolve(homedir(), ".logos/repos")
+const PROJECTS = [
+  { id: "santiweightdotcom", name: "santiweightdotcom", repo: "santiweight/santiweightdotcom" },
 ] as const
-type DemoId = typeof DEMOS[number]["id"]
+type ProjectId = typeof PROJECTS[number]["id"]
+
+function ensureRepoClone(repo: string): string {
+  const repoDir = resolve(REPOS_DIR, repo.replace("/", "--"))
+  if (existsSync(resolve(repoDir, ".git"))) {
+    try {
+      execFileSync("git", ["-C", repoDir, "fetch", "origin"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+    } catch {}
+    return repoDir
+  }
+  mkdirSync(REPOS_DIR, { recursive: true })
+  execFileSync("git", ["clone", `git@github.com:${repo}.git`, repoDir], { encoding: "utf8" })
+  return repoDir
+}
+
+function projectRoot(project: typeof PROJECTS[number]): string {
+  return ensureRepoClone(project.repo)
+}
 const ALLOWED_HOSTS = [
   "logos-ts-santiweight.fly.dev",
   ...(process.env.LOGOS_ALLOWED_HOSTS || "")
@@ -52,7 +67,7 @@ type StoredProjectState = {
 }
 
 type StudioRuntime = {
-  demoId: DemoId | "custom"
+  projectId: ProjectId | "custom"
   sourceProject: string
   runtimeRoot: string
   projectRoot: string
@@ -67,54 +82,56 @@ type StudioRuntime = {
   portableStories: import("../src/portable-stories").PortableStoryResolver
 }
 
-function demoById(id: string | null | undefined) {
-  return DEMOS.find((demo) => demo.id === id) ?? null
+function projectById(id: string | null | undefined) {
+  return PROJECTS.find((p) => p.id === id) ?? null
 }
 
-function demoIdForSource(sourceProject: string): DemoId | "custom" {
-  return DEMOS.find((demo) => resolve(demo.root) === resolve(sourceProject))?.id ?? "custom"
+function projectIdForSource(sourceProject: string): ProjectId | "custom" {
+  const resolved = resolve(sourceProject)
+  for (const p of PROJECTS) {
+    if (resolve(REPOS_DIR, p.repo.replace("/", "--")) === resolved) return p.id
+  }
+  return "custom"
 }
 
 function storedProjectState(): StoredProjectState | null {
   try {
-    if (!existsSync(DEMO_STATE_FILE)) return null
-    return JSON.parse(readFileSync(DEMO_STATE_FILE, "utf8")) as StoredProjectState
+    if (!existsSync(PROJECT_STATE_FILE)) return null
+    return JSON.parse(readFileSync(PROJECT_STATE_FILE, "utf8")) as StoredProjectState
   } catch {
     return null
   }
 }
 
-function storedSourceProject(): { demoId: DemoId | "custom"; sourceProject: string } | null {
+function storedSourceProject(): { projectId: ProjectId | "custom"; sourceProject: string } | null {
   const stored = storedProjectState()
   if (!stored) return null
   if (stored.sourceProject) {
     const sourceProject = resolve(stored.sourceProject)
-    if (existsSync(sourceProject)) return { demoId: demoIdForSource(sourceProject), sourceProject }
+    if (existsSync(sourceProject)) return { projectId: projectIdForSource(sourceProject), sourceProject }
   }
-  const demo = demoById(stored.id)
-  return demo ? { demoId: demo.id, sourceProject: demo.root } : null
+  const project = projectById(stored.id)
+  return project ? { projectId: project.id, sourceProject: projectRoot(project) } : null
 }
 
-function sourceProjectForStartup(): { demoId: DemoId | "custom"; sourceProject: string } {
+function sourceProjectForStartup(): { projectId: ProjectId | "custom"; sourceProject: string } {
   const envProject = process.env.LOGOS_PROJECT
   if (envProject) {
     const sourceProject = resolve(envProject)
     persistSourceProject(sourceProject)
-    return { demoId: demoIdForSource(sourceProject), sourceProject }
+    return { projectId: projectIdForSource(sourceProject), sourceProject }
   }
   const stored = storedSourceProject()
   if (stored) return stored
-  if (existsSync(DEFAULT_SOURCE_PROJECT)) {
-    return { demoId: "custom", sourceProject: DEFAULT_SOURCE_PROJECT }
-  }
-  return { demoId: DEMOS[0].id, sourceProject: DEMOS[0].root }
+  const root = projectRoot(PROJECTS[0])
+  return { projectId: PROJECTS[0].id, sourceProject: root }
 }
 
 function persistSourceProject(sourceProject: string): void {
-  mkdirSync(dirname(DEMO_STATE_FILE), { recursive: true })
-  const demoId = demoIdForSource(sourceProject)
-  writeFileSync(DEMO_STATE_FILE, JSON.stringify({
-    ...(demoId !== "custom" ? { id: demoId } : {}),
+  mkdirSync(dirname(PROJECT_STATE_FILE), { recursive: true })
+  const projectId = projectIdForSource(sourceProject)
+  writeFileSync(PROJECT_STATE_FILE, JSON.stringify({
+    ...(projectId !== "custom" ? { id: projectId } : {}),
     sourceProject: resolve(sourceProject),
   }, null, 2))
 }
@@ -157,7 +174,7 @@ function resetStoredWorkspaceRuntime(store: LogosRuntimeStore, sessions: ClaudeS
 }
 
 async function createStudioRuntime(): Promise<StudioRuntime> {
-  const { demoId, sourceProject } = sourceProjectForStartup()
+  const { projectId, sourceProject } = sourceProjectForStartup()
   const instanceId = sanitizeLogosPathSegment(process.env.LOGOS_STUDIO_INSTANCE_ID ?? createLogosDevInstanceId())
   process.env.LOGOS_STUDIO_INSTANCE_ID = instanceId
   const runtimeRoot = resolve(process.env.LOGOS_RUNTIME_DIR ?? defaultLogosDevInstanceRuntimeDir(sourceProject, instanceId))
@@ -182,7 +199,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
   console.log(`[logos] source: ${sourceProject}`)
   console.log(`[logos] instance: ${instanceId}`)
   console.log(`[logos] runtime: ${runtimePaths.root}`)
-  console.log(`[logos] demo: ${demoId}`)
+  console.log(`[logos] project: ${projectId}`)
   console.log(`[logos] project: ${caps.root}`)
   console.log(`[logos] storybook: ${caps.storybook ? caps.storybook.configDir : "not found"}`)
   console.log(`[logos] runs: ${caps.runs.length ? caps.runs.map((run) => run.label).join(", ") : "not found"}`)
@@ -245,7 +262,7 @@ async function createStudioRuntime(): Promise<StudioRuntime> {
     },
   })
 
-  return { demoId, sourceProject, runtimeRoot: runtimePaths.root, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, runManager, secrets, wsMgr, portableStories }
+  return { projectId, sourceProject, runtimeRoot: runtimePaths.root, projectRoot, caps, tsx, studioPortFile, indexReady, sbManager, runManager, secrets, wsMgr, portableStories }
 }
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
@@ -324,24 +341,25 @@ function studioApi(runtime: StudioRuntime): Plugin {
         res.setHeader("content-type", "application/json")
         if (req.method === "GET") {
           res.end(JSON.stringify({
-            active: runtime.demoId,
+            active: runtime.projectId,
             sourceProject: runtime.sourceProject,
             sessionRoot: runtime.projectRoot,
-            demos: DEMOS,
+            demos: PROJECTS.map((p) => ({ id: p.id, name: p.name })),
           }))
           return
         }
         if (req.method === "POST") {
           const body = JSON.parse((await readBody(req)) || "{}") as { id?: string }
-          const demo = demoById(body.id)
-          if (!demo) {
+          const project = projectById(body.id)
+          if (!project) {
             res.statusCode = 400
-            res.end(JSON.stringify({ ok: false, error: "unknown demo" }))
+            res.end(JSON.stringify({ ok: false, error: "unknown project" }))
             return
           }
-          persistSourceProject(demo.root)
-          process.env.LOGOS_PROJECT = demo.root
-          res.end(JSON.stringify({ ok: true, active: demo.id }))
+          const root = projectRoot(project)
+          persistSourceProject(root)
+          process.env.LOGOS_PROJECT = root
+          res.end(JSON.stringify({ ok: true, active: project.id }))
           setTimeout(() => {
             try { runtime.wsMgr.abortAll() } catch {}
             try { runtime.sbManager.shutdownAll() } catch {}
